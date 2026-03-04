@@ -187,6 +187,13 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .dark .streak-pill{background:#200E00;border-color:#7A3000;color:#FB923C}
 .pts-float{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);pointer-events:none;font-size:1.6rem;font-weight:900;animation:ptsFly 1.8s ease-out forwards;z-index:9999;text-shadow:0 2px 12px rgba(0,0,0,.2)}
 @keyframes ptsFly{0%{opacity:1;transform:translate(-50%,-50%) scale(1.4)}100%{opacity:0;transform:translate(-50%,-200%) scale(.8)}}
+.confetti-piece{position:fixed;pointer-events:none;z-index:9998;border-radius:3px;animation:confettiFall var(--dur,1.4s) ease-out forwards}
+@keyframes confettiFall{0%{opacity:1;transform:translate(0,0) rotate(0deg) scale(1)}100%{opacity:0;transform:translate(var(--tx,0px),var(--ty,320px)) rotate(var(--rot,480deg)) scale(.4)}}
+.submit-btn{padding:6px 13px;border-radius:9px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:.74rem;background:#16a34a;color:#fff;box-shadow:0 0 10px rgba(22,163,74,.5),0 0 20px rgba(22,163,74,.25);transition:all .18s;white-space:nowrap;flex-shrink:0}
+.submit-btn:hover{background:#15803d;box-shadow:0 0 16px rgba(22,163,74,.7),0 0 32px rgba(22,163,74,.35);transform:translateY(-1px) scale(1.04)}
+.submit-btn:active{transform:scale(.97)}
+.submit-btn.done{background:#15803d;box-shadow:none;cursor:default;opacity:.7}
+.submit-btn.compact{padding:4px 9px;font-size:.68rem;border-radius:7px;box-shadow:0 0 8px rgba(22,163,74,.45),0 0 14px rgba(22,163,74,.2)}
 .quest-strip{background:linear-gradient(135deg,#FFFBEB,#FFF8D6);border:1.5px solid #FDE68A;border-radius:14px;padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px}
 .dark .quest-strip{background:linear-gradient(135deg,#221600,#1A1200);border-color:#6A3800}
 .qpip{width:34px;height:34px;border-radius:50%;border:2.5px solid #FDE68A;display:flex;align-items:center;justify-content:center;font-size:.9rem;background:var(--card);transition:all .3s}
@@ -389,6 +396,27 @@ export default function StudyDesk() {
   const [game, setGame] = useState({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});
   const [shopCat, setShopCat] = useState("all");
   const [floats, setFloats] = useState([]);
+  const [confetti, setConfetti] = useState([]);
+
+  function launchConfetti(originEl){
+    const rect=originEl?originEl.getBoundingClientRect():{left:window.innerWidth/2,top:window.innerHeight/2,width:0,height:0};
+    const ox=rect.left+rect.width/2;
+    const oy=rect.top+rect.height/2;
+    const colors=["#16a34a","#4ade80","#fbbf24","#f472b6","#60a5fa","#a78bfa","#fb923c","#fff"];
+    const pieces=Array.from({length:60},(_,i)=>({
+      id:Date.now()+i,
+      x:ox,y:oy,
+      color:colors[i%colors.length],
+      tx:(Math.random()-0.5)*700,
+      ty:-(Math.random()*300+100),
+      rot:(Math.random()-0.5)*900,
+      dur:0.9+Math.random()*0.8,
+      w:6+Math.random()*8,
+      h:8+Math.random()*10,
+    }));
+    setConfetti(pieces);
+    setTimeout(()=>setConfetti([]),2200);
+  }
   const [schedPrompt, setSchedPrompt] = useState(null);
   const [subjMode, setSubjMode] = useState("select");
 
@@ -951,6 +979,7 @@ async function run(){
     const PC={high:{bg:"#fef2f2",c:"#dc2626"},medium:{bg:"#fffbeb",c:"#d97706"},low:{bg:"#f0fdf4",c:"#16a34a"}};
     const DPC={high:{bg:"#350000",c:"#f87171"},medium:{bg:"#261200",c:"#fbbf24"},low:{bg:"#001400",c:"#4ade80"}};
     const pc=(darkMode?DPC:PC)[a.priority]||(darkMode?DPC.medium:PC.medium);
+    const submitRef=useRef(null);
     return(
       <div className={"acard"+(ov?" ov":"")} style={{opacity:done?.6:1}}>
         <div className="stripe" style={{background:color,opacity:done?.5:1}}/>
@@ -964,6 +993,8 @@ async function run(){
           {!compact&&<div className="qbtns">{[0,25,50,75,100].map(v=><button key={v} className={"qbtn"+(a.progress===v?" on":"")} onClick={()=>updateA(a.id,{progress:v})}>{v}%</button>)}</div>}
         </div>
         {!compact&&<div className="pbar-wrap"><div className="pbar-track"><div className="pbar-fill" style={{width:a.progress+"%",background:done?"#16a34a":color}}/></div><div className="plabel">{a.progress}%</div></div>}
+        {!done&&<button ref={submitRef} className={"submit-btn"+(compact?" compact":"")} onClick={()=>{launchConfetti(submitRef.current);updateA(a.id,{progress:100});}}>✓ Submit</button>}
+        {done&&<span className={"submit-btn done"+(compact?" compact":"")}>✓ Done</span>}
         <button className="ibtn" onClick={()=>delAssignment(a.id)}>✕</button>
       </div>
     );
@@ -1062,20 +1093,7 @@ async function run(){
                 </div>
                 <div className="dcard-body">
                   {upcoming.slice(0,8).map(a=>{
-                    const col=subjectColor(a.subject,classes);
-                    const d=daysUntil(a.dueDate);
-                    const dc=d<0?"#ef4444":d<=1?"#f59e0b":"var(--text3)";
-                    const dt=d<0?Math.abs(d)+"d overdue":d===0?"Today":d===1?"Tomorrow":fmtDate(a.dueDate);
-                    return(
-                      <div key={a.id} className="cacard">
-                        <div className="castripe" style={{background:col}}/>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div className="catitle">{a.title}</div>
-                          <div style={{fontSize:".68rem",color:col,fontWeight:700,marginTop:1}}>{a.subject}</div>
-                        </div>
-                        {dt&&<div className="cadue" style={{color:dc}}>{dt}</div>}
-                      </div>
-                    );
+                    return <ACard key={a.id} a={a} compact/>;
                   })}
                   {upcoming.length===0&&<div className="empty"><div className="empty-i">🎉</div><div className="empty-t">All caught up!</div></div>}
                 </div>
@@ -1300,6 +1318,14 @@ async function run(){
         )}
 
         {floats.map(f=><div key={f.id} className="pts-float" style={{color:f.streak?"#EA580C":"#F59E0B"}}>+{f.pts}{f.streak?"🔥":"⭐"}</div>)}
+        {confetti.map(p=>(
+          <div key={p.id} className="confetti-piece" style={{
+            left:p.x,top:p.y,width:p.w,height:p.h,
+            background:p.color,
+            '--tx':p.tx+'px','--ty':p.ty+'px',
+            '--rot':p.rot+'deg','--dur':p.dur+'s',
+          }}/>
+        ))}
 
       </div>{/* .app */}
       </div>{/* .dk */}
