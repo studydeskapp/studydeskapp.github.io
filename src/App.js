@@ -15,6 +15,7 @@ const RELEASES = [
       "🧠 Smart subject picker — dropdown pulls from your schedule and past assignments when adding manually",
       "💡 Add-to-schedule prompt — if an imported or manually added subject isn't in your timetable, you'll be asked to set it up",
       "🎨 Polished cards, hover animations, and consistent spacing across all tabs",
+      "💡 Suggestions button — send feature ideas and bug reports directly from the header",
     ]
   },
   {
@@ -1013,6 +1014,7 @@ async function run(){
               <div className="dm-knob">{darkMode?"🌙":"☀️"}</div>
             </button>
             <button className="btn btn-g btn-sm" onClick={()=>setShowAbout(true)}>About</button>
+            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="btn btn-g btn-sm" style={{textDecoration:"none"}}>💡 Suggest</a>
             <button className="btn btn-g btn-sm" style={{position:"relative"}} onClick={()=>setShowReleases(true)}>
               🚀 Releases
               {localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid var(--bg)"}}/>}
