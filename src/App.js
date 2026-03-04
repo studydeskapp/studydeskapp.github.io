@@ -1092,4 +1092,4 @@ async function run(){
       )}
     </>
   );
-}
+} // End of App component
