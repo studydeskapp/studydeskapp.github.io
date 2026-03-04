@@ -43,6 +43,21 @@ const css = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:#FAF7F2;min-height:100vh}
 .app{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+.about-body{padding:24px;overflow-y:auto;flex:1}
+.about-hero{text-align:center;padding:8px 0 20px}
+.about-logo{width:64px;height:64px;background:linear-gradient(135deg,#1B1F3B,#2d3561);border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 12px}
+.about-name{font-family:'Fraunces',serif;font-size:1.6rem;font-weight:700;color:#1B1F3B}
+.about-tagline{font-size:.82rem;color:#aaa;margin-top:4px}
+.about-section{margin-bottom:20px}
+.about-section-title{font-size:.7rem;font-weight:700;color:#aaa;letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
+.about-card{background:#fafaf8;border:1.5px solid #EDE9E2;border-radius:12px;padding:12px 14px;font-size:.82rem;color:#555;line-height:1.7}
+.about-feature{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid #f0ede7}
+.about-feature:last-child{border-bottom:none}
+.about-feature-icon{font-size:1rem;flex-shrink:0;margin-top:1px}
+.about-feature-text{font-size:.8rem;color:#444;line-height:1.5}
+.about-feature-text b{color:#1B1F3B}
+.about-made{text-align:center;padding:16px 0 4px;font-size:.78rem;color:#bbb}
+.about-made span{color:#1B1F3B;font-weight:700}
 .release-overlay{position:fixed;inset:0;background:rgba(27,31,59,.55);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
 .release-box{background:#fff;border-radius:20px;width:100%;max-width:500px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(27,31,59,.2)}
 .release-hd{padding:22px 24px 16px;border-bottom:1.5px solid #EDE9E2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -197,6 +212,7 @@ export default function StudyDesk() {
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
   const [showReleases, setShowReleases] = useState(false);
+  const [showAbout, setShowAbout] = useState(false);
   const [releaseViewed, setReleaseViewed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [addingA, setAddingA] = useState(false);
@@ -770,6 +786,7 @@ async function run(){
             <div className="hdr-sub">{dateStr}</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <button className="btn btn-g" onClick={()=>setShowAbout(true)} style={{fontSize:".75rem",padding:"6px 12px"}}>About</button>
             <button className="btn btn-g" onClick={()=>{setShowReleases(true);}} style={{fontSize:".75rem",padding:"6px 12px",position:"relative"}}>
               🚀 Releases
               {localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid #FAF7F2"}}/>}
@@ -934,7 +951,7 @@ async function run(){
             {importMode==="canvas"&&!importResult&&!importing&&(
               <>
                 <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"12px 14px",marginBottom:14}}>
-                  <div style={{fontSize:".79rem",fontWeight:700,color:"#4338ca",marginBottom:10}}>3 steps — no console needed:</div>
+                  <div style={{fontSize:".79rem",fontWeight:700,color:"#4338ca",marginBottom:10}}>3 steps:</div>
                   <div className="import-step"><div className="import-num" style={{background:"#4338ca"}}>1</div>
                     <div className="import-txt">
                       Make sure you're logged into Canvas, then open this link in a new tab:
@@ -1008,7 +1025,7 @@ async function run(){
                     <div style={{background:"#FFF7ED",border:"1.5px solid #fed7aa",borderRadius:12,padding:"11px 14px",marginBottom:14,fontSize:".79rem",color:"#92400e",lineHeight:1.6}}>
                       <b>📋 Agenda Import</b> — works with school Google accounts.<br/>
                       We'll read your agenda doc, find all the linked agendas from today onwards, and bundle them into one file for you to download.
-                      <span style={{display:"inline-block",marginTop:6,fontSize:".7rem",background:"#fed7aa",color:"#7c2d12",padding:"2px 8px",borderRadius:20,fontWeight:700}}>Currently only supports Google Docs</span>
+                      <span style={{display:"inline-block",marginTop:6,fontSize:".7rem",background:"#fed7aa",color:"#7c2d12",padding:"2px 8px",borderRadius:20,fontWeight:700}}>Currently only supports Google Docs and Slides</span>
                     </div>
                     <div style={{background:"#f8f8f6",border:"1.5px solid #EDE9E2",borderRadius:10,padding:"10px 13px",marginBottom:14,fontSize:".75rem",color:"#555",lineHeight:1.8}}>
                       <b style={{color:"#1B1F3B"}}>How it works:</b><br/>
@@ -1017,7 +1034,7 @@ async function run(){
                       3. Upload it — app finds all agenda links from today onward<br/>
                       4. Download a small fetcher page, open it in your browser<br/>
                       5. It auto-downloads all agendas into one file<br/>
-                      6. Upload that combined file — AI extracts all homework ✨
+                      6. Upload that combined file
                     </div>
                     <div className="fg">
                       <label className="flbl">Google Docs Agenda URL</label>
@@ -1146,6 +1163,59 @@ async function run(){
           </div>
         </div>
       )}
+      {/* ABOUT MODAL */}
+      {showAbout&&(
+        <div className="release-overlay" onClick={e=>{if(e.target===e.currentTarget)setShowAbout(false);}}>
+          <div className="release-box">
+            <div className="release-hd">
+              <div>
+                <div className="release-title">About</div>
+                <div className="release-sub">StudyDesk v{APP_VERSION}</div>
+              </div>
+              <button onClick={()=>setShowAbout(false)} style={{background:"none",border:"none",cursor:"pointer",color:"#bbb",fontSize:"1.3rem",lineHeight:1,padding:4}}>✕</button>
+            </div>
+            <div className="about-body">
+              <div className="about-hero">
+                <div className="about-logo">📚</div>
+                <div className="about-name">Study Desk</div>
+                <div className="about-tagline">Your homework, organized.</div>
+              </div>
+
+              <div className="about-section">
+                <div className="about-section-title">About the App</div>
+                <div className="about-card">
+                  Study Desk is a free homework tracker built for students. It helps you stay on top of assignments across all your classes — with smart import tools that read your teacher's Google Slides agendas so you never miss what's due.
+                </div>
+              </div>
+
+              <div className="about-section">
+                <div className="about-section-title">Features</div>
+                <div className="about-card" style={{padding:"4px 14px"}}>
+                  <div className="about-feature">
+                    <span className="about-feature-icon">📥</span>
+                    <div className="about-feature-text"><b>Smart Import</b> — reads Google Slides, Docs agendas, and Canvas to pull in homework automatically</div>
+                  </div>
+                  <div className="about-feature">
+                    <span className="about-feature-icon">📅</span>
+                    <div className="about-feature-text"><b>Schedule</b> — add your weekly classes with times, rooms, and colors</div>
+                  </div>
+                  <div className="about-feature">
+                    <span className="about-feature-icon">📊</span>
+                    <div className="about-feature-text"><b>Dashboard</b> — see what's due today, what's overdue, and your progress at a glance</div>
+                  </div>
+                  <div className="about-feature">
+                    <span className="about-feature-icon">✦</span>
+                    <div className="about-feature-text"><b>Works on Chromebook</b> — no install needed, runs entirely in your browser</div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="about-made">Made by <span>Amar G.</span> · Free forever</div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* RELEASE MODAL */}
       {showReleases&&(
         <div className="release-overlay" onClick={e=>{if(e.target===e.currentTarget)dismissReleases();}}>
