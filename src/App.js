@@ -1,6 +1,26 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 const STORAGE_KEY = "hw-tracker-v1";
+const APP_VERSION = "1.0.0";
+const RELEASES = [
+  {
+    version: "1.0.0",
+    date: "03 March 2026",
+    title: "Initial Launch",
+    changes: [
+      "Homework tracker with assignments, schedule, and dashboard",
+      "Import from Google Slides — paste a link to auto fetch or upload a .txt file",
+      "Import from Google Docs agenda calendars — finds all linked slides from today onwards",
+      "Import from Canvas — paste your planner JSON to pull in upcoming assignments",
+      "Smart homework parser reads both \'Due [day]\' and \'TODAY\'S HOMEWORK\' formats",
+      "Supports numeric dates like 1/27 and 2/4 for chemistry-style slides",
+      "Subject dropdown on review screen — correct the class before adding",
+      "Remove individual assignments from import preview with the ✕ button",
+      "Priority levels, progress tracking, and overdue detection",
+      "Weekly schedule view with class time and room management",
+    ]
+  }
+];
 const PRIORITY = {
   high:   { label: "High",   bg: "#fef2f2", text: "#dc2626" },
   medium: { label: "Medium", bg: "#fffbeb", text: "#d97706" },
@@ -23,6 +43,21 @@ const css = `
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:#FAF7F2;min-height:100vh}
 .app{max-width:1080px;margin:0 auto;padding:0 20px 80px}
+.release-overlay{position:fixed;inset:0;background:rgba(27,31,59,.55);backdrop-filter:blur(4px);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+.release-box{background:#fff;border-radius:20px;width:100%;max-width:500px;max-height:85vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 20px 60px rgba(27,31,59,.2)}
+.release-hd{padding:22px 24px 16px;border-bottom:1.5px solid #EDE9E2;display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+.release-title{font-family:'Fraunces',serif;font-size:1.4rem;font-weight:700;color:#1B1F3B}
+.release-sub{font-size:.75rem;color:#aaa;margin-top:3px}
+.release-body{overflow-y:auto;padding:20px 24px;flex:1}
+.release-entry{margin-bottom:24px}
+.release-entry:last-child{margin-bottom:0}
+.release-ver{display:inline-flex;align-items:center;gap:8px;margin-bottom:10px}
+.release-badge{background:#1B1F3B;color:#fff;font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:20px}
+.release-date{font-size:.72rem;color:#aaa;font-weight:500}
+.release-name{font-size:.95rem;font-weight:700;color:#1B1F3B;margin-bottom:8px}
+.release-changes{display:flex;flex-direction:column;gap:5px}
+.release-change{display:flex;gap:8px;font-size:.8rem;color:#555;line-height:1.5}
+.release-dot{color:#f5a623;font-size:.9rem;flex-shrink:0;margin-top:1px}
 .hdr{padding:28px 0 18px;display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1B1F3B;margin-bottom:24px;gap:12px;flex-wrap:wrap}
 .hdr-title{font-family:'Fraunces',serif;font-size:2.1rem;font-weight:700;color:#1B1F3B;letter-spacing:-0.5px;line-height:1}
 .hdr-sub{font-size:.8rem;color:#aaa;margin-top:4px}
@@ -161,6 +196,8 @@ export default function StudyDesk() {
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
+  const [showReleases, setShowReleases] = useState(false);
+  const [releaseViewed, setReleaseViewed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [addingA, setAddingA] = useState(false);
   const [addingC, setAddingC] = useState(false);
@@ -186,16 +223,25 @@ export default function StudyDesk() {
   const [af, setAf] = useState(emptyAF);
   const [cf, setCf] = useState(emptyCF);
 
+  const saveReady=useRef(false);
+
   useEffect(()=>{
-    (async()=>{
-      try{const r=await window.storage.get(STORAGE_KEY);if(r){const d=JSON.parse(r.value);setAssignments(d.a||[]);setClasses(d.c||[]);}}catch{}
+    try{
+      const d=localStorage.getItem(STORAGE_KEY);
+      if(d){const p=JSON.parse(d);setAssignments(p.a||[]);setClasses(p.c||[]);}
+    }catch{}
+    // Use timeout so state updates from above settle before we allow saving
+    setTimeout(()=>{
+      saveReady.current=true;
       setLoaded(true);
-    })();
+    },50);
+    const seenVersion=localStorage.getItem("studydesk-seen-version");
+    if(seenVersion!==APP_VERSION) setShowReleases(true);
   },[]);
 
   useEffect(()=>{
-    if(!loaded)return;
-    (async()=>{try{await window.storage.set(STORAGE_KEY,JSON.stringify({a:assignments,c:classes}));}catch{}})();
+    if(!saveReady.current)return;
+    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({a:assignments,c:classes}));}catch{}
   },[assignments,classes,loaded]);
 
   function getExportUrl(rawUrl){const id=extractId(rawUrl.trim());if(!id)return null;return`https://docs.google.com/presentation/d/${id}/export/txt`;}
@@ -221,6 +267,12 @@ export default function StudyDesk() {
   }
 
   function resetImport(){setImportUrl("");setPasteText("");setCanvasPaste("");setImportResult(null);setImportStep("url");setCanvasStatus("");setAgendaUrl("");setFetchStatus("");setAgendaStep("url");setAgendaDocText("");setAgendaSlideLinks([]);setAgendaSlideTexts([]);}
+
+  function dismissReleases(){
+    localStorage.setItem("studydesk-seen-version", APP_VERSION);
+    setShowReleases(false);
+    setReleaseViewed(true);
+  }
 
   function confirmImport(){
     const toAdd=(importResult?.assignments||[]).map(a=>({...a,id:Date.now().toString()+Math.random(),progress:0}));
@@ -718,6 +770,10 @@ async function run(){
             <div className="hdr-sub">{dateStr}</div>
           </div>
           <div style={{display:"flex",gap:8,alignItems:"center",flexWrap:"wrap"}}>
+            <button className="btn btn-g" onClick={()=>{setShowReleases(true);}} style={{fontSize:".75rem",padding:"6px 12px",position:"relative"}}>
+              🚀 Releases
+              {localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid #FAF7F2"}}/>}
+            </button>
             <button className="btn btn-p" style={{background:"#1B1F3B"}} onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>📥 Import</button>
             <button className="btn btn-p" onClick={()=>setAddingA(true)}>+ Add</button>
           </div>
@@ -1090,6 +1146,48 @@ async function run(){
           </div>
         </div>
       )}
+      {/* RELEASE MODAL */}
+      {showReleases&&(
+        <div className="release-overlay" onClick={e=>{if(e.target===e.currentTarget)dismissReleases();}}>
+          <div className="release-box">
+            <div className="release-hd">
+              <div>
+                <div className="release-title">
+                  {localStorage.getItem("studydesk-seen-version")!==APP_VERSION?"🎉 What's New":"📋 Release Notes"}
+                </div>
+                <div className="release-sub">StudyDesk v{APP_VERSION}</div>
+              </div>
+              <button onClick={dismissReleases} style={{background:"none",border:"none",cursor:"pointer",color:"#bbb",fontSize:"1.3rem",lineHeight:1,padding:4}}>✕</button>
+            </div>
+            <div className="release-body">
+              {RELEASES.map((r,i)=>(
+                <div key={r.version} className="release-entry">
+                  <div className="release-ver">
+                    <span className="release-badge">v{r.version}</span>
+                    <span className="release-date">{r.date}</span>
+                    {i===0&&<span style={{background:"#f0fdf4",color:"#16a34a",fontSize:".65rem",fontWeight:700,padding:"2px 8px",borderRadius:20}}>Latest</span>}
+                  </div>
+                  <div className="release-name">{r.title}</div>
+                  <div className="release-changes">
+                    {r.changes.map((c,j)=>(
+                      <div key={j} className="release-change">
+                        <span className="release-dot">✦</span>
+                        <span>{c}</span>
+                      </div>
+                    ))}
+                  </div>
+                  {i<RELEASES.length-1&&<div style={{borderBottom:"1.5px solid #EDE9E2",marginTop:20}}/>}
+                </div>
+              ))}
+            </div>
+            <div style={{padding:"14px 24px",borderTop:"1.5px solid #EDE9E2"}}>
+              <button className="btn btn-p" style={{width:"100%",justifyContent:"center"}} onClick={dismissReleases}>
+                Got it ✓
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
-} // End of App component
+}
