@@ -2145,17 +2145,7 @@ async function run(){
   const todayStr2=new Date().toISOString().split("T")[0];
   const todayCnt=game.dailyDate===todayStr2?game.dailyCount:0;
 
-  if(authLoading) return(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0}:root{--bg:#F5F2EC}.dark{--bg:#0F1117}body{background:var(--bg)}`}</style>
-      <div style={{textAlign:"center"}}>
-        <div style={{fontSize:"2.5rem",marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>📚</div>
-        <div style={{fontSize:".9rem",color:"#888",fontWeight:600}}>Loading...</div>
-      </div>
-    </div>
-  );
-
-  // ── /admin route ─────────────────────────────────────────────────────────
+  // ── /admin route — checked BEFORE authLoading so it never shows blank/spinner ──
   if(isAdminRoute){
     if(!user){
       return <AuthScreen adminMode adminEmail={ADMIN_EMAIL} onAuth={u=>{
@@ -2205,6 +2195,16 @@ async function run(){
       </div>
     );
   }
+
+  if(authLoading) return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0}:root{--bg:#F5F2EC}.dark{--bg:#0F1117}body{background:var(--bg)}`}</style>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:"2.5rem",marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>📚</div>
+        <div style={{fontSize:".9rem",color:"#888",fontWeight:600}}>Loading...</div>
+      </div>
+    </div>
+  );
 
   if(!user) return <AuthScreen onAuth={u=>{setUser(u);fbLoadData(u.uid,u.idToken).then(d=>{if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}saveReady.current=true;setLoaded(true);const sv=localStorage.getItem("studydesk-seen-version");if(sv!==APP_VERSION)setShowReleases(true);});}}/>;
 
