@@ -1045,8 +1045,15 @@ export default function StudyDesk() {
 
   const saveReady=useRef(false);
 
-  // Restore session on mount
+  // Restore session on mount — always force fresh login on /admin route
   useEffect(()=>{
+    const onAdminRoute = window.location.hash==="#/admin" || window.location.pathname==="/admin" || window.location.pathname.endsWith("/admin");
+    if(onAdminRoute){
+      // Clear any existing session so admin must always sign in fresh
+      fbClearSession();
+      setAuthLoading(false);
+      return;
+    }
     const session=fbGetSession();
     if(session){
       setUser(session);
