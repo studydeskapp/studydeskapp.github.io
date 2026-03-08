@@ -1215,7 +1215,40 @@ export default function StudyDesk() {
     setReleaseViewed(true);
   }
 
-  function confirmImport(){const toAdd=(importResult?.assignments||[]).map(a=>({...a,id:Date.now().toString()+Math.random(),progress:0}));setAssignments(p=>[...p,...toAdd]);setImportOpen(false);resetImport();setTab("assignments");checkUnknown(toAdd);if(user&&toAdd.length)fbIncrementStat("totalAssignments",toAdd.length,user.idToken);}
+  function confirmImport(){
+    const incoming=importResult?.assignments||[];
+    setAssignments(prev=>{
+      let updated=[...prev];
+      const toAdd=[];
+      for(const a of incoming){
+        // Try to find existing match by canvasId or title+subject
+        const match=updated.find(ex=>
+          (a.canvasId&&ex.canvasId===a.canvasId)||
+          (ex.title.toLowerCase().trim()===a.title.toLowerCase().trim()&&
+           (!a.subject||!ex.subject||ex.subject.toLowerCase()===a.subject.toLowerCase()))
+        );
+        if(match){
+          // Update with Canvas data
+          updated=updated.map(ex=>ex.id===match.id?{
+            ...ex,
+            ...(a.canvasId?{canvasId:a.canvasId}:{}),
+            subject:a.subject||ex.subject,
+            dueDate:a.dueDate||ex.dueDate,
+            priority:a.priority||ex.priority,
+            progress:Math.max(ex.progress,a.progress),
+            ...(a.grade!=null?{grade:a.grade,gradeRaw:a.gradeRaw}:{}),
+            ...(a.pointsPossible?{pointsPossible:a.pointsPossible}:{}),
+          }:ex);
+        } else {
+          toAdd.push({...a,id:Date.now().toString()+Math.random().toString(36).slice(2)});
+        }
+      }
+      if(toAdd.length&&user) fbIncrementStat("totalAssignments",toAdd.length,user.idToken);
+      checkUnknown(toAdd);
+      return [...updated,...toAdd];
+    });
+    setImportOpen(false);resetImport();setTab("assignments");
+  }
 
   const todayStr = new Date().toISOString().split("T")[0];
   const CANVAS_URL = `https://naperville.instructure.com/api/v1/planner/items?per_page=100&start_date=${todayStr}`;
@@ -1251,6 +1284,72 @@ export default function StudyDesk() {
       if(assignments.length===0)throw new Error("No upcoming assignments found in that data.");
       setImportResult({assignments,source:"canvas"});
     }catch(e){setImportResult({error:e.message});}
+    setImporting(false);
+  }
+
+  async function importFromCanvasAPI(){
+    setImporting(true); setImportResult(null);
+    try{
+      const today=new Date(); today.setHours(0,0,0,0);
+      const startDate=today.toISOString().split("T")[0];
+      // Fetch ALL pages of upcoming assignments
+      let allItems=[];
+      let url=`${canvasBaseUrl}/api/v1/planner/items?per_page=100&start_date=${startDate}`;
+      let pageCount=0;
+      while(url&&pageCount<20){
+        pageCount++;
+        const tryDirect=async()=>{
+          const r=await fetch(url,{headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},signal:AbortSignal.timeout(10000)});
+          if(!r.ok) throw new Error(`Canvas API returned ${r.status} — check your token`);
+          // Get next page from Link header
+          const link=r.headers.get("Link")||"";
+          const nextMatch=link.match(/<([^>]+)>;\s*rel="next"/);
+          const nextUrl=nextMatch?nextMatch[1]:null;
+          const data=await r.json();
+          return{data,nextUrl};
+        };
+        let result;
+        try{ result=await tryDirect(); }
+        catch(e){
+          // CORS fallback
+          const proxyUrl=`https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+          const r=await fetch(proxyUrl,{headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},signal:AbortSignal.timeout(12000)});
+          if(!r.ok) throw new Error(`Canvas API returned ${r.status}`);
+          const data=await r.json();
+          result={data,nextUrl:null}; // proxy doesn't expose Link header
+        }
+        if(!Array.isArray(result.data)) throw new Error("Unexpected response from Canvas");
+        allItems=[...allItems,...result.data];
+        url=result.nextUrl||null;
+      }
+
+      if(allItems.length===0) throw new Error("No upcoming assignments found on Canvas.");
+
+      // Parse into assignment objects
+      const parsed=allItems
+        .filter(item=>["assignment","quiz","discussion_topic","wiki_page"].includes(item.plannable_type))
+        .map(item=>{
+          const dueDate=item.plannable_date?item.plannable_date.split("T")[0]:"";
+          const days=dueDate?(new Date(dueDate+"T00:00:00")-today)/86400000:99;
+          const submitted=item.submissions?.submitted||false;
+          const score=item.submissions?.score??null;
+          const pointsPossible=item.plannable?.points_possible??null;
+          return{
+            canvasId:String(item.plannable_id||""),
+            title:item.plannable?.title||item.plannable_type,
+            subject:item.context_name||"Unknown",
+            dueDate,
+            priority:days<=1?"high":days<=5?"medium":"low",
+            progress:submitted?100:0,
+            notes:pointsPossible?`${pointsPossible} pts`:"",
+            pointsPossible,
+            ...(score!==null&&pointsPossible?{grade:Math.round((score/pointsPossible)*100),gradeRaw:`${score}/${pointsPossible}`}:{})
+          };
+        });
+
+      if(parsed.length===0) throw new Error("No assignments or quizzes found.");
+      setImportResult({assignments:parsed,source:"canvas",total:allItems.length});
+    }catch(e){ setImportResult({error:e.message}); }
     setImporting(false);
   }
 
@@ -2864,28 +2963,65 @@ async function run(){
             {/* CANVAS */}
             {importMode==="canvas"&&!importResult&&!importing&&(
               <>
-                <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"12px 14px",marginBottom:14}}>
-                  <div style={{fontSize:".79rem",fontWeight:700,color:"#4338ca",marginBottom:10}}>3 steps — no console needed:</div>
-                  <div className="import-step"><div className="import-num" style={{background:"#4338ca"}}>1</div>
-                    <div className="import-txt">
-                      Make sure you're logged into Canvas, then open this link in a new tab:
-                      <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,position:"relative"}}>
+                {canvasToken?(
+                  /* ── Connected: one-click import ── */
+                  <>
+                    <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
+                      <div style={{width:36,height:36,borderRadius:10,background:"#4338ca",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.1rem",flexShrink:0}}>🎓</div>
+                      <div>
+                        <div style={{fontWeight:700,color:"#4338ca",fontSize:".85rem"}}>Canvas connected</div>
+                        <div style={{fontSize:".72rem",color:"#6366f1",marginTop:2}}>{canvasBaseUrl}</div>
+                      </div>
+                      <div style={{marginLeft:"auto",fontSize:".7rem",color:"#6366f1",fontWeight:600,cursor:"pointer",textDecoration:"underline"}} onClick={()=>{setImportOpen(false);resetImport();setShowCanvasSetup(true);}}>Change</div>
+                    </div>
+                    <div style={{fontSize:".8rem",color:"var(--text3)",marginBottom:18,lineHeight:1.6}}>
+                      This will fetch <b>all upcoming assignments</b> from Canvas and add them to StudyDesk. Assignments already in your list will be updated with the latest Canvas data.
+                    </div>
+                    <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
+                      {[
+                        ["📥","Fetches every upcoming assignment, quiz, and discussion"],
+                        ["🔄","Updates due dates, grades, and submission status on existing assignments"],
+                        ["✅","Marks submitted assignments as 100% complete"],
+                        ["📚","Pulls the class name from Canvas automatically"],
+                      ].map(([icon,text])=>(
+                        <div key={text} style={{display:"flex",gap:10,alignItems:"center",fontSize:".8rem",color:"var(--text2)"}}>
+                          <span style={{fontSize:"1rem"}}>{icon}</span>{text}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="mactions">
+                      <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Cancel</button>
+                      <button className="btn btn-p" style={{background:"#4338ca",minWidth:160}} onClick={importFromCanvasAPI}>
+                        🎓 Import All Assignments
+                      </button>
+                    </div>
+                  </>
+                ):(
+                  /* ── Not connected: show connect prompt + manual paste fallback ── */
+                  <>
+                    <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"13px 15px",marginBottom:14}}>
+                      <div style={{fontWeight:700,color:"#4338ca",fontSize:".84rem",marginBottom:6}}>🎓 Connect Canvas for one-click import</div>
+                      <div style={{fontSize:".77rem",color:"#6366f1",marginBottom:10}}>Connect your Canvas API token once and import all assignments with a single button — no copy-pasting ever again.</div>
+                      <button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>{setImportOpen(false);resetImport();setShowCanvasSetup(true);}}>Connect Canvas →</button>
+                    </div>
+                    <div style={{fontSize:".72rem",fontWeight:700,color:"var(--text4)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Or import manually</div>
+                    <div style={{background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,padding:"12px 14px",marginBottom:14,fontSize:".78rem",color:"var(--text3)"}}>
+                      <div style={{marginBottom:8}}><b style={{color:"var(--text2)"}}>Step 1:</b> Open this link while logged into Canvas:</div>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:10}}>
                         <a href={CANVAS_URL} target="_blank" rel="noreferrer" style={{fontSize:".68rem",fontFamily:"monospace",color:"#4338ca",wordBreak:"break-all",flex:1}}>{CANVAS_URL}</a>
                         <CopyBtn text={CANVAS_URL}/>
                       </div>
+                      <div><b style={{color:"var(--text2)"}}>Step 2:</b> Press Ctrl+A, Ctrl+C, then paste below</div>
                     </div>
-                  </div>
-                  <div className="import-step"><div className="import-num" style={{background:"#4338ca"}}>2</div><div className="import-txt">You'll see a page full of text — press <b>Ctrl+A</b> then <b>Ctrl+C</b> to copy all of it</div></div>
-                  <div className="import-step"><div className="import-num" style={{background:"#4338ca"}}>3</div><div className="import-txt">Paste it in the box below and hit Import!</div></div>
-                </div>
-                <div className="fg">
-                  <label className="flbl">Paste Canvas data here</label>
-                  <textarea className="ftxt" style={{minHeight:80,fontFamily:"monospace",fontSize:".75rem"}} value={canvasPaste} onChange={e=>setCanvasPaste(e.target.value)} placeholder="Paste the page contents here..."/>
-                </div>
-                <div className="mactions">
-                  <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Cancel</button>
-                  <button className="btn btn-p" style={{background:"#4338ca"}} onClick={importFromCanvasPaste} disabled={!canvasPaste.trim()}>🎓 Import Assignments</button>
-                </div>
+                    <div className="fg">
+                      <textarea className="ftxt" style={{minHeight:70,fontFamily:"monospace",fontSize:".75rem"}} value={canvasPaste} onChange={e=>setCanvasPaste(e.target.value)} placeholder="Paste Canvas page contents here..."/>
+                    </div>
+                    <div className="mactions">
+                      <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Cancel</button>
+                      <button className="btn btn-p" style={{background:"#4338ca"}} onClick={importFromCanvasPaste} disabled={!canvasPaste.trim()}>Import</button>
+                    </div>
+                  </>
+                )}
               </>
             )}
 
@@ -3039,7 +3175,7 @@ async function run(){
               <>
                 <div className="success-box">
                   ✅ Found {importResult.assignments.length} assignment{importResult.assignments.length!==1?"s":""}
-                  {importResult.source==="canvas"?" from Canvas":importResult.source==="agenda"?` from agenda${importResult.slideCount>0?` + ${importResult.slideCount} slide deck${importResult.slideCount!==1?"s":""}`:""}`:" from slides"}
+                  {importResult.source==="canvas"?` from Canvas (${importResult.total||importResult.assignments.length} total)`:importResult.source==="agenda"?` from agenda${importResult.slideCount>0?` + ${importResult.slideCount} slide deck${importResult.slideCount!==1?"s":""}`:""}`:" from slides"}
                   {" — remove any you don't want"}
                 </div>
                 <div className="apreview">
