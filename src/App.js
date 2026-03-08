@@ -47,7 +47,11 @@ async function fbResetPassword(email) {
 async function fbSendVerificationEmail(idToken) {
   const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
     method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({requestType:"VERIFY_EMAIL", idToken})
+    body: JSON.stringify({
+      requestType:"VERIFY_EMAIL",
+      idToken,
+      continueUrl:"https://studydeskapp.github.io"
+    })
   });
   const d = await r.json();
   if(d.error) throw new Error(d.error.message);
@@ -659,20 +663,29 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
     const t=setInterval(()=>setResendCooldown(c=>{if(c<=1){clearInterval(t);return 0;}return c-1;}),1000);
   }
 
+  async function checkVerified(u, manual=false){
+    try{
+      const verified=await fbCheckEmailVerified(u.idToken);
+      if(verified){
+        clearInterval(pollRef.current);
+        setVerifyPolling(false);
+        fbSetSession(u);
+        fbIncrementStat("totalUsers",1,u.idToken);
+        onAuth(u);
+        return true;
+      } else if(manual){
+        setErr("Email not verified yet — make sure you clicked the link in your inbox.");
+      }
+    }catch(e){
+      if(manual) setErr("Couldn't check verification status. Try again.");
+    }
+    return false;
+  }
+
   function startPolling(u){
     setVerifyPolling(true);
-    pollRef.current=setInterval(async()=>{
-      try{
-        const verified=await fbCheckEmailVerified(u.idToken);
-        if(verified){
-          clearInterval(pollRef.current);
-          setVerifyPolling(false);
-          fbSetSession(u);
-          fbIncrementStat("totalUsers",1,u.idToken);
-          onAuth(u);
-        }
-      }catch{}
-    },3000);
+    // Poll every 5 seconds — less aggressive than 3s
+    pollRef.current=setInterval(()=>checkVerified(u), 5000);
   }
 
   async function handleResend(){
@@ -832,19 +845,36 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
               <div style={{fontSize:".78rem",color:txt3,marginBottom:24,lineHeight:1.6}}>
                 Click the link in the email to verify your account. This page will update automatically once verified.
               </div>
-              {/* Polling indicator */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:20,fontSize:".78rem",color:txt3}}>
-                <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",animation:"pulse 1.5s ease-in-out infinite"}}/>
-                Waiting for verification...
+              {/* Steps */}
+              <div style={{textAlign:"left",marginBottom:20,background:bg3,borderRadius:12,padding:"12px 14px"}}>
+                {[
+                  "Open the email from StudyDesk in your inbox",
+                  "Click the verification link inside it",
+                  "Come back here — you'll be signed in automatically",
+                ].map((t,i)=>(
+                  <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:i<2?8:0}}>
+                    <div style={{width:20,height:20,borderRadius:"50%",background:acc,color:"#fff",fontSize:".65rem",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
+                    <div style={{fontSize:".78rem",color:txt2||txt}}>{t}</div>
+                  </div>
+                ))}
               </div>
-              {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"9px 12px",fontSize:".78rem",color:darkMode?"#f87171":"#dc2626",marginBottom:14}}>{err}</div>}
+              {/* Polling indicator */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16,fontSize:".75rem",color:txt3}}>
+                <div style={{width:7,height:7,borderRadius:"50%",background:"#10b981",animation:"pulse 1.5s ease-in-out infinite"}}/>
+                Checking automatically every 5 seconds...
+              </div>
+              {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"9px 12px",fontSize:".78rem",color:darkMode?"#f87171":"#dc2626",marginBottom:14,textAlign:"left"}}>{err}</div>}
               <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+                <button onClick={()=>{setErr("");checkVerified(verifyUser,true);}}
+                  style={{width:"100%",padding:"12px",borderRadius:11,border:"none",background:acc,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".88rem",cursor:"pointer"}}>
+                  ✓ I've clicked the link
+                </button>
                 <button onClick={handleResend} disabled={resendCooldown>0||resendLoading}
-                  style={{width:"100%",padding:"11px",borderRadius:11,border:`1.5px solid ${bd}`,background:"transparent",color:resendCooldown>0?txt3:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".85rem",cursor:resendCooldown>0?"not-allowed":"pointer"}}>
-                  {resendLoading?"Sending...":`Resend Email${resendCooldown>0?` (${resendCooldown}s)`:""}`}
+                  style={{width:"100%",padding:"10px",borderRadius:11,border:`1.5px solid ${bd}`,background:"transparent",color:resendCooldown>0?txt3:acc,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".83rem",cursor:resendCooldown>0?"not-allowed":"pointer"}}>
+                  {resendLoading?"Sending...":`📨 Resend Email${resendCooldown>0?` (${resendCooldown}s)`:""}`}
                 </button>
                 <button onClick={handleCancelVerify}
-                  style={{width:"100%",padding:"10px",borderRadius:11,border:"none",background:"transparent",color:txt3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,fontSize:".8rem",cursor:"pointer",textDecoration:"underline"}}>
+                  style={{width:"100%",padding:"8px",borderRadius:11,border:"none",background:"transparent",color:txt3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,fontSize:".78rem",cursor:"pointer",textDecoration:"underline"}}>
                   Cancel & use a different email
                 </button>
               </div>
