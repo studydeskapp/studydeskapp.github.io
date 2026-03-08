@@ -794,7 +794,7 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   );
 }
 
-function AdminPanel({user, onClose}){
+function AdminPanel({user, onClose, inline=false}){
   const [pass, setPass] = useState("");
   const [authed, setAuthed] = useState(false);
   const [stats, setStats] = useState(null);
@@ -831,10 +831,8 @@ function AdminPanel({user, onClose}){
     {label:"Total Points Earned",value:stats?.totalPoints??"-",icon:"⭐",color:"#f97316"},
   ];
 
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
-      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,width:"100%",maxWidth:700,maxHeight:"88vh",overflow:"auto",boxShadow:`0 32px 80px ${sh}`,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+  if(inline) return(
+    <div style={{background:card,borderRadius:24,width:"100%",fontFamily:"'Plus Jakarta Sans',sans-serif",border:`1.5px solid ${bd}`}}>
 
         {/* Header */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 28px 18px",borderBottom:`1.5px solid ${bd}`,position:"sticky",top:0,background:card,zIndex:1,borderRadius:"24px 24px 0 0"}}>
@@ -949,6 +947,14 @@ function AdminPanel({user, onClose}){
           )}
         </div>
       </div>
+  );
+  // Modal overlay version (default)
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,width:"100%",maxWidth:700,maxHeight:"88vh",overflow:"auto",boxShadow:`0 32px 80px ${sh}`,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <div style={{padding:"22px 28px 28px"}}><div style={{color:"#ef4444",fontSize:".85rem"}}>Render error — use inline prop</div></div>
+      </div>
     </div>
   );
 }
@@ -977,6 +983,11 @@ export default function StudyDesk() {
     logoTimer.current=setTimeout(()=>{logoClicks.current=0;},1800);
     // 5-click logo trick disabled — use /admin route instead
   }
+  // /admin route detection
+  const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
+  const isAdminRoute = window.location.hash==="#/admin" || window.location.pathname==="/admin" || window.location.pathname.endsWith("/admin");
+  const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
+
   const [authLoading, setAuthLoading] = useState(true);
   const [game, setGame] = useState({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});
   const [shopCat, setShopCat] = useState("all");
@@ -2136,6 +2147,57 @@ async function run(){
       </div>
     </div>
   );
+
+  // ── /admin route ─────────────────────────────────────────────────────────
+  if(isAdminRoute){
+    if(!user){
+      return <AuthScreen adminMode adminEmail={ADMIN_EMAIL} onAuth={u=>{
+        setUser(u);
+        fbLoadData(u.uid,u.idToken).then(d=>{
+          if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}
+          saveReady.current=true;
+        });
+        if(u.email!==ADMIN_EMAIL){
+          // Wrong account — boot them
+          setTimeout(()=>{fbClearSession();setUser(null);},100);
+        }
+      }}/>;
+    }
+    if(user.email!==ADMIN_EMAIL){
+      return(
+        <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"#0F1117",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+          <div style={{background:"#161921",border:"1.5px solid #262B3C",borderRadius:20,padding:"40px 32px",textAlign:"center",maxWidth:380}}>
+            <div style={{fontSize:"2.5rem",marginBottom:12}}>🚫</div>
+            <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.3rem",fontWeight:700,color:"#DDE2F5",marginBottom:8}}>Access Denied</div>
+            <div style={{fontSize:".85rem",color:"#5C6480",marginBottom:24}}>
+              <b style={{color:"#DDE2F5"}}>{user.email}</b> doesn't have admin access.
+            </div>
+            <button onClick={()=>{fbClearSession();setUser(null);}}
+              style={{padding:"10px 24px",borderRadius:12,border:"none",background:"#6366f1",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,cursor:"pointer",fontSize:".85rem"}}>
+              ↩ Sign in with a different account
+            </button>
+          </div>
+        </div>
+      );
+    }
+    // Correct email — show full admin panel
+    return(
+      <div style={{minHeight:"100vh",background:"#0F1117",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+        <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
+        <div style={{padding:"14px 24px",borderBottom:"1px solid #262B3C",display:"flex",alignItems:"center",gap:12,background:"#161921",position:"sticky",top:0,zIndex:10}}>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.15rem",fontWeight:700,color:"#DDE2F5"}}>📊 StudyDesk Admin</div>
+          <div style={{marginLeft:"auto",fontSize:".74rem",color:"#5C6480"}}>{user.email}</div>
+          <button onClick={()=>{fbClearSession();setUser(null);window.location.hash="";}}
+            style={{padding:"6px 14px",borderRadius:9,border:"1.5px solid #262B3C",background:"transparent",color:"#5C6480",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".78rem",cursor:"pointer"}}>
+            ↩ Exit
+          </button>
+        </div>
+        <div style={{padding:"28px 24px",maxWidth:960,margin:"0 auto"}}>
+          <AdminPanel user={user} onClose={()=>{}}/>
+        </div>
+      </div>
+    );
+  }
 
   if(!user) return <AuthScreen onAuth={u=>{setUser(u);fbLoadData(u.uid,u.idToken).then(d=>{if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}saveReady.current=true;setLoaded(true);const sv=localStorage.getItem("studydesk-seen-version");if(sv!==APP_VERSION)setShowReleases(true);});}}/>;
 
