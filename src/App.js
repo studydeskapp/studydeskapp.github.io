@@ -47,7 +47,7 @@ async function fbResetPassword(email) {
 // ── Google Identity Services sign-in ─────────────────────────────────────────
 // IMPORTANT: Replace the value below with your real Web Client ID from:
 // Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID
-const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID";
+const GOOGLE_CLIENT_ID = "354710751847-29cuupcg436t4uubpa212ftg341s9t6p.apps.googleusercontent.com";
 
 function loadGSI() {
   return new Promise(resolve => {
