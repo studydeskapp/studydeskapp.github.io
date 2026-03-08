@@ -796,7 +796,7 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
 
 function AdminPanel({user, onClose, inline=false}){
   const [pass, setPass] = useState("");
-  const [authed, setAuthed] = useState(false);
+  const [authed, setAuthed] = useState(inline); // skip password gate when shown via /admin route
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setPassErr] = useState("");
@@ -811,6 +811,7 @@ function AdminPanel({user, onClose, inline=false}){
     const s=await fbGetAdminStats(user.idToken);
     setStats(s);setLoading(false);
   }
+  useEffect(()=>{ if(inline&&user) loadStats(); },[]);
 
   function tryLogin(){
     if(pass===ADMIN_PASS){setAuthed(true);loadStats();}
@@ -831,8 +832,8 @@ function AdminPanel({user, onClose, inline=false}){
     {label:"Total Points Earned",value:stats?.totalPoints??"-",icon:"⭐",color:"#f97316"},
   ];
 
-  if(inline) return(
-    <div style={{background:card,borderRadius:24,width:"100%",fontFamily:"'Plus Jakarta Sans',sans-serif",border:`1.5px solid ${bd}`}}>
+  const panelContent=(
+    <div style={{background:card,borderRadius:inline?24:24,width:"100%",fontFamily:"'Plus Jakarta Sans',sans-serif",border:`1.5px solid ${bd}`,maxHeight:inline?"none":"88vh",overflow:inline?"visible":"auto",boxShadow:inline?"none":`0 32px 80px ${sh}`}}>
 
         {/* Header */}
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 28px 18px",borderBottom:`1.5px solid ${bd}`,position:"sticky",top:0,background:card,zIndex:1,borderRadius:"24px 24px 0 0"}}>
@@ -948,12 +949,12 @@ function AdminPanel({user, onClose, inline=false}){
         </div>
       </div>
   );
-  // Modal overlay version (default)
+  if(inline) return panelContent;
   return(
     <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
       onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,width:"100%",maxWidth:700,maxHeight:"88vh",overflow:"auto",boxShadow:`0 32px 80px ${sh}`,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-        <div style={{padding:"22px 28px 28px"}}><div style={{color:"#ef4444",fontSize:".85rem"}}>Render error — use inline prop</div></div>
+      <div style={{maxWidth:700,width:"100%"}}>
+        {panelContent}
       </div>
     </div>
   );
@@ -2190,7 +2191,7 @@ async function run(){
           </button>
         </div>
         <div style={{padding:"28px 24px",maxWidth:960,margin:"0 auto"}}>
-          <AdminPanel user={user} onClose={()=>{}}/>
+          <AdminPanel user={user} onClose={()=>{}} inline/>
         </div>
       </div>
     );
