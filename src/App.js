@@ -192,11 +192,21 @@ async function fbGetAdminStats(idToken) {
     const online=allP.filter(p=>{const ls=p.fields?.lastSeen?.timestampValue;return ls&&new Date(ls)>twoMin;})
       .map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||"",lastSeen:p.fields?.lastSeen?.timestampValue}));
     const allUsers=(uSnap.documents||[]).map(u=>({email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
+    // Use actual document counts from Firestore — more reliable than manual counters
+    const totalUsersReal = Math.max(gi(g.totalUsers), allUsers.length, allP.length);
+    const today = new Date().toISOString().split("T")[0];
+    const newToday = allP.filter(p=>{
+      const ls=p.fields?.lastSeen?.timestampValue;
+      return ls&&ls.startsWith(today);
+    }).length;
     return{
-      totalUsers:gi(g.totalUsers),onlineNow:online.length,onlineUsers:online,
+      totalUsers:totalUsersReal,
+      onlineNow:online.length,onlineUsers:online,
       totalAssignments:gi(g.totalAssignments),totalSubmitted:gi(g.totalSubmitted),
       totalClasses:gi(g.totalClasses),totalPoints:gi(g.totalPoints),
-      newUsersToday:gi(g.totalUsers),allUsers,
+      newUsersToday:newToday,
+      allUsers: allUsers.length > 0 ? allUsers :
+        allP.map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||""})),
     };
   }catch(e){console.warn("Admin error",e);return null;}
 }
