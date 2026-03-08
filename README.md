@@ -1,70 +1,183 @@
-# Getting Started with Create React App
+# 📚 StudyDesk
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+> A smart homework tracker for high school students — built with React, Firebase, and Canvas API integration.
 
-## Available Scripts
+**Live app → [studydeskapp.github.io](https://studydeskapp.github.io)**
 
-In the project directory, you can run:
+---
 
-### `npm start`
+## ✨ Features
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+### 📝 Assignment Tracking
+- Add assignments manually or import directly from Canvas
+- Priority levels (High / Medium / Low) with overdue detection
+- Progress tracking per assignment
+- Smart subject picker pulls from your schedule automatically
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+### 🎓 Canvas Integration
+- Connect your Canvas API token once — assignments import with one click
+- Pulls **all upcoming** assignments, quizzes, and discussions
+- Auto-syncs every **3 minutes** — marks assignments as done the moment you submit on Canvas
+- Grades sync automatically when posted, shown color-coded on every card (A=green, B=blue, C=yellow, F=red)
+- Manual refresh button in the header
 
-### `npm test`
+### 📈 Grades Tab
+- Per-class grade averages with letter grades (A+ through F)
+- Weighted scoring when points-possible data is available from Canvas
+- Expandable class cards showing every graded assignment
+- Overall average banner across all classes
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+### 📅 Schedule
+- Weekly timetable view with color-coded classes
+- Import your bell schedule directly by searching your school (80+ schools pre-loaded)
+- Day-specific bell times — supports rotating schedules, late-start Wednesdays, SOAR periods, etc.
+- Add classes manually with custom times and room numbers
 
-### `npm run build`
+### 🐣 Study Buddy
+- A virtual pet that grows as your streak increases (6 evolution stages)
+- Earns XP when you complete assignments
+- Equip accessories from the Shop (hats, glasses, capes, and more)
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+### ⭐ Points & Streaks
+- Earn 15 points per completed assignment
+- Daily streak — complete 3 assignments a day to keep it going
+- Scaling bonus points for longer streaks
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+### 🛍️ Shop
+- 12 accessories to customize your buddy
+- Spend points earned from completing assignments
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+### 🔐 Auth & Sync
+- Google sign-in or email/password via Firebase Authentication
+- All data synced to Firestore — works across devices
+- Live presence — see how many StudyDesk users are online
 
-### `npm run eject`
+---
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+## 🚀 Getting Started
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+### Prerequisites
+- Node.js 16+
+- A Firebase project with Authentication and Firestore enabled
+- (Optional) A Canvas API token from your school's Canvas instance
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+### Installation
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+```bash
+git clone https://github.com/studydeskapp/studydeskapp.github.io
+cd studydeskapp.github.io
+npm install
+npm start
+```
 
-## Learn More
+App runs at `http://localhost:3000`
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+### Deploy to GitHub Pages
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+```bash
+npm run deploy
+```
 
-### Code Splitting
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+## 🎓 Connecting Canvas
 
-### Analyzing the Bundle Size
+1. Open Canvas → click your profile picture → **Settings**
+2. Scroll to **Approved Integrations** → click **New Access Token**
+3. Name it `StudyDesk`, click **Generate Token**, copy it
+4. In StudyDesk, click **🎓 Connect Canvas** in the header and paste your token
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+Once connected, StudyDesk will auto-sync every 3 minutes. You can also hit the sync badge in the header to refresh manually anytime.
 
-### Making a Progressive Web App
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+## 🏫 Supported Schools (Bell Schedule Auto-Import)
 
-### Advanced Configuration
+Full day-specific bell schedules are built in for:
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+| School | District | Notes |
+|---|---|---|
+| Naperville Central High School | Naperville 203, IL | Full rotating schedule with SOAR |
+| Naperville North High School | Naperville 203, IL | Standard 8-period schedule |
 
-### Deployment
+For all other schools, StudyDesk searches the NCES database (~100,000 US public schools). If your school is found, you can enter your bell times once and they'll be saved for everyone at your school.
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+---
 
-### `npm run build` fails to minify
+## 🛠️ Tech Stack
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+| Layer | Tech |
+|---|---|
+| Frontend | React (Create React App) |
+| Auth | Firebase Authentication (Google + Email) |
+| Database | Cloud Firestore (REST API, no SDK) |
+| Hosting | GitHub Pages |
+| Canvas | Canvas LMS REST API |
+| School Search | OpenDataSoft NCES dataset + CORS proxy fallback |
+
+> No Firebase SDK — all Firestore and Auth calls use the REST API directly to keep the bundle small.
+
+---
+
+## 📦 Project Structure
+
+```
+src/
+  StudyDesk.jsx    # Entire app — single component file (~3400 lines)
+  index.js         # Entry point
+  App.js           # Renders StudyDesk
+public/
+  index.html
+```
+
+---
+
+## 🔒 Environment / Config
+
+All config is hardcoded in `StudyDesk.jsx` at the top of the file:
+
+```js
+const FB_KEY = "...";          // Firebase API key
+const FB_PROJECT = "...";      // Firebase project ID
+const GOOGLE_CLIENT_ID = "..."; // Google OAuth Web Client ID
+```
+
+To deploy your own instance, swap these values for your own Firebase project.
+
+---
+
+## 📋 Changelog
+
+### v1.3.0 — March 2026
+- Canvas one-click import (fetches all upcoming assignments via API)
+- Canvas auto-sync every 3 minutes
+- Grades tab with per-class averages and letter grades
+- School bell schedule import with 80+ schools pre-loaded
+- Google sign-in rebuilt with Google Identity Services
+- Cleaner header — username dropdown replaces separate sign-out button
+
+### v1.2.0 — March 2026
+- Dark mode
+- Redesigned dashboard with stat cards and overdue banner
+- Schedule reworked into two-panel layout
+- Smart subject picker
+
+### v1.1.0 — March 2026
+- Study Buddy with 6 evolution stages
+- Points, streaks, and daily quests
+- Shop with 12 accessories
+
+### v1.0.0 — March 2026
+- Initial launch
+- Assignment tracking with Canvas, Google Slides, and Agenda import
+- Weekly schedule view
+
+---
+
+## 💡 Feedback & Suggestions
+
+Use the **💡 Suggest** button inside the app to send feature ideas or bug reports directly.
+
+---
+
+*Built for Naperville 203 students — works for any school with Canvas.*
