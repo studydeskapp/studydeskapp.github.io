@@ -589,7 +589,7 @@ function BuddyCreature({stage,eq={}}){
     </svg>
   );
 }
-function AuthScreen({onAuth}){
+function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -698,7 +698,13 @@ function AuthScreen({onAuth}){
         {/* Logo + title */}
         <div style={{width:56,height:56,background:`linear-gradient(135deg,${txt},${acc2})`,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.8rem",margin:"0 auto 16px"}}>📚</div>
         <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.75rem",fontWeight:700,color:txt,textAlign:"center",marginBottom:4}}>Study Desk</div>
-        <div style={{fontSize:".83rem",color:txt3,textAlign:"center",marginBottom:24}}>{mode==="login"?"Welcome back! Sign in to continue.":"Create your free account."}</div>
+        <div style={{fontSize:".83rem",color:txt3,textAlign:"center",marginBottom:adminMode?12:24}}>{mode==="login"?"Welcome back! Sign in to continue.":"Create your free account."}</div>
+        {adminMode&&(
+          <div style={{background:darkMode?"#1e1b4b":"#eef2ff",border:`1.5px solid ${darkMode?"#4338ca":"#c7d2fe"}`,borderRadius:12,padding:"10px 14px",marginBottom:20,textAlign:"center"}}>
+            <div style={{fontSize:".78rem",fontWeight:700,color:darkMode?"#a5b4fc":"#4338ca"}}>🔐 Admin Access Only</div>
+            <div style={{fontSize:".72rem",color:darkMode?"#818cf8":"#6366f1",marginTop:3}}>Sign in with <b>{adminEmail}</b></div>
+          </div>
+        )}
 
         {/* Sign in / Sign up toggle */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",background:bg3,borderRadius:12,padding:4,marginBottom:22,gap:4}}>
