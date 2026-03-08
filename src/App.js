@@ -1,8 +1,195 @@
 import { useState, useEffect, useRef } from "react";
 
+// ── Firebase REST API (no SDK needed) ────────────────────────────────────────
+const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
+const FB_PROJECT = "studydesk-1b251";
+const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
+const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+
+const IS_PREVIEW = false;
+
+async function fbSignUp(email, password, displayName) {
+  const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({email, password, returnSecureToken:true})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  if(displayName) {
+    await fetch(`${FB_AUTH}:update?key=${FB_KEY}`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({idToken:d.idToken, displayName, returnSecureToken:true})
+    });
+  }
+  return {uid:d.localId, email:d.email, displayName, idToken:d.idToken, photoURL:null};
+}
+
+async function fbSignIn(email, password) {
+  const r = await fetch(`${FB_AUTH}:signInWithPassword?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({email, password, returnSecureToken:true})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return {uid:d.localId, email:d.email, displayName:d.displayName||null, idToken:d.idToken, photoURL:d.photoUrl||null};
+}
+
+async function fbResetPassword(email) {
+  const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({requestType:"PASSWORD_RESET", email})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return true;
+}
+
+// ── Google Identity Services sign-in ─────────────────────────────────────────
+// IMPORTANT: Replace the value below with your real Web Client ID from:
+// Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID
+const GOOGLE_CLIENT_ID = "REPLACE_WITH_YOUR_WEB_CLIENT_ID";
+
+function loadGSI() {
+  return new Promise(resolve => {
+    if(window.google?.accounts?.id) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.onload = resolve;
+    document.head.appendChild(s);
+  });
+}
+
+async function fbGoogleSignIn() {
+  if(GOOGLE_CLIENT_ID === "REPLACE_WITH_YOUR_WEB_CLIENT_ID") {
+    throw new Error("Google sign-in not configured. See setup instructions.");
+  }
+  await loadGSI();
+  return new Promise((resolve, reject) => {
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: (response) => {
+        if(response.credential) {
+          resolve({ idToken: response.credential });
+        } else {
+          reject(new Error("No credential returned"));
+        }
+      },
+      cancel_on_tap_outside: true,
+    });
+    // Use a popup-style button click flow
+    window.google.accounts.id.prompt((notification) => {
+      if(notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        // Fallback: render a hidden button and click it
+        const div = document.createElement("div");
+        div.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99999;";
+        document.body.appendChild(div);
+        window.google.accounts.id.renderButton(div, {
+          type:"standard", theme:"outline", size:"large", text:"signin_with",
+          width: 300,
+        });
+        const btn = div.querySelector("div[role=button]");
+        if(btn) btn.click();
+        // Clean up div after sign-in
+        setTimeout(() => { try { document.body.removeChild(div); } catch{} }, 5000);
+      }
+    });
+  });
+}
+
+async function fbLoadData(uid, idToken) {
+  const r = await fetch(`${FB_FS}/users/${uid}`, {
+    headers:{"Authorization":`Bearer ${idToken}`}
+  });
+  if(r.status===404) return null;
+  const d = await r.json();
+  if(d.error) return null;
+  const raw = d.fields?.data?.stringValue;
+  return raw ? JSON.parse(raw) : null;
+}
+
+async function fbSaveData(uid, idToken, data) {
+  try {
+    await fetch(`${FB_FS}/users/${uid}?updateMask.fieldPaths=data`, {
+      method:"PATCH", headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
+      body: JSON.stringify({fields:{data:{stringValue:JSON.stringify(data)}}})
+    });
+  } catch(e) { console.warn("Save error", e); }
+}
+
+function fbGetSession() {
+  try { const s=localStorage.getItem("sd-session"); return s?JSON.parse(s):null; } catch{return null;}
+}
+function fbSetSession(user) {
+  try { localStorage.setItem("sd-session", user?JSON.stringify(user):""); } catch{}
+}
+function fbClearSession() {
+  try { localStorage.removeItem("sd-session"); } catch{}
+}
+
+const ADMIN_PASS = "studydesk2026";
+
+async function fbIncrementStat(field, amount, idToken) {
+  if(!amount) amount=1;
+  try{
+    await fetch(`https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents:commit?key=${FB_KEY}`,{
+      method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
+      body:JSON.stringify({writes:[{transform:{document:`projects/${FB_PROJECT}/databases/(default)/documents/analytics/global`,fieldTransforms:[{fieldPath:field,increment:{integerValue:amount}}]}}]})
+    });
+  }catch(e){console.warn("Stat error",e);}
+}
+
+async function fbUpdatePresence(user) {
+  try{
+    await fetch(`${FB_FS}/presence/${user.uid}?key=${FB_KEY}&updateMask.fieldPaths=lastSeen&updateMask.fieldPaths=email&updateMask.fieldPaths=displayName`,{
+      method:"PATCH",headers:{"Content-Type":"application/json","Authorization":`Bearer ${user.idToken}`},
+      body:JSON.stringify({fields:{lastSeen:{timestampValue:new Date().toISOString()},email:{stringValue:user.email},displayName:{stringValue:user.displayName||user.email.split("@")[0]}}})
+    });
+  }catch(e){console.warn("Presence error",e);}
+}
+
+async function fbGetAdminStats(idToken) {
+  try{
+    const [gSnap,pSnap,uSnap]=await Promise.all([
+      fetch(`${FB_FS}/analytics/global?key=${FB_KEY}`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
+      fetch(`${FB_FS}/presence?key=${FB_KEY}&pageSize=200`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
+      fetch(`${FB_FS}/users?key=${FB_KEY}&pageSize=200`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
+    ]);
+    const g=gSnap.fields||{};
+    const gi=f=>parseInt(f?.integerValue||f?.doubleValue||0);
+    const twoMin=new Date(Date.now()-2*60*1000);
+    const allP=(pSnap.documents||[]);
+    const online=allP.filter(p=>{const ls=p.fields?.lastSeen?.timestampValue;return ls&&new Date(ls)>twoMin;})
+      .map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||"",lastSeen:p.fields?.lastSeen?.timestampValue}));
+    const allUsers=(uSnap.documents||[]).map(u=>({email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
+    return{
+      totalUsers:gi(g.totalUsers),onlineNow:online.length,onlineUsers:online,
+      totalAssignments:gi(g.totalAssignments),totalSubmitted:gi(g.totalSubmitted),
+      totalClasses:gi(g.totalClasses),totalPoints:gi(g.totalPoints),
+      newUsersToday:gi(g.totalUsers),allUsers,
+    };
+  }catch(e){console.warn("Admin error",e);return null;}
+}
+
 const STORAGE_KEY = "hw-tracker-v1";
-const APP_VERSION = "1.2.0";
+const APP_VERSION = "1.3.0";
 const RELEASES = [
+  {
+    version: "1.3.0",
+    date: "08 March 2026",
+    title: "Canvas Sync, Grades & School Schedules",
+    changes: [
+      "🎓 Canvas auto-sync — connect your Canvas API token and assignments mark themselves done when you submit",
+      "📈 Grades tab — per-class averages, letter grades, weighted scores, and expandable assignment breakdowns",
+      "🏫 School schedule import — search your school and get bell times loaded automatically (Naperville Central fully supported with day-specific times)",
+      "🔄 Canvas syncs every 3 minutes in the background with a manual refresh button in the header",
+      "💯 Grades shown on every assignment card with color coding (green A, blue B, yellow C, red below)",
+      "🔐 Google sign-in fixed — now uses the official Google Identity Services library",
+      "👤 Click your username to sign out — cleaner header with no separate sign out button",
+      "🗑 Removed the redundant ＋ Add button from the header",
+      "🌐 School search now uses two APIs in parallel with a CORS proxy fallback for reliability",
+      "📚 80+ schools pre-loaded locally for instant search results (IL, CA, NY, TX, NJ, MA, VA, WA, GA)",
+    ]
+  },
   {
     version: "1.2.0",
     date: "03 March 2026",
@@ -275,6 +462,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .apreview-name{font-size:.83rem;font-weight:600;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .apreview-due{font-size:.7rem;color:var(--text3);white-space:nowrap}
 .spin{animation:spin .8s linear infinite;display:inline-block}
+.cv-spin{animation:spin .8s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
 .err-box{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#dc2626;margin-top:8px;line-height:1.5}
 .dark .err-box{background:#1c0000;border-color:#7f1d1d;color:#ff8080}
@@ -297,6 +485,26 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.6);backdrop-filter:blur(6px);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px}
 .prompt-modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:420px;border:1.5px solid var(--border);box-shadow:0 20px 50px var(--sh2)}
 @media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.pbar-wrap{display:none}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
+.auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px}
+.auth-card{background:var(--card);border:1.5px solid var(--border);border-radius:24px;padding:36px 32px;width:100%;max-width:420px;box-shadow:0 24px 60px var(--sh2)}
+.auth-logo{width:56px;height:56px;background:linear-gradient(135deg,var(--text),var(--accent2));border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 16px}
+.auth-title{font-family:'Fraunces',serif;font-size:1.7rem;font-weight:700;color:var(--text);text-align:center;margin-bottom:4px}
+.auth-sub{font-size:.82rem;color:var(--text3);text-align:center;margin-bottom:24px}
+.auth-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--bg3);border-radius:12px;padding:4px;margin-bottom:22px;gap:4px}
+.auth-tab{padding:8px;border-radius:9px;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:.84rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .15s;background:transparent}
+.auth-tab.on{background:var(--card);color:var(--text);box-shadow:0 2px 8px var(--sh)}
+.auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--text4);font-size:.75rem;font-weight:600}
+.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.google-btn{width:100%;padding:11px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.86rem;font-weight:600;color:var(--text);display:flex;align-items:center;justify-content:center;gap:10px;transition:all .15s;margin-bottom:4px}
+.google-btn:hover{background:var(--bg3);border-color:var(--border2);transform:translateY(-1px);box-shadow:0 4px 14px var(--sh)}
+.auth-btn{width:100%;padding:12px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-size:.88rem;font-weight:700;cursor:pointer;transition:all .18s;margin-top:4px}
+.auth-btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 18px var(--sh2)}
+.auth-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
+.auth-err{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#dc2626;margin-top:10px;line-height:1.5}
+.dark .auth-err{background:#350000;border-color:#7f1d1d;color:#f87171}
+.auth-user-pill{display:flex;align-items:center;gap:7px;background:var(--bg3);border:1.5px solid var(--border);border-radius:20px;padding:4px 10px 4px 6px;font-size:.75rem;font-weight:600;color:var(--text2)}
+.auth-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden}
+
 .prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.5);backdrop-filter:blur(6px);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px}
 .prompt-card{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:400px;border:1.5px solid var(--border);box-shadow:0 24px 60px var(--sh2);animation:slideUp .28s cubic-bezier(.34,1.56,.64,1) forwards}
 @keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
@@ -381,6 +589,364 @@ function BuddyCreature({stage,eq={}}){
     </svg>
   );
 }
+function AuthScreen({onAuth}){
+  const [mode, setMode] = useState("login");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [name, setName] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [err, setErr] = useState("");
+  const [resetSent, setResetSent] = useState(false);
+  const [showReset, setShowReset] = useState(false);
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetLoading, setResetLoading] = useState(false);
+
+  async function handleReset(){
+    if(!resetEmail){setErr("Enter your email first.");return;}
+    setResetLoading(true);setErr("");
+    try{
+      await fbResetPassword(resetEmail);
+      setResetSent(true);
+    } catch(e){
+      if(e.message==="PREVIEW_MODE") setErr("Password reset emails work on the deployed app, not in the preview.");
+      else {
+        const msgs={"EMAIL_NOT_FOUND":"No account found with that email.","INVALID_EMAIL":"Please enter a valid email."};
+        setErr(msgs[e.message]||e.message);
+      }
+    }
+    setResetLoading(false);
+  }
+  const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
+
+  async function handleSubmit(){
+    if(!email||!password)return;
+    if(mode==="signup"&&!name){setErr("Please enter your name.");return;}
+    setLoading(true);setErr("");
+    try{
+      let user;
+      if(mode==="login"){
+        user=await fbSignIn(email,password);
+      } else {
+        user=await fbSignUp(email,password,name);
+      }
+      fbSetSession(user);
+      if(mode==="signup"){
+        fbIncrementStat("totalUsers",1,user.idToken);
+      }
+      onAuth(user);
+    } catch(e){
+      const msgs={
+        "EMAIL_NOT_FOUND":"No account found with that email.",
+        "INVALID_PASSWORD":"Incorrect password.",
+        "EMAIL_EXISTS":"An account with this email already exists.",
+        "WEAK_PASSWORD : Password should be at least 6 characters":"Password must be at least 6 characters.",
+        "INVALID_EMAIL":"Please enter a valid email address.",
+        "INVALID_LOGIN_CREDENTIALS":"Incorrect email or password.",
+      };
+      setErr(msgs[e.message]||e.message);
+    }
+    setLoading(false);
+  }
+
+  async function handleGoogle(){
+    setLoading(true); setErr("");
+    try{
+      const result = await fbGoogleSignIn();
+      // Exchange Google ID token with Firebase signInWithIdp
+      const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FB_KEY}`,{
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({
+          requestUri:"http://localhost",
+          postBody:`id_token=${result.idToken}&providerId=google.com`,
+          returnSecureToken:true,
+          returnIdpCredential:true
+        })
+      });
+      const d = await r.json();
+      if(d.error) throw new Error(d.error.message);
+      const u={uid:d.localId,email:d.email,displayName:d.displayName||null,idToken:d.idToken,photoURL:d.photoUrl||null};
+      fbSetSession(u);
+      onAuth(u);
+    } catch(e){
+      if(e.message!=="Popup closed"&&e.message!=="No credential returned"){
+        setErr(e.message||"Google sign-in failed.");
+      }
+    }
+    setLoading(false);
+  }
+
+  const bg   = darkMode ? "#0F1117" : "#F5F2EC";
+  const card = darkMode ? "#161921" : "#FFFFFF";
+  const bd   = darkMode ? "#262B3C" : "#E2DDD6";
+  const txt  = darkMode ? "#DDE2F5" : "#1B1F3B";
+  const txt3 = darkMode ? "#5C6480" : "#888888";
+  const txt4 = darkMode ? "#353C58" : "#bbbbbb";
+  const bg3  = darkMode ? "#1C1F2B" : "#F0EDE7";
+  const acc  = darkMode ? "#7B83F7" : "#1B1F3B";
+  const acc2 = darkMode ? "#9199FF" : "#2d3260";
+  const sh2  = darkMode ? "rgba(0,0,0,.5)" : "rgba(27,31,59,.14)";
+
+  const inp = {width:"100%",padding:"10px 13px",border:`1.5px solid ${bd}`,borderRadius:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".88rem",background:card,color:txt,outline:"none",transition:"border-color .15s",marginTop:5,boxSizing:"border-box"};
+  const lbl = {display:"block",fontSize:".68rem",fontWeight:800,color:txt3,textTransform:"uppercase",letterSpacing:".07em",marginBottom:2};
+
+  return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:bg,padding:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
+
+      <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:420,boxShadow:`0 24px 60px ${sh2}`}}>
+
+        {/* Logo + title */}
+        <div style={{width:56,height:56,background:`linear-gradient(135deg,${txt},${acc2})`,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.8rem",margin:"0 auto 16px"}}>📚</div>
+        <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.75rem",fontWeight:700,color:txt,textAlign:"center",marginBottom:4}}>Study Desk</div>
+        <div style={{fontSize:".83rem",color:txt3,textAlign:"center",marginBottom:24}}>{mode==="login"?"Welcome back! Sign in to continue.":"Create your free account."}</div>
+
+        {/* Sign in / Sign up toggle */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",background:bg3,borderRadius:12,padding:4,marginBottom:22,gap:4}}>
+          {["login","signup"].map(m=>(
+            <button key={m} onClick={()=>{setMode(m);setErr("");}} style={{padding:"9px 0",borderRadius:9,border:"none",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".84rem",fontWeight:600,cursor:"pointer",transition:"all .15s",
+              background:mode===m?card:"transparent",color:mode===m?txt:txt3,
+              boxShadow:mode===m?`0 2px 8px ${sh2}`:"none"}}>
+              {m==="login"?"Sign In":"Sign Up"}
+            </button>
+          ))}
+        </div>
+
+        {/* Google button */}
+        <button onClick={handleGoogle} disabled={loading} style={{width:"100%",padding:"11px 0",borderRadius:12,border:`1.5px solid ${bd}`,background:card,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".86rem",fontWeight:600,color:txt,display:"flex",alignItems:"center",justifyContent:"center",gap:10,transition:"all .15s",marginBottom:4}}>
+          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.8 6C12.2 13 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17z"/><path fill="#FBBC05" d="M10.4 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.3 0-11.6-4.2-13.6-10l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>
+          Continue with Google
+        </button>
+
+        {/* Divider */}
+        <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0",color:txt4,fontSize:".74rem",fontWeight:600}}>
+          <div style={{flex:1,height:1,background:bd}}/>or<div style={{flex:1,height:1,background:bd}}/>
+        </div>
+
+        {/* Fields */}
+        {mode==="signup"&&(
+          <div style={{marginBottom:12}}>
+            <label style={lbl}>Your Name</label>
+            <input style={inp} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Alex" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+          </div>
+        )}
+        <div style={{marginBottom:12}}>
+          <label style={lbl}>Email</label>
+          <input style={inp} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+        </div>
+        <div style={{marginBottom:8}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
+            <label style={lbl}>Password</label>
+            {mode==="login"&&<button onClick={()=>{setShowReset(true);setResetEmail(email);setErr("");setResetSent(false);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:".72rem",color:acc,fontWeight:600,padding:0,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Forgot password?</button>}
+          </div>
+          <input style={inp} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+        </div>
+
+        {/* Forgot password modal */}
+        {showReset&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
+            onClick={e=>{if(e.target===e.currentTarget){setShowReset(false);setResetSent(false);}}}>
+            <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:20,padding:"28px 28px 24px",width:"100%",maxWidth:380,boxShadow:`0 24px 60px ${sh2}`}}>
+              {resetSent?(
+                <>
+                  <div style={{fontSize:"2rem",textAlign:"center",marginBottom:10}}>📬</div>
+                  <div style={{fontWeight:700,color:txt,fontSize:"1.05rem",textAlign:"center",marginBottom:8}}>Check your inbox!</div>
+                  <div style={{color:txt3,fontSize:".82rem",textAlign:"center",lineHeight:1.6,marginBottom:20}}>
+                    <>We sent a password reset link to <strong style={{color:txt}}>{resetEmail}</strong>. Check your spam folder if you don't see it.</>
+                  </div>
+                  <button onClick={()=>{setShowReset(false);setResetSent(false);}} style={{width:"100%",padding:"11px",borderRadius:11,border:"none",background:acc,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".88rem",cursor:"pointer"}}>Back to Sign In</button>
+                </>
+              ):(
+                <>
+                  <div style={{fontWeight:700,color:txt,fontSize:"1.05rem",marginBottom:6}}>🔑 Reset Password</div>
+                  <div style={{color:txt3,fontSize:".8rem",marginBottom:16,lineHeight:1.5}}>Enter your email and we'll send you a link to reset your password.</div>
+                  <label style={lbl}>Email</label>
+                  <input style={{...inp,marginBottom:10}} type="email" value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="you@email.com" autoFocus onKeyDown={e=>e.key==="Enter"&&handleReset()}/>
+                  {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"9px 12px",fontSize:".78rem",color:darkMode?"#f87171":"#dc2626",marginBottom:10}}>{err}</div>}
+                  <div style={{display:"flex",gap:8}}>
+                    <button onClick={()=>{setShowReset(false);setErr("");}} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${bd}`,background:"transparent",color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".84rem",cursor:"pointer"}}>Cancel</button>
+                    <button onClick={handleReset} disabled={resetLoading||!resetEmail} style={{flex:2,padding:"10px",borderRadius:11,border:"none",background:resetLoading||!resetEmail?"#ccc":acc,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".84rem",cursor:resetLoading||!resetEmail?"not-allowed":"pointer"}}>
+                      {resetLoading?"Sending...":"Send Reset Link →"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* Error */}
+        {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"10px 13px",fontSize:".8rem",color:darkMode?"#f87171":"#dc2626",marginBottom:10,lineHeight:1.5}}>{err}</div>}
+
+        {/* Submit */}
+        <button onClick={handleSubmit} disabled={loading||!email||!password}
+          style={{width:"100%",padding:"12px 0",borderRadius:12,border:"none",background:(!loading&&email&&password)?acc:"#ccc",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".9rem",fontWeight:700,cursor:(!loading&&email&&password)?"pointer":"not-allowed",transition:"all .18s",marginTop:4}}>
+          {loading?"Loading...":(mode==="login"?"Sign In →":"Create Account →")}
+        </button>
+
+      </div>
+    </div>
+  );
+}
+
+function AdminPanel({user, onClose}){
+  const [pass, setPass] = useState("");
+  const [authed, setAuthed] = useState(false);
+  const [stats, setStats] = useState(null);
+  const [loading, setLoading] = useState(false);
+  const [err, setPassErr] = useState("");
+  const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
+
+  const bg=darkMode?"#0F1117":"#F5F2EC", card=darkMode?"#161921":"#fff", bd=darkMode?"#262B3C":"#E2DDD6";
+  const txt=darkMode?"#DDE2F5":"#1B1F3B", txt3=darkMode?"#5C6480":"#888", bg3=darkMode?"#1C1F2B":"#F0EDE7";
+  const sh=darkMode?"rgba(0,0,0,.5)":"rgba(27,31,59,.14)";
+
+  async function loadStats(){
+    setLoading(true);
+    const s=await fbGetAdminStats(user.idToken);
+    setStats(s);setLoading(false);
+  }
+
+  function tryLogin(){
+    if(pass===ADMIN_PASS){setAuthed(true);loadStats();}
+    else setPassErr("Wrong password.");
+  }
+
+  const completionRate = stats && stats.totalAssignments>0
+    ? Math.round((stats.totalSubmitted/stats.totalAssignments)*100) : 0;
+
+  const STAT_CARDS=[
+    {label:"Total Users",value:stats?.totalUsers??"-",icon:"👤",color:"#6366f1"},
+    {label:"Online Now",value:stats?.onlineNow??"-",icon:"🟢",color:"#10b981"},
+    {label:"New Today",value:stats?.newUsersToday??"-",icon:"✨",color:"#f59e0b"},
+    {label:"Assignments Created",value:stats?.totalAssignments??"-",icon:"📝",color:"#3b82f6"},
+    {label:"Submitted",value:stats?.totalSubmitted??"-",icon:"✅",color:"#16a34a"},
+    {label:"Completion Rate",value:stats?completionRate+"%":"-",icon:"📊",color:"#8b5cf6"},
+    {label:"Classes Created",value:stats?.totalClasses??"-",icon:"🏫",color:"#ec4899"},
+    {label:"Total Points Earned",value:stats?.totalPoints??"-",icon:"⭐",color:"#f97316"},
+  ];
+
+  return(
+    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
+      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
+      <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,width:"100%",maxWidth:700,maxHeight:"88vh",overflow:"auto",boxShadow:`0 32px 80px ${sh}`,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+
+        {/* Header */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 28px 18px",borderBottom:`1.5px solid ${bd}`,position:"sticky",top:0,background:card,zIndex:1,borderRadius:"24px 24px 0 0"}}>
+          <div>
+            <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.4rem",fontWeight:700,color:txt}}>🛡️ Admin Panel</div>
+            <div style={{fontSize:".76rem",color:txt3,marginTop:2}}>StudyDesk analytics dashboard</div>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            {authed&&<button onClick={loadStats} style={{padding:"7px 14px",borderRadius:9,border:`1.5px solid ${bd}`,background:bg3,color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".78rem",fontWeight:600,cursor:"pointer"}}>🔄 Refresh</button>}
+            <button onClick={onClose} style={{padding:"7px 14px",borderRadius:9,border:`1.5px solid ${bd}`,background:bg3,color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".78rem",fontWeight:600,cursor:"pointer"}}>✕ Close</button>
+          </div>
+        </div>
+
+        <div style={{padding:"24px 28px"}}>
+          {/* Password gate */}
+          {!authed?(
+            <div style={{maxWidth:320,margin:"0 auto",paddingTop:20}}>
+              <div style={{fontSize:"1.1rem",fontWeight:700,color:txt,marginBottom:6,textAlign:"center"}}>🔒 Enter Admin Password</div>
+              <div style={{fontSize:".8rem",color:txt3,textAlign:"center",marginBottom:20}}>Access restricted to admins only.</div>
+              <input type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&tryLogin()}
+                placeholder="Password..." autoFocus
+                style={{width:"100%",padding:"10px 13px",border:`1.5px solid ${bd}`,borderRadius:11,background:bg3,color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".9rem",outline:"none",marginBottom:10,boxSizing:"border-box"}}/>
+              {err&&<div style={{color:"#ef4444",fontSize:".8rem",marginBottom:10,textAlign:"center"}}>{err}</div>}
+              <button onClick={tryLogin} style={{width:"100%",padding:"11px",borderRadius:11,border:"none",background:txt,color:card,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".9rem",cursor:"pointer"}}>
+                Unlock →
+              </button>
+
+            </div>
+          ):(
+            <>
+              {/* Preview badge */}
+
+
+              {loading?(
+                <div style={{textAlign:"center",padding:40,color:txt3}}>Loading stats...</div>
+              ):stats?(
+                <>
+                  {/* Stats grid */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:24}}>
+                    {STAT_CARDS.map(sc=>(
+                      <div key={sc.label} style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"16px 14px",position:"relative",overflow:"hidden"}}>
+                        <div style={{position:"absolute",top:0,left:0,width:3,height:"100%",background:sc.color,borderRadius:"16px 0 0 16px"}}/>
+                        <div style={{fontSize:"1.5rem",marginBottom:4,marginLeft:6}}>{sc.icon}</div>
+                        <div style={{fontSize:"1.6rem",fontWeight:800,color:txt,marginLeft:6,lineHeight:1}}>{sc.value}</div>
+                        <div style={{fontSize:".68rem",fontWeight:700,color:txt3,marginTop:4,marginLeft:6,textTransform:"uppercase",letterSpacing:".04em"}}>{sc.label}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Progress bar: submission rate */}
+                  <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px",marginBottom:16}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+                      <div style={{fontWeight:700,color:txt,fontSize:".88rem"}}>📈 Assignment Completion Rate</div>
+                      <div style={{fontWeight:800,color:"#16a34a",fontSize:".88rem"}}>{completionRate}%</div>
+                    </div>
+                    <div style={{background:bd,borderRadius:99,height:10,overflow:"hidden"}}>
+                      <div style={{width:completionRate+"%",height:"100%",background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:99,transition:"width .6s ease"}}/>
+                    </div>
+                    <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:".72rem",color:txt3}}>
+                      <span>{stats.totalSubmitted} submitted</span>
+                      <span>{(stats.totalAssignments-stats.totalSubmitted)} still pending</span>
+                    </div>
+                  </div>
+
+                  {/* Online users */}
+                  <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px",marginBottom:16}}>
+                    <div style={{fontWeight:700,color:txt,fontSize:".88rem",marginBottom:12}}>🟢 Online Now ({stats.onlineNow})</div>
+                    {stats.onlineUsers.length===0?(
+                      <div style={{color:txt3,fontSize:".8rem"}}>No users active in the last 2 minutes.</div>
+                    ):(
+                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                        {stats.onlineUsers.map((u,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
+                            <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",flexShrink:0}}/>
+                            <div style={{width:30,height:30,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:".75rem",flexShrink:0}}>
+                              {(u.displayName||u.email||"?")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{fontSize:".82rem",fontWeight:600,color:txt}}>{u.displayName||u.email.split("@")[0]}</div>
+                              <div style={{fontSize:".7rem",color:txt3}}>{u.email}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* All users */}
+                  {stats.allUsers&&stats.allUsers.length>0&&(
+                    <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px"}}>
+                      <div style={{fontWeight:700,color:txt,fontSize:".88rem",marginBottom:12}}>👥 All Registered Users ({stats.allUsers.length})</div>
+                      <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:220,overflow:"auto"}}>
+                        {stats.allUsers.map((u,i)=>(
+                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${bd}`}}>
+                            <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#3b82f6,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:".7rem",flexShrink:0}}>
+                              {(u.displayName||u.email||"?")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <div style={{fontSize:".8rem",fontWeight:600,color:txt}}>{u.displayName||u.email.split("@")[0]}</div>
+                              <div style={{fontSize:".69rem",color:txt3}}>{u.email}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ):(
+                <div style={{textAlign:"center",padding:40,color:"#ef4444"}}>Failed to load stats. Check your connection.</div>
+              )}
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StudyDesk() {
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -391,8 +957,21 @@ export default function StudyDesk() {
   const [loaded, setLoaded] = useState(false);
   const [addingA, setAddingA] = useState(false);
   const [addingC, setAddingC] = useState(false);
+  const [schoolWiz, setSchoolWiz] = useState(null);
+  // schoolWiz = null | {step:"search"|"confirm"|"periods", query, results, school, numPeriods, periods:[{name,start,end,days}], currentPeriod}
   const [filter, setFilter] = useState("all");
   const [darkMode, setDarkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
+  const [user, setUser] = useState(null);
+  const [adminOpen, setAdminOpen] = useState(false);
+  const logoClicks = useRef(0);
+  const logoTimer = useRef(null);
+  function handleLogoClick(){
+    logoClicks.current+=1;
+    clearTimeout(logoTimer.current);
+    logoTimer.current=setTimeout(()=>{logoClicks.current=0;},1800);
+    if(logoClicks.current>=5){logoClicks.current=0;setAdminOpen(true);}
+  }
+  const [authLoading, setAuthLoading] = useState(true);
   const [game, setGame] = useState({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});
   const [shopCat, setShopCat] = useState("all");
   const [floats, setFloats] = useState([]);
@@ -433,6 +1012,13 @@ export default function StudyDesk() {
   const [agendaSlideLinks, setAgendaSlideLinks] = useState([]); // [{id, title, exportUrl}]
   const [agendaSlideTexts, setAgendaSlideTexts] = useState([]);
   const [canvasStatus, setCanvasStatus] = useState("");
+  const [canvasToken, setCanvasToken] = useState(()=>{try{return localStorage.getItem("sd-canvas-token")||"";}catch{return "";}});
+  const [canvasBaseUrl, setCanvasBaseUrl] = useState(()=>{try{return localStorage.getItem("sd-canvas-url")||"https://naperville.instructure.com";}catch{return "https://naperville.instructure.com";}});
+  const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:""});
+  const [showCanvasSetup, setShowCanvasSetup] = useState(false);
+  const [expandedGradeClass, setExpandedGradeClass] = useState(null);
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const canvasSyncRef = useRef(false);
   const [fetchStatus, setFetchStatus] = useState("");
 
   const emptyAF = {title:"",subject:"",dueDate:"",priority:"medium",progress:0,notes:""};
@@ -442,25 +1028,139 @@ export default function StudyDesk() {
 
   const saveReady=useRef(false);
 
+  // Restore session on mount
   useEffect(()=>{
-    try{
-      const d=localStorage.getItem(STORAGE_KEY);
-      if(d){const p=JSON.parse(d);setAssignments(p.a||[]);setClasses(p.c||[]);if(p.g)setGame(p.g);}
-    }catch{}
-    // Use timeout so state updates from above settle before we allow saving
-    setTimeout(()=>{
-      saveReady.current=true;
-      setLoaded(true);
-    },50);
-    const seenVersion=localStorage.getItem("studydesk-seen-version");
-    if(seenVersion!==APP_VERSION) setShowReleases(true);
+    const session=fbGetSession();
+    if(session){
+      setUser(session);
+      fbLoadData(session.uid, session.idToken).then(d=>{
+        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.token){setCanvasToken(d.cv.token);try{localStorage.setItem("sd-canvas-token",d.cv.token);}catch{}};if(d.cv?.url){setCanvasBaseUrl(d.cv.url);try{localStorage.setItem("sd-canvas-url",d.cv.url);}catch{}}}
+        saveReady.current=true;
+        setLoaded(true);
+        const seenVersion=localStorage.getItem("studydesk-seen-version");
+        if(seenVersion!==APP_VERSION) setShowReleases(true);
+      }).catch(()=>{setLoaded(true);saveReady.current=true;});
+    } else {
+      setAuthLoading(false);
+    }
+    setAuthLoading(false);
   },[]);
 
+  // Save to Firestore debounced
   useEffect(()=>{
-    if(!saveReady.current)return;
-    try{localStorage.setItem(STORAGE_KEY,JSON.stringify({a:assignments,c:classes,g:game}));}catch{}
-  },[assignments,classes,game,loaded]);
+    if(!saveReady.current||!user) return;
+    const t=setTimeout(()=>{
+      fbSaveData(user.uid, user.idToken, {a:assignments,c:classes,g:game,cv:{token:canvasToken,url:canvasBaseUrl}});
+    },800); // debounce 800ms
+    return()=>clearTimeout(t);
+  },[assignments,classes,game,loaded,user]);
+
   useEffect(()=>{try{localStorage.setItem("sd-dark",darkMode?"1":"0");}catch{}},[darkMode]);
+
+  // Presence heartbeat — updates every 60s while logged in
+  useEffect(()=>{
+    if(!user) return;
+    fbUpdatePresence(user);
+    const t=setInterval(()=>fbUpdatePresence(user),60000);
+    return()=>clearInterval(t);
+  },[user]);
+
+  // ── Canvas Auto-Sync ────────────────────────────────────────────────────────
+  async function syncCanvas(token, baseUrl, silent=false){
+    if(!token||canvasSyncRef.current) return;
+    canvasSyncRef.current=true;
+    if(!silent) setCanvasSync(s=>({...s,syncing:true,error:""}));
+    else setCanvasSync(s=>({...s,syncing:true}));
+    try{
+      const today=new Date().toISOString().split("T")[0];
+      const url=`${baseUrl}/api/v1/planner/items?per_page=100&start_date=${today}`;
+      // Try direct first, then CORS proxy
+      let data=null;
+      const tryFetch=async(fetchUrl)=>{
+        const r=await fetch(fetchUrl,{
+          headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
+          signal:AbortSignal.timeout(8000)
+        });
+        if(!r.ok) throw new Error(`Canvas returned ${r.status}`);
+        return r.json();
+      };
+      try{ data=await tryFetch(url); }
+      catch(e){
+        // CORS fallback
+        const proxy=`https://corsproxy.io/?url=${encodeURIComponent(url)}`;
+        data=await tryFetch(proxy);
+      }
+      if(!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
+
+      let newSubmits=0;
+      setAssignments(prev=>{
+        let updated=[...prev];
+        for(const item of data){
+          if(!item.plannable?.title) continue;
+          const submitted=item.submissions?.submitted||false;
+          const score=item.submissions?.score??null;
+          const pointsPossible=item.plannable?.points_possible??null;
+          const dueDate=item.plannable_date?item.plannable_date.split("T")[0]:"";
+          const subject=item.context_name||"";
+          const title=item.plannable?.title||"";
+          // Try to match existing assignment by title + subject similarity
+          const match=updated.find(a=>{
+            const titleMatch=a.title.toLowerCase().trim()===title.toLowerCase().trim()||
+              a.title.toLowerCase().includes(title.toLowerCase().slice(0,15))||
+              title.toLowerCase().includes(a.title.toLowerCase().slice(0,15));
+            const subjectMatch=!subject||!a.subject||
+              a.subject.toLowerCase().includes(subject.toLowerCase().slice(0,8))||
+              subject.toLowerCase().includes(a.subject.toLowerCase().slice(0,8));
+            return titleMatch&&subjectMatch;
+          });
+          if(match){
+            // Update existing assignment
+            const wasSubmitted=match.progress>=100;
+            const patch={};
+            if(submitted&&!wasSubmitted){ patch.progress=100; newSubmits++; }
+            if(score!==null&&pointsPossible){ patch.grade=Math.round((score/pointsPossible)*100); patch.gradeRaw=`${score}/${pointsPossible}`; }
+            if(dueDate&&!match.dueDate) patch.dueDate=dueDate;
+            if(Object.keys(patch).length>0){
+              updated=updated.map(a=>a.id===match.id?{...a,...patch}:a);
+            }
+          } else if(submitted){
+            // Canvas has a submitted assignment we don't know about — add it
+            const existing=updated.find(a=>a.title.toLowerCase()===title.toLowerCase());
+            if(!existing&&dueDate){
+              const today2=new Date(); today2.setHours(0,0,0,0);
+              const due=new Date(dueDate+"T00:00:00");
+              if(due>=today2||score!==null){
+                updated.push({
+                  id:"canvas_"+Date.now()+"_"+Math.random().toString(36).slice(2),
+                  title,subject,dueDate,priority:"medium",progress:100,notes:"Auto-imported from Canvas",
+                  ...(score!==null&&pointsPossible?{grade:Math.round((score/pointsPossible)*100),gradeRaw:`${score}/${pointsPossible}`}:{})
+                });
+                newSubmits++;
+              }
+            }
+          }
+        }
+        return updated;
+      });
+
+      setCanvasSync({lastSync:new Date(),syncing:false,newSubmissions:newSubmits,error:""});
+      if(newSubmits>0){
+        launchConfetti(null);
+        setTimeout(()=>setCanvasSync(s=>({...s,newSubmissions:0})),4000);
+      }
+    } catch(e){
+      setCanvasSync(s=>({...s,syncing:false,error:e.message||"Sync failed"}));
+    }
+    canvasSyncRef.current=false;
+  }
+
+  // Auto-sync every 3 minutes if token is set
+  useEffect(()=>{
+    if(!canvasToken||!user) return;
+    syncCanvas(canvasToken, canvasBaseUrl, true);
+    const t=setInterval(()=>syncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
+    return()=>clearInterval(t);
+  },[canvasToken, canvasBaseUrl, user]);
 
   function getExportUrl(rawUrl){const id=extractId(rawUrl.trim());if(!id)return null;return`https://docs.google.com/presentation/d/${id}/export/txt`;}
 
@@ -487,6 +1187,7 @@ export default function StudyDesk() {
   function addFloat(pts,streak){const id=Date.now()+Math.random();setFloats(f=>[...f,{id,pts,streak}]);setTimeout(()=>setFloats(f=>f.filter(x=>x.id!==id)),2000);}
   function handleComplete(prev,next){
     if(next!==100||prev>=100)return;
+    if(user)fbIncrementStat("totalSubmitted",1,user.idToken);if(user)fbIncrementStat("totalPoints",15,user.idToken);
     const today=new Date().toISOString().split("T")[0];
     setGame(g=>{
       const nd=g.dailyDate!==today;
@@ -514,7 +1215,7 @@ export default function StudyDesk() {
     setReleaseViewed(true);
   }
 
-  function confirmImport(){const toAdd=(importResult?.assignments||[]).map(a=>({...a,id:Date.now().toString()+Math.random(),progress:0}));setAssignments(p=>[...p,...toAdd]);setImportOpen(false);resetImport();setTab("assignments");checkUnknown(toAdd);}
+  function confirmImport(){const toAdd=(importResult?.assignments||[]).map(a=>({...a,id:Date.now().toString()+Math.random(),progress:0}));setAssignments(p=>[...p,...toAdd]);setImportOpen(false);resetImport();setTab("assignments");checkUnknown(toAdd);if(user&&toAdd.length)fbIncrementStat("totalAssignments",toAdd.length,user.idToken);}
 
   const todayStr = new Date().toISOString().split("T")[0];
   const CANVAS_URL = `https://naperville.instructure.com/api/v1/planner/items?per_page=100&start_date=${todayStr}`;
@@ -950,10 +1651,302 @@ async function run(){
   }
 
 
-  function addAssignment(){if(!af.title||!af.subject)return;const na={...af,id:Date.now().toString()};setAssignments(p=>[...p,na]);checkUnknown([na]);setAf(emptyAF);setAddingA(false);}
+  function addAssignment(){if(!af.title||!af.subject)return;const na={...af,id:Date.now().toString()};setAssignments(p=>[...p,na]);checkUnknown([na]);setAf(emptyAF);setAddingA(false);if(user)fbIncrementStat("totalAssignments",1,user.idToken);}
   function delAssignment(id){setAssignments(p=>p.filter(x=>x.id!==id));}
   function updateA(id,patch){setAssignments(prev=>{const a=prev.find(x=>x.id===id);if(a&&patch.progress!==undefined)handleComplete(a.progress,patch.progress);return prev.map(x=>x.id===id?{...x,...patch}:x);});}
-  function addClass(){if(!cf.name)return;setClasses(p=>[...p,{...cf,id:Date.now().toString()}]);setCf(emptyCF);setAddingC(false);}
+  function addClass(){if(!cf.name)return;setClasses(p=>[...p,{...cf,id:Date.now().toString()}]);setCf(emptyCF);setAddingC(false);if(user)fbIncrementStat("totalClasses",1,user.idToken);}
+
+  // Hardcoded bell schedules for known schools (keyed by NCESSCH)
+  const KNOWN_SCHEDULES = {
+    "172771002939": { // Naperville Central
+      school:"Naperville Central High School",
+      // Each period has dayGroups so different days get correct times
+      // SOAR is fixed (auto-added, no class name needed)
+      periods:[
+        {label:"Period 1", dayGroups:[
+          {days:["Mon","Fri"],start:"07:45",end:"08:35"},
+          {days:["Tue","Thu"],start:"07:45",end:"08:30"},
+          {days:["Wed"],     start:"09:00",end:"09:42"},
+        ]},
+        {label:"Period 2", dayGroups:[
+          {days:["Mon","Fri"],start:"08:41",end:"09:34"},
+          {days:["Tue","Thu"],start:"08:35",end:"09:20"},
+          {days:["Wed"],     start:"09:47",end:"10:29"},
+        ]},
+        {label:"SOAR", fixed:true, dayGroups:[
+          {days:["Tue","Thu"],start:"09:25",end:"10:10"},
+        ]},
+        {label:"Period 3", dayGroups:[
+          {days:["Mon","Fri"],start:"09:40",end:"10:30"},
+          {days:["Tue","Thu"],start:"10:15",end:"11:00"},
+          {days:["Wed"],     start:"10:34",end:"11:16"},
+        ]},
+        {label:"Period 4", dayGroups:[
+          {days:["Mon","Fri"],start:"10:36",end:"11:26"},
+          {days:["Tue","Thu"],start:"11:05",end:"11:50"},
+          {days:["Wed"],     start:"11:21",end:"12:03"},
+        ]},
+        {label:"Period 5", dayGroups:[
+          {days:["Mon","Fri"],start:"11:32",end:"12:22"},
+          {days:["Tue","Thu"],start:"11:55",end:"12:40"},
+          {days:["Wed"],     start:"12:08",end:"12:49"},
+        ]},
+        {label:"Period 6", dayGroups:[
+          {days:["Mon","Fri"],start:"12:28",end:"13:18"},
+          {days:["Tue","Thu"],start:"12:45",end:"13:30"},
+          {days:["Wed"],     start:"12:54",end:"13:36"},
+        ]},
+        {label:"Period 7", dayGroups:[
+          {days:["Mon","Fri"],start:"13:24",end:"14:14"},
+          {days:["Tue","Thu"],start:"13:35",end:"14:20"},
+          {days:["Wed"],     start:"13:41",end:"14:23"},
+        ]},
+        {label:"Period 8", dayGroups:[
+          {days:["Mon","Fri"],start:"14:20",end:"15:10"},
+          {days:["Tue","Thu"],start:"14:25",end:"15:10"},
+          {days:["Wed"],     start:"14:28",end:"15:10"},
+        ]},
+      ]
+    },
+    "172771002940": { // Naperville North
+      school:"Naperville North High School",
+      numPeriods:8,
+      note:"Standard Mon/Fri 8-period schedule.",
+      periods:[
+        {label:"Period 1",start:"07:45",end:"08:35",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 2",start:"08:41",end:"09:34",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 3",start:"09:40",end:"10:30",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 4",start:"10:36",end:"11:26",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 5",start:"11:32",end:"12:22",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 6",start:"12:28",end:"13:18",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 7",start:"13:24",end:"14:14",days:["Mon","Tue","Wed","Thu","Fri"]},
+        {label:"Period 8",start:"14:20",end:"15:10",days:["Mon","Tue","Wed","Thu","Fri"]},
+      ]
+    }
+  };
+
+  async function fetchBellSchedule(ncessch, idToken){
+    // Check hardcoded first
+    if(KNOWN_SCHEDULES[ncessch]){
+      const s=KNOWN_SCHEDULES[ncessch];
+      // Normalize: if periods have dayGroups, keep as-is; otherwise wrap for backwards compat
+      return s;
+    }
+    // Then check Firestore
+    try{
+      const r=await fetch(`${FB_FS}/bellschedules/${ncessch}`,{headers:{"Authorization":`Bearer ${idToken}`}});
+      if(r.status===404) return null;
+      const d=await r.json();
+      if(d.error||!d.fields?.data?.stringValue) return null;
+      return JSON.parse(d.fields.data.stringValue);
+    }catch{return null;}
+  }
+
+  async function saveBellSchedule(ncessch, scheduleData, idToken){
+    try{
+      await fetch(`${FB_FS}/bellschedules/${ncessch}?updateMask.fieldPaths=data`,{
+        method:"PATCH",headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
+        body:JSON.stringify({fields:{data:{stringValue:JSON.stringify(scheduleData)}}})
+      });
+    }catch(e){console.warn("Bell save error",e);}
+  }
+
+  // Large local school database — always-available, instant results
+  const LOCAL_SCHOOLS=[
+    // Naperville / DuPage County IL
+    {name:"Naperville Central High School",city:"Naperville",state:"IL",ncessch:"172771002939"},
+    {name:"Naperville North High School",city:"Naperville",state:"IL",ncessch:"172771002940"},
+    {name:"Neuqua Valley High School",city:"Naperville",state:"IL",ncessch:"172771003284"},
+    {name:"Waubonsie Valley High School",city:"Aurora",state:"IL",ncessch:"170993002728"},
+    {name:"Metea Valley High School",city:"Aurora",state:"IL",ncessch:"170993005136"},
+    {name:"Wheaton Warrenville South High School",city:"Wheaton",state:"IL",ncessch:"170993006245"},
+    {name:"Glenbard West High School",city:"Glen Ellyn",state:"IL",ncessch:"170861001064"},
+    {name:"Glenbard East High School",city:"Lombard",state:"IL",ncessch:"170861001062"},
+    {name:"Glenbard North High School",city:"Carol Stream",state:"IL",ncessch:"170861001063"},
+    {name:"Glenbard South High School",city:"Glen Ellyn",state:"IL",ncessch:"170861001065"},
+    {name:"Downers Grove North High School",city:"Downers Grove",state:"IL",ncessch:"170993001456"},
+    {name:"Downers Grove South High School",city:"Downers Grove",state:"IL",ncessch:"170993001457"},
+    {name:"Hinsdale Central High School",city:"Hinsdale",state:"IL",ncessch:"171053001282"},
+    {name:"Hinsdale South High School",city:"Darien",state:"IL",ncessch:"171053001283"},
+    {name:"Lake Park High School",city:"Roselle",state:"IL",ncessch:"170993002559"},
+    // Chicago Area
+    {name:"New Trier Township High School",city:"Winnetka",state:"IL",ncessch:"170861003058"},
+    {name:"Evanston Township High School",city:"Evanston",state:"IL",ncessch:"170993001524"},
+    {name:"Oak Park and River Forest High School",city:"Oak Park",state:"IL",ncessch:"172771003021"},
+    {name:"York Community High School",city:"Elmhurst",state:"IL",ncessch:"170861004435"},
+    {name:"Lyons Township High School",city:"La Grange",state:"IL",ncessch:"171053002030"},
+    {name:"Stevenson High School",city:"Lincolnshire",state:"IL",ncessch:"170993004217"},
+    {name:"Glenbrook North High School",city:"Northbrook",state:"IL",ncessch:"170993001970"},
+    {name:"Glenbrook South High School",city:"Glenview",state:"IL",ncessch:"170993001971"},
+    {name:"Maine South High School",city:"Park Ridge",state:"IL",ncessch:"170861002087"},
+    {name:"Maine West High School",city:"Des Plaines",state:"IL",ncessch:"170861002088"},
+    {name:"Niles West High School",city:"Skokie",state:"IL",ncessch:"170861003106"},
+    {name:"Niles North High School",city:"Skokie",state:"IL",ncessch:"170861003105"},
+    // California
+    {name:"Mission San Jose High School",city:"Fremont",state:"CA",ncessch:"062271005700"},
+    {name:"Irvington High School",city:"Fremont",state:"CA",ncessch:"062271003336"},
+    {name:"Fremont High School",city:"Sunnyvale",state:"CA",ncessch:"063441001875"},
+    {name:"Palo Alto High School",city:"Palo Alto",state:"CA",ncessch:"063135005037"},
+    {name:"Gunn High School",city:"Palo Alto",state:"CA",ncessch:"063135002101"},
+    {name:"Los Altos High School",city:"Los Altos",state:"CA",ncessch:"063135003547"},
+    {name:"Mountain View High School",city:"Mountain View",state:"CA",ncessch:"063135004222"},
+    {name:"Lynbrook High School",city:"San Jose",state:"CA",ncessch:"063441003719"},
+    {name:"Saratoga High School",city:"Saratoga",state:"CA",ncessch:"064122006124"},
+    {name:"Monta Vista High School",city:"Cupertino",state:"CA",ncessch:"064119004219"},
+    {name:"Cupertino High School",city:"Cupertino",state:"CA",ncessch:"064119001497"},
+    {name:"Homestead High School",city:"Cupertino",state:"CA",ncessch:"064119002971"},
+    {name:"Westview High School",city:"San Diego",state:"CA",ncessch:"060699013219"},
+    {name:"Torrey Pines High School",city:"San Diego",state:"CA",ncessch:"060699012039"},
+    {name:"Canyon Crest Academy",city:"San Diego",state:"CA",ncessch:"060699009690"},
+    // New York
+    {name:"Stuyvesant High School",city:"New York",state:"NY",ncessch:"360007703199"},
+    {name:"Bronx Science High School",city:"New York",state:"NY",ncessch:"360007700226"},
+    {name:"Brooklyn Technical High School",city:"New York",state:"NY",ncessch:"360007700249"},
+    {name:"Great Neck North High School",city:"Great Neck",state:"NY",ncessch:"360407501533"},
+    {name:"Great Neck South High School",city:"Great Neck",state:"NY",ncessch:"360407501534"},
+    {name:"Jericho High School",city:"Jericho",state:"NY",ncessch:"360507502141"},
+    {name:"Syosset High School",city:"Syosset",state:"NY",ncessch:"360207503396"},
+    {name:"Scarsdale High School",city:"Scarsdale",state:"NY",ncessch:"360610500099"},
+    // Texas
+    {name:"Plano Senior High School",city:"Plano",state:"TX",ncessch:"482814007730"},
+    {name:"Plano East Senior High School",city:"Plano",state:"TX",ncessch:"482814007731"},
+    {name:"Plano West Senior High School",city:"Plano",state:"TX",ncessch:"482814011327"},
+    {name:"Allen High School",city:"Allen",state:"TX",ncessch:"482814012101"},
+    {name:"Coppell High School",city:"Coppell",state:"TX",ncessch:"482814006023"},
+    {name:"Westlake High School",city:"Austin",state:"TX",ncessch:"481686008802"},
+    {name:"Lake Travis High School",city:"Austin",state:"TX",ncessch:"481695007048"},
+    {name:"Liberal Arts and Science Academy",city:"Austin",state:"TX",ncessch:"481686008824"},
+    // New Jersey
+    {name:"West Windsor Plainsboro High School North",city:"Plainsboro",state:"NJ",ncessch:"341710004685"},
+    {name:"West Windsor Plainsboro High School South",city:"Princeton Junction",state:"NJ",ncessch:"341710004686"},
+    {name:"Princeton High School",city:"Princeton",state:"NJ",ncessch:"341060003502"},
+    {name:"Montgomery High School",city:"Skillman",state:"NJ",ncessch:"341710003325"},
+    {name:"Millburn High School",city:"Millburn",state:"NJ",ncessch:"340930002878"},
+    // Massachusetts
+    {name:"Lexington High School",city:"Lexington",state:"MA",ncessch:"220945002483"},
+    {name:"Newton South High School",city:"Newton Center",state:"MA",ncessch:"220975003461"},
+    {name:"Newton North High School",city:"Newtonville",state:"MA",ncessch:"220975003460"},
+    {name:"Wellesley High School",city:"Wellesley",state:"MA",ncessch:"221680004989"},
+    {name:"Weston High School",city:"Weston",state:"MA",ncessch:"221695005007"},
+    {name:"Acton Boxborough Regional High School",city:"Acton",state:"MA",ncessch:"220015000024"},
+    // Virginia
+    {name:"Thomas Jefferson High School for Science and Technology",city:"Alexandria",state:"VA",ncessch:"510005403191"},
+    {name:"McLean High School",city:"McLean",state:"VA",ncessch:"510006001983"},
+    {name:"Langley High School",city:"McLean",state:"VA",ncessch:"510006001836"},
+    {name:"Westfield High School",city:"Chantilly",state:"VA",ncessch:"510006003356"},
+    {name:"Chantilly High School",city:"Chantilly",state:"VA",ncessch:"510006000610"},
+    // Washington
+    {name:"Interlake High School",city:"Bellevue",state:"WA",ncessch:"530330000633"},
+    {name:"Newport High School",city:"Bellevue",state:"WA",ncessch:"530330001131"},
+    {name:"Bellevue High School",city:"Bellevue",state:"WA",ncessch:"530330000099"},
+    {name:"Eastlake High School",city:"Sammamish",state:"WA",ncessch:"531806001843"},
+    {name:"Skyline High School",city:"Sammamish",state:"WA",ncessch:"531806002459"},
+    {name:"Mercer Island High School",city:"Mercer Island",state:"WA",ncessch:"530480000961"},
+    // Georgia
+    {name:"Northview High School",city:"Johns Creek",state:"GA",ncessch:"131230004028"},
+    {name:"Johns Creek High School",city:"Johns Creek",state:"GA",ncessch:"131230003954"},
+    {name:"Alpharetta High School",city:"Alpharetta",state:"GA",ncessch:"131230000027"},
+    {name:"Milton High School",city:"Milton",state:"GA",ncessch:"131230003780"},
+    {name:"Chattahoochee High School",city:"Johns Creek",state:"GA",ncessch:"131230000500"},
+  ];
+
+  async function searchSchools(q){
+    const q2=q.toLowerCase().trim();
+    if(!q2) return [];
+
+    // 1. Local results — instant
+    const localMatches=LOCAL_SCHOOLS.filter(s=>
+      s.name.toLowerCase().includes(q2)||
+      s.city.toLowerCase().includes(q2)||
+      s.state.toLowerCase()===q2
+    ).slice(0,6);
+
+    // 2. Fire both APIs in parallel, race them
+    const enc=encodeURIComponent(q);
+    const odsUrl=`https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/us-public-schools/records?where=search(NAME%2C%22${enc}%22)%20AND%20LEVEL%3D%22High%22&limit=10&select=NAME%2CCITY%2CSTATE%2CNCESSCH&order_by=NAME`;
+    // CORS proxy as backup for OpenDataSoft
+    const proxyUrl=`https://corsproxy.io/?url=${encodeURIComponent(odsUrl)}`;
+
+    function parseODS(d){
+      return(d.results||[]).map(s=>({
+        name:s.NAME||s.name||"",city:s.CITY||s.city||"",
+        state:s.STATE||s.state||"",ncessch:s.NCESSCH||s.ncessch||""
+      })).filter(s=>s.name&&s.ncessch);
+    }
+
+    const [odsResult, proxyResult] = await Promise.allSettled([
+      fetch(odsUrl,{signal:AbortSignal.timeout(5000)}).then(r=>r.json()).then(parseODS).catch(()=>[]),
+      fetch(proxyUrl,{signal:AbortSignal.timeout(6000)}).then(r=>r.json()).then(parseODS).catch(()=>[]),
+    ]);
+
+    const apiResults=[
+      ...(odsResult.status==="fulfilled"?odsResult.value:[]),
+      ...(proxyResult.status==="fulfilled"?proxyResult.value:[]),
+    ];
+
+    // Deduplicate by ncessch
+    const seen=new Set();
+    const dedupedApi=apiResults.filter(s=>{
+      if(seen.has(s.ncessch))return false;
+      seen.add(s.ncessch);return true;
+    });
+
+    // Merge: local first, then API results not already in local list
+    const merged=[
+      ...localMatches,
+      ...dedupedApi.filter(a=>!localMatches.some(l=>l.ncessch===a.ncessch))
+    ].slice(0,12);
+
+    return merged.length?merged:localMatches;
+  }
+
+  function wizAddClasses(){
+    if(!schoolWiz?.periods) return;
+    // If this is the first person from the school, save bell schedule for others
+    if(!schoolWiz.bellFound && user && schoolWiz.school?.ncessch){
+      const bellData={
+        school:schoolWiz.school.name,
+        numPeriods:schoolWiz.numPeriods,
+        periods:schoolWiz.periods.map(p=>({label:p.label,start:p.start,end:p.end,days:p.days}))
+      };
+      saveBellSchedule(schoolWiz.school.ncessch, bellData, user.idToken);
+    }
+    const colors=[...SUBJECT_COLORS];
+    const newClasses=[];
+    let colorIdx=0;
+    schoolWiz.periods.forEach((p,i)=>{
+      const className=p.fixed?p.label:(p.name||p.label);
+      if(p.dayGroups){
+        // Create one class entry per day group so timetable shows correct times per day
+        const color=colors[colorIdx%colors.length]; colorIdx++;
+        p.dayGroups.forEach((dg,dgi)=>{
+          newClasses.push({
+            id:Date.now().toString()+i+"_"+dgi,
+            name:className,
+            days:dg.days,
+            startTime:dg.start,
+            endTime:dg.end,
+            room:"",
+            color,
+          });
+        });
+      } else {
+        newClasses.push({
+          id:Date.now().toString()+i,
+          name:className,
+          days:p.days||["Mon","Tue","Wed","Thu","Fri"],
+          startTime:p.start,
+          endTime:p.end,
+          room:"",
+          color:colors[colorIdx%colors.length],
+        });
+        colorIdx++;
+      }
+    });
+    setClasses(prev=>[...prev,...newClasses]);
+    if(user)fbIncrementStat("totalClasses",newClasses.length,user.idToken);
+    setSchoolWiz(null);
+  }
   function delClass(id){setClasses(p=>p.filter(x=>x.id!==id));}
 
   const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean);
@@ -980,6 +1973,8 @@ async function run(){
     const DPC={high:{bg:"#350000",c:"#f87171"},medium:{bg:"#261200",c:"#fbbf24"},low:{bg:"#001400",c:"#4ade80"}};
     const pc=(darkMode?DPC:PC)[a.priority]||(darkMode?DPC.medium:PC.medium);
     const submitRef=useRef(null);
+    // Grade color
+    const gradeColor=!a.grade?null:a.grade>=90?"#16a34a":a.grade>=80?"#2563eb":a.grade>=70?"#d97706":"#dc2626";
     return(
       <div className={"acard"+(ov?" ov":"")} style={{opacity:done?.6:1}}>
         <div className="stripe" style={{background:color,opacity:done?.5:1}}/>
@@ -989,6 +1984,7 @@ async function run(){
             <span className="mtag" style={{color}}>● {a.subject}</span>
             <span className="ppill" style={{background:pc.bg,color:pc.c}}>{PRIORITY[a.priority]?.label||"Medium"}</span>
             {dueText&&<span className="dbadge" style={{color:dueColor}}>{dueText}</span>}
+            {a.grade!=null&&<span style={{fontSize:".7rem",fontWeight:800,color:gradeColor,background:darkMode?"rgba(0,0,0,.3)":"rgba(0,0,0,.06)",padding:"2px 7px",borderRadius:6}}>{a.grade}%{a.gradeRaw&&<span style={{fontWeight:400,opacity:.7}}> ({a.gradeRaw})</span>}</span>}
           </div>
           {!compact&&<div className="qbtns">{[0,25,50,75,100].map(v=><button key={v} className={"qbtn"+(a.progress===v?" on":"")} onClick={()=>updateA(a.id,{progress:v})}>{v}%</button>)}</div>}
         </div>
@@ -1026,6 +2022,18 @@ async function run(){
   const todayStr2=new Date().toISOString().split("T")[0];
   const todayCnt=game.dailyDate===todayStr2?game.dailyCount:0;
 
+  if(authLoading) return(
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0}:root{--bg:#F5F2EC}.dark{--bg:#0F1117}body{background:var(--bg)}`}</style>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontSize:"2.5rem",marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>📚</div>
+        <div style={{fontSize:".9rem",color:"#888",fontWeight:600}}>Loading...</div>
+      </div>
+    </div>
+  );
+
+  if(!user) return <AuthScreen onAuth={u=>{setUser(u);fbLoadData(u.uid,u.idToken).then(d=>{if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}saveReady.current=true;setLoaded(true);const sv=localStorage.getItem("studydesk-seen-version");if(sv!==APP_VERSION)setShowReleases(true);});}}/>;
+
   return(
     <>
       <style>{css}</style>
@@ -1035,12 +2043,26 @@ async function run(){
         {/* HEADER */}
         <div className="hdr">
           <div>
-            <div className="hdr-title">Study Desk</div>
+            <div className="hdr-title" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}} title="Study Desk">Study Desk</div>
             <div className="hdr-sub">{dateStr}</div>
           </div>
           <div className="hdr-r">
             {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
             <div className="pts-pill">⭐ {game.points}</div>
+            {canvasToken&&(
+              <div onClick={()=>syncCanvas(canvasToken,canvasBaseUrl)} title="Click to sync Canvas now"
+                style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:20,border:"1.5px solid",
+                  borderColor:canvasSync.error?"#fca5a5":canvasSync.newSubmissions>0?"#86efac":"var(--border2)",
+                  background:canvasSync.error?"#fef2f2":canvasSync.newSubmissions>0?"#f0fdf4":"var(--bg3)",
+                  cursor:"pointer",fontSize:".72rem",fontWeight:700,
+                  color:canvasSync.error?"#dc2626":canvasSync.newSubmissions>0?"#16a34a":"var(--text3)"}}>
+                <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":""  ,display:"inline-block"}}>
+                  {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.newSubmissions>0?"✅":"🎓"}
+                </span>
+                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} submitted!`:canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:canvasToken?"Canvas connected":""}
+              </div>
+            )}
+            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Connect Canvas</button>}
             <button className="dm-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"} aria-label="Toggle dark mode">
               <div className="dm-knob">{darkMode?"🌙":"☀️"}</div>
             </button>
@@ -1051,13 +2073,39 @@ async function run(){
               {localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid var(--bg)"}}/>}
             </button>
             <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>📥 Import</button>
-            <button className="btn btn-p btn-sm" onClick={()=>{setSubjMode("select");setAddingA(true);}}>＋ Add</button>
+            {user&&(
+              <div style={{position:"relative"}}>
+                <div className="auth-user-pill" onClick={()=>setShowUserMenu(m=>!m)}
+                  style={{cursor:"pointer",userSelect:"none",paddingRight:12}}>
+                  <div className="auth-avatar">
+                    {user.photoURL?<img src={user.photoURL} width="22" height="22" style={{borderRadius:"50%"}}/>:(user.displayName||user.email||"?")[0].toUpperCase()}
+                  </div>
+                  <span style={{maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.displayName||user.email.split("@")[0]}</span>
+                  <span style={{fontSize:".6rem",opacity:.5,marginLeft:2}}>{showUserMenu?"▲":"▼"}</span>
+                </div>
+                {showUserMenu&&(
+                  <>
+                    <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setShowUserMenu(false)}/>
+                    <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:12,boxShadow:"0 8px 24px var(--sh)",zIndex:100,minWidth:160,overflow:"hidden"}}>
+                      <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border)"}}>
+                        <div style={{fontWeight:700,fontSize:".82rem",color:"var(--text)"}}>{user.displayName||user.email.split("@")[0]}</div>
+                        <div style={{fontSize:".7rem",color:"var(--text4)",marginTop:1}}>{user.email}</div>
+                      </div>
+                      <button onClick={()=>{setShowUserMenu(false);fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;}}
+                        style={{width:"100%",padding:"10px 14px",background:"transparent",border:"none",textAlign:"left",cursor:"pointer",fontSize:".82rem",fontWeight:600,color:"#dc2626",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:8}}>
+                        ↩ Sign out
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
         {/* TABS */}
         <div className="tabs">
-          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["schedule","📅 Schedule"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"]].map(([t,l])=>(
+          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
@@ -1178,16 +2226,183 @@ async function run(){
           );
         })()}
 
+        {/* ═══ GRADES ════════════════════════════════════════════════ */}
+        {tab==="grades"&&(()=>{
+          // Build per-class grade data from assignments that have a grade
+          const graded=assignments.filter(a=>a.grade!=null);
+
+          // Per-class stats
+          const classStats=classes.map(cls=>{
+            const clsGraded=graded.filter(a=>a.subject===cls.name);
+            const clsAll=assignments.filter(a=>a.subject===cls.name);
+            if(clsGraded.length===0) return{cls,avg:null,grades:[],total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
+            // Weighted average if gradeRaw available, else simple average
+            let totalPts=0,totalPoss=0,simpleSum=0;
+            for(const a of clsGraded){
+              if(a.gradeRaw){
+                const m=a.gradeRaw.match(/^([\d.]+)\/([\d.]+)$/);
+                if(m){totalPts+=parseFloat(m[1]);totalPoss+=parseFloat(m[2]);}
+                else simpleSum+=a.grade;
+              } else simpleSum+=a.grade;
+            }
+            const avg=totalPoss>0?Math.round((totalPts/totalPoss)*100):Math.round(simpleSum/clsGraded.length);
+            return{cls,avg,grades:clsGraded,total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
+          });
+
+          // Include subjects from assignments not in schedule
+          const schedSubjects=new Set(classes.map(c=>c.name));
+          const extraSubjects=[...new Set(graded.map(a=>a.subject).filter(s=>s&&!schedSubjects.has(s)))];
+          const extraStats=extraSubjects.map(subj=>{
+            const clsGraded=graded.filter(a=>a.subject===subj);
+            const clsAll=assignments.filter(a=>a.subject===subj);
+            let totalPts=0,totalPoss=0,simpleSum=0;
+            for(const a of clsGraded){
+              if(a.gradeRaw){const m=a.gradeRaw.match(/^([\d.]+)\/([\d.]+)$/);if(m){totalPts+=parseFloat(m[1]);totalPoss+=parseFloat(m[2]);}else simpleSum+=a.grade;}
+              else simpleSum+=a.grade;
+            }
+            const avg=totalPoss>0?Math.round((totalPts/totalPoss)*100):Math.round(simpleSum/clsGraded.length);
+            return{cls:{name:subj,color:subjectColor(subj,classes)},avg,grades:clsGraded,total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
+          });
+
+          const allStats=[...classStats,...extraStats].filter(s=>s.total>0||s.grades.length>0);
+          const withGrades=allStats.filter(s=>s.avg!==null);
+
+          // Overall GPA (simple average of class averages)
+          const overallAvg=withGrades.length>0?Math.round(withGrades.reduce((s,c)=>s+c.avg,0)/withGrades.length):null;
+
+          function letterGrade(g){if(!g)return"—";if(g>=97)return"A+";if(g>=93)return"A";if(g>=90)return"A−";if(g>=87)return"B+";if(g>=83)return"B";if(g>=80)return"B−";if(g>=77)return"C+";if(g>=73)return"C";if(g>=70)return"C−";if(g>=67)return"D+";if(g>=63)return"D";if(g>=60)return"D−";return"F";}
+          function gradeColor(g){if(!g)return"var(--text4)";if(g>=90)return"#16a34a";if(g>=80)return"#2563eb";if(g>=70)return"#d97706";return"#dc2626";}
+          function gradeBg(g){if(!g)return"var(--bg3)";if(g>=90)return darkMode?"#001a0a":"#f0fdf4";if(g>=80)return darkMode?"#00102a":"#eff6ff";if(g>=70)return darkMode?"#1a1000":"#fffbeb";return darkMode?"#1a0000":"#fef2f2";}
+
+          const [expandedClass, setExpandedClass] = [expandedGradeClass, setExpandedGradeClass];
+
+          return(
+            <div>
+              {/* Overall GPA banner */}
+              {overallAvg!==null&&(
+                <div style={{background:`linear-gradient(135deg,${darkMode?"#1a1d2e":"#f8f6ff"},${darkMode?"#0f1117":"#fff"})`,border:`1.5px solid ${darkMode?"#2d2f4a":"#e0d7ff"}`,borderRadius:20,padding:"20px 24px",marginBottom:22,display:"flex",alignItems:"center",gap:20}}>
+                  <div style={{textAlign:"center",minWidth:80}}>
+                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"3rem",fontWeight:700,color:gradeColor(overallAvg),lineHeight:1}}>{overallAvg}%</div>
+                    <div style={{fontSize:"1.1rem",fontWeight:800,color:gradeColor(overallAvg)}}>{letterGrade(overallAvg)}</div>
+                  </div>
+                  <div style={{flex:1}}>
+                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.1rem",fontWeight:700,color:"var(--text)",marginBottom:4}}>Overall Average</div>
+                    <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:10}}>{withGrades.length} class{withGrades.length!==1?"es":""} with grades · {graded.length} graded assignment{graded.length!==1?"s":""}</div>
+                    {/* Mini bar showing grade distribution */}
+                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                      {withGrades.sort((a,b)=>b.avg-a.avg).map((s,i)=>(
+                        <div key={i} style={{display:"flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:20,background:gradeBg(s.avg),border:`1px solid ${gradeColor(s.avg)}33`}}>
+                          <div style={{width:6,height:6,borderRadius:"50%",background:s.cls.color||"var(--accent)"}}/>
+                          <span style={{fontSize:".68rem",fontWeight:700,color:gradeColor(s.avg)}}>{s.cls.name.length>12?s.cls.name.slice(0,12)+"…":s.cls.name} {s.avg}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca",whiteSpace:"nowrap",flexShrink:0}}>🎓 Auto-sync grades</button>}
+                </div>
+              )}
+
+              {/* No grades yet */}
+              {graded.length===0&&(
+                <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px",marginBottom:20}}>
+                  <div className="empty-i">📈</div>
+                  <div className="empty-t">No grades yet</div>
+                  <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Connect Canvas to auto-sync grades, or add them manually on each assignment</div>
+                  {!canvasToken&&<button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>setShowCanvasSetup(true)}>🎓 Connect Canvas</button>}
+                </div>
+              )}
+
+              {/* Per-class cards */}
+              {allStats.length>0&&(
+                <div style={{display:"flex",flexDirection:"column",gap:12}}>
+                  <div className="sec-lbl">{withGrades.length>0?"Classes":"All Classes"}</div>
+                  {allStats.map((s,si)=>{
+                    const isExpanded=expandedClass===s.cls.name;
+                    const color=s.cls.color||subjectColor(s.cls.name,classes);
+                    return(
+                      <div key={si} style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 12px var(--sh)",transition:"box-shadow .15s"}}>
+                        {/* Class header row */}
+                        <div onClick={()=>setExpandedClass(isExpanded?null:s.cls.name)}
+                          style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",cursor:"pointer",userSelect:"none"}}>
+                          <div style={{width:44,height:44,borderRadius:12,background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:"1rem",flexShrink:0}}>
+                            {s.cls.name[0]}
+                          </div>
+                          <div style={{flex:1,minWidth:0}}>
+                            <div style={{fontWeight:700,color:"var(--text)",fontSize:".95rem",marginBottom:2}}>{s.cls.name}</div>
+                            <div style={{fontSize:".72rem",color:"var(--text3)"}}>{s.grades.length} graded · {s.pending} pending · {s.total} total</div>
+                          </div>
+                          {s.avg!==null?(
+                            <div style={{textAlign:"right",flexShrink:0}}>
+                              <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.7rem",fontWeight:700,color:gradeColor(s.avg),lineHeight:1}}>{s.avg}%</div>
+                              <div style={{fontSize:".8rem",fontWeight:800,color:gradeColor(s.avg)}}>{letterGrade(s.avg)}</div>
+                            </div>
+                          ):(
+                            <div style={{fontSize:".76rem",color:"var(--text4)",fontWeight:600}}>No grades yet</div>
+                          )}
+                          <div style={{color:"var(--text4)",fontSize:".9rem",marginLeft:4}}>{isExpanded?"▲":"▼"}</div>
+                        </div>
+
+                        {/* Grade bar */}
+                        {s.avg!==null&&(
+                          <div style={{height:4,background:"var(--bg3)",margin:"0 18px 0"}}>
+                            <div style={{width:s.avg+"%",height:"100%",background:gradeColor(s.avg),borderRadius:99,transition:"width .6s ease"}}/>
+                          </div>
+                        )}
+
+                        {/* Expanded: assignment list */}
+                        {isExpanded&&s.grades.length>0&&(
+                          <div style={{padding:"12px 18px 16px",borderTop:"1.5px solid var(--border)",marginTop:8}}>
+                            <div style={{fontSize:".68rem",fontWeight:800,color:"var(--text3)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>Graded Assignments</div>
+                            <div style={{display:"flex",flexDirection:"column",gap:7}}>
+                              {[...s.grades].sort((a,b)=>new Date(b.dueDate||0)-new Date(a.dueDate||0)).map((a,ai)=>(
+                                <div key={ai} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"var(--bg3)",borderRadius:10}}>
+                                  <div style={{flex:1,minWidth:0}}>
+                                    <div style={{fontWeight:600,color:"var(--text)",fontSize:".84rem",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title}</div>
+                                    {a.dueDate&&<div style={{fontSize:".69rem",color:"var(--text4)",marginTop:1}}>{fmtDate(a.dueDate)}</div>}
+                                  </div>
+                                  <div style={{textAlign:"right",flexShrink:0}}>
+                                    <div style={{fontWeight:800,color:gradeColor(a.grade),fontSize:".9rem"}}>{a.grade}%</div>
+                                    {a.gradeRaw&&<div style={{fontSize:".65rem",color:"var(--text4)"}}>{a.gradeRaw}</div>}
+                                    <div style={{fontSize:".7rem",fontWeight:700,color:gradeColor(a.grade)}}>{letterGrade(a.grade)}</div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                        {isExpanded&&s.grades.length===0&&(
+                          <div style={{padding:"12px 18px 16px",borderTop:"1.5px solid var(--border)",marginTop:8,fontSize:".8rem",color:"var(--text4)",textAlign:"center"}}>
+                            No graded assignments yet for this class.
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* Manual grade add tip */}
+              {graded.length>0&&!canvasToken&&(
+                <div style={{marginTop:16,padding:"12px 16px",background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,fontSize:".78rem",color:"var(--text3)",display:"flex",alignItems:"center",gap:10}}>
+                  <span>💡</span>
+                  <span>Connect Canvas to auto-sync grades, or set progress to 100% on an assignment and manually enter a grade by editing it.</span>
+                  <button className="btn btn-g btn-sm" style={{marginLeft:"auto",flexShrink:0,borderColor:"#c7d2fe",color:"#4338ca"}} onClick={()=>setShowCanvasSetup(true)}>🎓 Connect</button>
+                </div>
+              )}
+            </div>
+          );
+        })()}
+
         {/* ═══ SCHEDULE ══════════════════════════════════════════════ */}
         {tab==="schedule"&&(
           <div>
-            <div className="sec-hd"><div className="sec-t">Class Schedule</div><button className="btn btn-p btn-sm" onClick={()=>setAddingC(true)}>＋ Add Class</button></div>
+            <div className="sec-hd"><div className="sec-t">Class Schedule</div><div style={{display:"flex",gap:8}}><button className="btn btn-g btn-sm" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>🏫 Import from School</button><button className="btn btn-p btn-sm" onClick={()=>setAddingC(true)}>＋ Add Class</button></div></div>
             {classes.length===0?(
               <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
                 <div className="empty-i">📅</div>
                 <div className="empty-t">No classes yet</div>
                 <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Add your weekly classes to see them on the timetable</div>
-                <button className="btn btn-p" onClick={()=>setAddingC(true)}>＋ Add First Class</button>
+                <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}><button className="btn btn-g" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>🏫 Import from School</button><button className="btn btn-p" onClick={()=>setAddingC(true)}>＋ Add Manually</button></div>
               </div>
             ):(
               <div className="sched-layout">
@@ -1225,7 +2440,8 @@ async function run(){
                             if(!c.days.includes(d))return false;
                             const[sh,sm]=c.startTime.split(":").map(Number);
                             const[eh,em]=c.endTime.split(":").map(Number);
-                            return h>=(sh+sm/60)&&h<(eh+em/60);
+                            // use floor of start hour so 7:45 shows in the 7am row
+                            return h>=sh&&h<Math.ceil(eh+em/60);
                           });
                           return(
                             <div key={d} className={"scell"+(d===todayAbbr()?" tdy":"")}>
@@ -1317,6 +2533,7 @@ async function run(){
           </div>
         )}
 
+        {adminOpen&&<AdminPanel user={user} onClose={()=>setAdminOpen(false)}/>}
         {floats.map(f=><div key={f.id} className="pts-float" style={{color:f.streak?"#EA580C":"#F59E0B"}}>+{f.pts}{f.streak?"🔥":"⭐"}</div>)}
         {confetti.map(p=>(
           <div key={p.id} className="confetti-piece" style={{
@@ -1366,6 +2583,253 @@ async function run(){
       )}
 
       {/* ADD CLASS */}
+      {/* SCHOOL WIZARD */}
+      {schoolWiz&&(()=>{
+        const wiz=schoolWiz;
+        const bg2=darkMode?"rgba(0,0,0,.75)":"rgba(0,0,0,.5)";
+        const card2=darkMode?"#161921":"#fff";
+        const bd2=darkMode?"#262B3C":"#E2DDD6";
+        const txt2c=darkMode?"#DDE2F5":"#1B1F3B";
+        const txt3c=darkMode?"#5C6480":"#888";
+        const bg3c=darkMode?"#1C1F2B":"#F0EDE7";
+        const inp2={width:"100%",padding:"10px 13px",border:`1.5px solid ${bd2}`,borderRadius:11,background:bg3c,color:txt2c,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".88rem",outline:"none",boxSizing:"border-box"};
+
+        return(
+          <div style={{position:"fixed",inset:0,background:bg2,zIndex:9000,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
+            onClick={e=>{if(e.target===e.currentTarget)setSchoolWiz(null);}}>
+            <div style={{background:card2,border:`1.5px solid ${bd2}`,borderRadius:22,width:"100%",maxWidth:480,boxShadow:`0 24px 60px rgba(0,0,0,.25)`,fontFamily:"'Plus Jakarta Sans',sans-serif",overflow:"hidden"}}>
+
+              {/* Progress bar */}
+              <div style={{height:4,background:bg3c}}>
+                <div style={{height:"100%",background:"var(--accent)",transition:"width .3s",
+                  width:wiz.step==="search"?"10%":wiz.step==="confirm"?"35%":wiz.step==="periods"?`${35+((wiz.currentPeriod)/(wiz.numPeriods||1))*55}%`:"100%"}}/>
+              </div>
+
+              <div style={{padding:"24px 26px"}}>
+
+                {/* ── STEP: SEARCH ─────────────────── */}
+                {wiz.step==="search"&&(
+                  <>
+                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4}}>🏫 Find Your School</div>
+                    <div style={{fontSize:".8rem",color:txt3c,marginBottom:18}}>Search by school name or city to auto-fill your schedule.</div>
+                    <div style={{display:"flex",gap:8,marginBottom:14}}>
+                      <input style={{...inp2,flex:1}} value={wiz.query} autoFocus
+                        onChange={e=>setSchoolWiz(w=>({...w,query:e.target.value,results:null}))}
+                        placeholder="e.g. Naperville Central..."
+                        onKeyDown={async e=>{if(e.key==="Enter"&&wiz.query.trim()){const r=await searchSchools(wiz.query.trim());setSchoolWiz(w=>({...w,results:r}));}}}/>
+                      <button onClick={async()=>{if(wiz.query.trim()){const r=await searchSchools(wiz.query.trim());setSchoolWiz(w=>({...w,results:r}));}}}
+                        style={{padding:"10px 16px",borderRadius:11,border:"none",background:"var(--accent)",color:"#fff",fontWeight:700,fontSize:".85rem",cursor:"pointer",whiteSpace:"nowrap"}}>
+                        Search
+                      </button>
+                    </div>
+
+                    {wiz.results===null&&<div style={{color:txt3c,fontSize:".8rem",textAlign:"center",padding:"20px 0"}}>Type a school name and press Search</div>}
+                    {wiz.results&&wiz.results.length===0&&<div style={{color:txt3c,fontSize:".8rem",textAlign:"center",padding:"20px 0"}}>No schools found. Try a different name.</div>}
+                    {wiz.results&&wiz.results.length>0&&(
+                      <div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:240,overflow:"auto"}}>
+                        {wiz.results.map((s,i)=>(
+                          <div key={i} onClick={()=>setSchoolWiz(w=>({...w,step:"confirm",school:s}))}
+                            style={{padding:"11px 14px",border:`1.5px solid ${bd2}`,borderRadius:12,cursor:"pointer",transition:"all .12s",background:bg3c,display:"flex",alignItems:"center",gap:12}}
+                            onMouseEnter={e=>e.currentTarget.style.borderColor="var(--accent)"}
+                            onMouseLeave={e=>e.currentTarget.style.borderColor=bd2}>
+                            <div style={{width:36,height:36,borderRadius:10,background:"var(--accent)",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.1rem",flexShrink:0}}>🏫</div>
+                            <div>
+                              <div style={{fontWeight:700,color:txt2c,fontSize:".88rem"}}>{s.name}</div>
+                              <div style={{fontSize:".72rem",color:txt3c,marginTop:2}}>{s.city}, {s.state}</div>
+                            </div>
+                            <div style={{marginLeft:"auto",color:"var(--accent)",fontSize:".8rem",fontWeight:700}}>Select →</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <div style={{marginTop:16,paddingTop:14,borderTop:`1px solid ${bd2}`,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <span style={{fontSize:".74rem",color:txt3c}}>Can't find your school?</span>
+                      <button onClick={()=>setSchoolWiz(null)} style={{padding:"7px 14px",borderRadius:9,border:`1.5px solid ${bd2}`,background:"transparent",color:txt2c,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".78rem",fontWeight:600,cursor:"pointer"}}>Cancel</button>
+                    </div>
+                  </>
+                )}
+
+                {/* ── STEP: CONFIRM ────────────────── */}
+                {wiz.step==="confirm"&&wiz.school&&(
+                  <>
+                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4}}>✅ Confirm School</div>
+                    <div style={{padding:"14px 16px",border:`1.5px solid ${bd2}`,borderRadius:14,background:bg3c,marginBottom:18}}>
+                      <div style={{fontWeight:700,color:txt2c,fontSize:".95rem"}}>{wiz.school.name}</div>
+                      <div style={{fontSize:".76rem",color:txt3c,marginTop:3}}>{wiz.school.city}, {wiz.school.state} · NCES ID: {wiz.school.ncessch}</div>
+                    </div>
+                    <div style={{fontSize:".8rem",fontWeight:700,color:txt2c,marginBottom:8}}>How many periods per day?</div>
+                    <div style={{display:"flex",gap:8,flexWrap:"wrap",marginBottom:20}}>
+                      {[4,5,6,7,8,9,10].map(n=>(
+                        <button key={n} onClick={()=>setSchoolWiz(w=>({...w,numPeriods:n}))}
+                          style={{width:44,height:44,borderRadius:10,border:`1.5px solid ${wiz.numPeriods===n?"var(--accent)":bd2}`,
+                            background:wiz.numPeriods===n?"var(--accent)":bg3c,
+                            color:wiz.numPeriods===n?"#fff":txt2c,fontWeight:700,fontSize:".9rem",cursor:"pointer"}}>
+                          {n}
+                        </button>
+                      ))}
+                    </div>
+                    <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                      <button onClick={()=>setSchoolWiz(w=>({...w,step:"search"}))} style={{padding:"9px 16px",borderRadius:10,border:`1.5px solid ${bd2}`,background:"transparent",color:txt2c,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".84rem",cursor:"pointer"}}>← Back</button>
+                      <button onClick={async()=>{
+                        const sched=await fetchBellSchedule(wiz.school.ncessch, user?.idToken);
+                        if(sched){
+                          // Pre-fill times — handle both dayGroups format and flat format
+                          const periods=sched.periods.map(p=>({
+                            name:"",
+                            label:p.label||"",
+                            fixed:p.fixed||false,
+                            // Keep dayGroups if present, otherwise use flat start/end/days
+                            ...(p.dayGroups
+                              ? {dayGroups:p.dayGroups, start:p.dayGroups[0]?.start||"", end:p.dayGroups[0]?.end||"", days:p.dayGroups[0]?.days||[]}
+                              : {start:p.start||"", end:p.end||"", days:p.days||["Mon","Tue","Wed","Thu","Fri"]}
+                            )
+                          }));
+                          setSchoolWiz(w=>({...w,step:"periods",periods,numPeriods:periods.filter(p=>!p.fixed).length,currentPeriod:0,bellNote:sched.note,bellFound:true}));
+                        } else {
+                          // No bell schedule found — ask user to enter times (first person from this school)
+                          const blanks=Array.from({length:wiz.numPeriods},(_,i)=>({name:"",start:"",end:"",days:["Mon","Tue","Wed","Thu","Fri"],label:`Period ${i+1}`}));
+                          setSchoolWiz(w=>({...w,step:"periods",periods:blanks,currentPeriod:0,bellFound:false}));
+                        }
+                      }} style={{padding:"9px 20px",borderRadius:10,border:"none",background:"var(--accent)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".84rem",cursor:"pointer"}}>
+                        Set Up Classes →
+                      </button>
+                    </div>
+                  </>
+                )}
+
+                {/* ── STEP: PERIODS ─────────────────── */}
+                {wiz.step==="periods"&&(()=>{
+                  if(!wiz.periods||wiz.periods.length===0) return null;
+                  const idx=wiz.currentPeriod;
+                  const ordinals=["1st","2nd","3rd","4th","5th","6th","7th","8th","9th","10th"];
+                  // Check allDone BEFORE accessing p — p is undefined when idx===periods.length
+                  const allDone=idx>=wiz.periods.length;
+                  const p=wiz.periods[idx];
+                  if(!allDone&&!p) return null;
+                  function updatePeriod(patch){setSchoolWiz(w=>{const ps=[...w.periods];ps[idx]={...ps[idx],...patch};return{...w,periods:ps};});}
+                  // Count only non-fixed periods for user input
+                  const inputPeriods=wiz.periods.filter(p=>!p.fixed);
+                  const inputIdx=p?inputPeriods.indexOf(p):inputPeriods.length;
+                  if(allDone){
+                    // Deduplicate by name for review display
+                    const reviewPeriods=[...new Map(wiz.periods.map(p=>[p.label,p])).values()];
+                    return(
+                      <>
+                        <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4}}>🎉 Ready to add!</div>
+                        <div style={{fontSize:".8rem",color:txt3c,marginBottom:16}}>Here's your schedule for {wiz.school?.name}:</div>
+                        <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:220,overflow:"auto",marginBottom:18}}>
+                          {reviewPeriods.map((pd,i)=>(
+                            <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 12px",background:bg3c,borderRadius:10,border:`1px solid ${bd2}`}}>
+                              <div style={{width:28,height:28,borderRadius:8,background:SUBJECT_COLORS[i%SUBJECT_COLORS.length],display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:".7rem",flexShrink:0}}>{i+1}</div>
+                              <div style={{flex:1}}>
+                                <div style={{fontWeight:700,color:txt2c,fontSize:".83rem"}}>{pd.fixed?pd.label:(pd.name||`Period ${i+1}`)}</div>
+                                <div style={{fontSize:".7rem",color:txt3c}}>
+                                  {pd.dayGroups?pd.dayGroups.map(dg=>dg.days.join("/")+": "+dg.start+"–"+dg.end).join(" · "):(pd.start+"–"+pd.end+" · "+(pd.days||[]).join(", "))}
+                                </div>
+                              </div>
+                              {pd.fixed&&<span style={{fontSize:".65rem",padding:"2px 7px",borderRadius:5,background:bg3c,border:`1px solid ${bd2}`,color:txt3c}}>auto</span>}
+                            </div>
+                          ))}
+                        </div>
+                        <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+                          <button onClick={()=>setSchoolWiz(w=>({...w,currentPeriod:w.periods.length-1}))} style={{padding:"9px 16px",borderRadius:10,border:`1.5px solid ${bd2}`,background:"transparent",color:txt2c,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".84rem",cursor:"pointer"}}>← Back</button>
+                          <button onClick={wizAddClasses} style={{padding:"9px 20px",borderRadius:10,border:"none",background:"#16a34a",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".84rem",cursor:"pointer"}}>
+                            ✓ Add to Schedule
+                          </button>
+                        </div>
+                      </>
+                    );
+                  }
+                  return(
+                    <>
+                      {/* Auto-skip fixed periods like SOAR */}
+                      {p.fixed&&(()=>{
+                        // Use a one-time effect workaround — advance on next tick
+                        Promise.resolve().then(()=>setSchoolWiz(w=>w.currentPeriod===idx?{...w,currentPeriod:w.currentPeriod+1}:w));
+                        return <div style={{padding:20,textAlign:"center",color:txt3c,fontSize:".8rem"}}>⏭ Skipping {p.label}...</div>;
+                      })()}
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+                        <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.15rem",fontWeight:700,color:txt2c}}>{p.label||`${ordinals[inputIdx]||`${inputIdx+1}th`} Period`}</div>
+                        <div style={{fontSize:".74rem",color:txt3c,fontWeight:600}}>{inputIdx+1} of {inputPeriods.length}</div>
+                      </div>
+                      <div style={{fontSize:".78rem",color:txt3c,marginBottom:18}}>What class do you have {p.label?.toLowerCase()||`${ordinals[inputIdx]||`${inputIdx+1}th`} period`}?</div>
+
+                      {/* Bell schedule banner */}
+                      {idx===0&&wiz.bellFound&&<div style={{padding:"8px 12px",background:darkMode?"#001a00":"#f0fdf4",border:`1px solid ${darkMode?"#14532d":"#bbf7d0"}`,borderRadius:9,fontSize:".74rem",color:darkMode?"#4ade80":"#16a34a",fontWeight:600,marginBottom:14}}>
+                        ✅ Bell times loaded automatically — just enter your class names!{wiz.bellNote&&<span style={{fontWeight:400,color:darkMode?"#4ade80":"#16a34a"}}> ({wiz.bellNote})</span>}
+                      </div>}
+                      {idx===0&&!wiz.bellFound&&<div style={{padding:"8px 12px",background:bg3c,border:`1px solid ${bd2}`,borderRadius:9,fontSize:".74rem",color:txt3c,marginBottom:14}}>
+                        ⏰ First person from this school! Enter times once and they'll be saved for everyone else.
+                      </div>}
+
+                      {/* Time display (if known) or input (if not) */}
+                      {wiz.bellFound?(
+                        <div style={{background:bg3c,borderRadius:11,border:`1.5px solid ${bd2}`,marginBottom:14,overflow:"hidden"}}>
+                          {(p.dayGroups||[{days:p.days,start:p.start,end:p.end}]).map((dg,dgi)=>(
+                            <div key={dgi} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 14px",borderBottom:dgi<(p.dayGroups||[]).length-1?`1px solid ${bd2}`:"none"}}>
+                              <div style={{display:"flex",gap:4,flexWrap:"wrap",flex:1}}>
+                                {dg.days.map(d=><span key={d} style={{padding:"2px 7px",borderRadius:5,background:"var(--accent)",color:"#fff",fontSize:".65rem",fontWeight:700}}>{d}</span>)}
+                              </div>
+                              <div style={{fontSize:".82rem",fontWeight:700,color:txt2c,whiteSpace:"nowrap"}}>{dg.start} – {dg.end}</div>
+                            </div>
+                          ))}
+                        </div>
+                      ):(
+                        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:14}}>
+                          <div>
+                            <label style={{display:"block",fontSize:".68rem",fontWeight:800,color:txt3c,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>Start Time</label>
+                            <input type="time" style={inp2} value={p.start} onChange={e=>updatePeriod({start:e.target.value})}/>
+                          </div>
+                          <div>
+                            <label style={{display:"block",fontSize:".68rem",fontWeight:800,color:txt3c,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>End Time</label>
+                            <input type="time" style={inp2} value={p.end} onChange={e=>updatePeriod({end:e.target.value})}/>
+                          </div>
+                        </div>
+                      )}
+
+                      <div style={{marginBottom:14}}>
+                        <label style={{display:"block",fontSize:".68rem",fontWeight:800,color:txt3c,textTransform:"uppercase",letterSpacing:".06em",marginBottom:5}}>Class Name</label>
+                        <input style={inp2} value={p.name} autoFocus
+                          onChange={e=>updatePeriod({name:e.target.value})}
+                          placeholder={`e.g. AP Chemistry, Math, English...`}
+                          onKeyDown={e=>{ if(e.key==="Enter"){ if(idx+1>=wiz.numPeriods)setSchoolWiz(w=>({...w,currentPeriod:w.numPeriods})); else setSchoolWiz(w=>({...w,currentPeriod:w.currentPeriod+1})); } }}/>
+                      </div>
+
+                      {!wiz.bellFound&&<div style={{marginBottom:20}}>
+                        <label style={{display:"block",fontSize:".68rem",fontWeight:800,color:txt3c,textTransform:"uppercase",letterSpacing:".06em",marginBottom:8}}>Days</label>
+                        <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                          {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"].map(d=>{
+                            const on=p.days.includes(d);
+                            return <button key={d} onClick={()=>updatePeriod({days:on?p.days.filter(x=>x!==d):[...p.days,d]})}
+                              style={{padding:"6px 12px",borderRadius:8,border:`1.5px solid ${on?"var(--accent)":bd2}`,background:on?"var(--accent)":bg3c,color:on?"#fff":txt2c,fontWeight:600,fontSize:".78rem",cursor:"pointer"}}>{d}</button>;
+                          })}
+                        </div>
+                      </div>}
+
+                      <div style={{display:"flex",gap:8,justifyContent:"space-between"}}>
+                        <button onClick={()=>setSchoolWiz(w=>({...w,currentPeriod:Math.max(0,w.currentPeriod-1)}))} disabled={idx===0}
+                          style={{padding:"9px 16px",borderRadius:10,border:`1.5px solid ${bd2}`,background:"transparent",color:idx===0?"#bbb":txt2c,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".84rem",cursor:idx===0?"not-allowed":"pointer"}}>
+                          ← Back
+                        </button>
+                        <button onClick={()=>{
+                            const isLast=idx+1>=wiz.periods.length||wiz.periods.slice(idx+1).every(p=>p.fixed);
+                            // Always advance to periods.length to trigger review
+                            setSchoolWiz(w=>({...w,currentPeriod:isLast?w.periods.length:w.currentPeriod+1}));
+                          }}
+                          style={{padding:"9px 20px",borderRadius:10,border:"none",background:"var(--accent)",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".84rem",cursor:"pointer"}}>
+                          {idx+1>=wiz.periods.length||wiz.periods.slice(idx+1).every(p=>p.fixed)?"Review →":"Next →"}
+                        </button>
+                      </div>
+                    </>
+                  );
+                })()}
+
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
       {addingC&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&(setAddingC(false),setCf(emptyCF))}>
           <div className="modal">
@@ -1703,6 +3167,60 @@ async function run(){
             <div style={{padding:"14px 24px",borderTop:"1.5px solid #EDE9E2"}}>
               <button className="btn btn-p" style={{width:"100%",justifyContent:"center"}} onClick={dismissReleases}>
                 Got it ✓
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* CANVAS SETUP MODAL */}
+      {showCanvasSetup&&(
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowCanvasSetup(false)}>
+          <div className="modal" style={{maxWidth:500}}>
+            <div className="modal-t">🎓 Connect Canvas</div>
+            <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"13px 15px",marginBottom:16,fontSize:".8rem",color:"#4338ca",lineHeight:1.7}}>
+              <b>StudyDesk will check Canvas every 3 minutes</b> and automatically mark assignments as done when you submit them. Grades are shown on cards when posted.
+            </div>
+
+            <div style={{fontSize:".7rem",fontWeight:800,color:"var(--text3)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:12}}>How to get your Canvas API token:</div>
+            {[
+              ["1","Open Canvas and click your profile picture (top-left)"],
+              ["2","Go to Settings → scroll down to Approved Integrations"],
+              ["3","Click 'New Access Token' → purpose: 'StudyDesk' → Generate"],
+              ["4","Copy the token and paste it below (you only see it once!)"],
+            ].map(([n,t])=>(
+              <div key={n} style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:9}}>
+                <div style={{width:22,height:22,borderRadius:"50%",background:"#4338ca",color:"#fff",fontSize:".68rem",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,marginTop:1}}>{n}</div>
+                <div style={{fontSize:".82rem",color:"var(--text2)",lineHeight:1.5}}>{t}</div>
+              </div>
+            ))}
+
+            <div className="fg" style={{marginTop:16}}>
+              <label className="flbl">Canvas School URL</label>
+              <input className="finp" value={canvasBaseUrl}
+                onChange={e=>setCanvasBaseUrl(e.target.value)}
+                placeholder="https://naperville.instructure.com"/>
+              <div style={{fontSize:".69rem",color:"var(--text4)",marginTop:4}}>The base URL of your school's Canvas (no trailing slash)</div>
+            </div>
+            <div className="fg">
+              <label className="flbl">Canvas API Token</label>
+              <input className="finp" type="password" value={canvasToken}
+                onChange={e=>setCanvasToken(e.target.value)}
+                placeholder="Paste your token here..."/>
+            </div>
+
+            {canvasSync.error&&<div className="err-box" style={{marginBottom:10}}>⚠️ {canvasSync.error}</div>}
+
+            <div className="mactions">
+              {canvasToken&&<button className="btn btn-g" onClick={()=>{setCanvasToken("");setCanvasBaseUrl("https://naperville.instructure.com");try{localStorage.removeItem("sd-canvas-token");localStorage.removeItem("sd-canvas-url");}catch{}}}>🗑 Disconnect</button>}
+              <button className="btn btn-g" onClick={()=>setShowCanvasSetup(false)}>Cancel</button>
+              <button className="btn btn-p" style={{background:"#4338ca"}} disabled={!canvasToken||!canvasBaseUrl}
+                onClick={()=>{
+                  try{localStorage.setItem("sd-canvas-token",canvasToken);localStorage.setItem("sd-canvas-url",canvasBaseUrl);}catch{}
+                  setShowCanvasSetup(false);
+                  syncCanvas(canvasToken,canvasBaseUrl);
+                }}>
+                Connect & Sync →
               </button>
             </div>
           </div>
