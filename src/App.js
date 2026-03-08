@@ -975,7 +975,7 @@ export default function StudyDesk() {
     logoClicks.current+=1;
     clearTimeout(logoTimer.current);
     logoTimer.current=setTimeout(()=>{logoClicks.current=0;},1800);
-    if(logoClicks.current>=5){logoClicks.current=0;setAdminOpen(true);}
+    // 5-click logo trick disabled — use /admin route instead
   }
   const [authLoading, setAuthLoading] = useState(true);
   const [game, setGame] = useState({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});
