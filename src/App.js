@@ -854,7 +854,7 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
                 ].map((t,i)=>(
                   <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:i<2?8:0}}>
                     <div style={{width:20,height:20,borderRadius:"50%",background:acc,color:"#fff",fontSize:".65rem",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
-                    <div style={{fontSize:".78rem",color:txt2||txt}}>{t}</div>
+                    <div style={{fontSize:".78rem",color:txt}}>{t}</div>
                   </div>
                 ))}
               </div>
