@@ -44,6 +44,33 @@ async function fbResetPassword(email) {
   return true;
 }
 
+async function fbSendVerificationEmail(idToken) {
+  const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({requestType:"VERIFY_EMAIL", idToken})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return true;
+}
+
+async function fbCheckEmailVerified(idToken) {
+  const r = await fetch(`${FB_AUTH}:lookup?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({idToken})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return d.users?.[0]?.emailVerified === true;
+}
+
+async function fbDeleteAccount(idToken) {
+  await fetch(`${FB_AUTH}:delete?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({idToken})
+  });
+}
+
 // ── Google Identity Services sign-in ─────────────────────────────────────────
 // IMPORTANT: Replace the value below with your real Web Client ID from:
 // Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID
@@ -462,6 +489,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .apreview-name{font-size:.83rem;font-weight:600;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .apreview-due{font-size:.7rem;color:var(--text3);white-space:nowrap}
 .spin{animation:spin .8s linear infinite;display:inline-block}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
 .cv-spin{animation:spin .8s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
 .err-box{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#dc2626;margin-top:8px;line-height:1.5}
@@ -593,6 +621,7 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [name, setName] = useState("");
   const [loading, setLoading] = useState(false);
   const [err, setErr] = useState("");
@@ -600,6 +629,13 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   const [showReset, setShowReset] = useState(false);
   const [resetEmail, setResetEmail] = useState("");
   const [resetLoading, setResetLoading] = useState(false);
+  // Email verification state
+  const [verifyStep, setVerifyStep] = useState(false); // true = showing verify screen
+  const [verifyUser, setVerifyUser] = useState(null);  // temp user object while verifying
+  const [verifyPolling, setVerifyPolling] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
+  const [resendCooldown, setResendCooldown] = useState(0);
+  const pollRef = useRef(null);
 
   async function handleReset(){
     if(!resetEmail){setErr("Enter your email first.");return;}
@@ -618,22 +654,66 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   }
   const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
 
+  function startResendCooldown(){
+    setResendCooldown(60);
+    const t=setInterval(()=>setResendCooldown(c=>{if(c<=1){clearInterval(t);return 0;}return c-1;}),1000);
+  }
+
+  function startPolling(u){
+    setVerifyPolling(true);
+    pollRef.current=setInterval(async()=>{
+      try{
+        const verified=await fbCheckEmailVerified(u.idToken);
+        if(verified){
+          clearInterval(pollRef.current);
+          setVerifyPolling(false);
+          fbSetSession(u);
+          fbIncrementStat("totalUsers",1,u.idToken);
+          onAuth(u);
+        }
+      }catch{}
+    },3000);
+  }
+
+  async function handleResend(){
+    if(resendCooldown>0||!verifyUser)return;
+    setResendLoading(true);
+    try{
+      await fbSendVerificationEmail(verifyUser.idToken);
+      startResendCooldown();
+    }catch(e){setErr(e.message);}
+    setResendLoading(false);
+  }
+
+  async function handleCancelVerify(){
+    clearInterval(pollRef.current);
+    if(verifyUser){try{await fbDeleteAccount(verifyUser.idToken);}catch{}}
+    setVerifyStep(false);setVerifyUser(null);setErr("");
+  }
+
   async function handleSubmit(){
     if(!email||!password)return;
-    if(mode==="signup"&&!name){setErr("Please enter your name.");return;}
+    if(mode==="signup"){
+      if(!name){setErr("Please enter your name.");return;}
+      if(password!==confirmPassword){setErr("Passwords don't match.");return;}
+      if(password.length<6){setErr("Password must be at least 6 characters.");return;}
+    }
     setLoading(true);setErr("");
     try{
       let user;
       if(mode==="login"){
         user=await fbSignIn(email,password);
+        fbSetSession(user);
+        onAuth(user);
       } else {
+        // Create account, send verification email, show verify screen
         user=await fbSignUp(email,password,name);
+        await fbSendVerificationEmail(user.idToken);
+        setVerifyUser(user);
+        setVerifyStep(true);
+        startResendCooldown();
+        startPolling(user);
       }
-      fbSetSession(user);
-      if(mode==="signup"){
-        fbIncrementStat("totalUsers",1,user.idToken);
-      }
-      onAuth(user);
     } catch(e){
       const msgs={
         "EMAIL_NOT_FOUND":"No account found with that email.",
@@ -709,7 +789,7 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
         {/* Sign in / Sign up toggle */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",background:bg3,borderRadius:12,padding:4,marginBottom:22,gap:4}}>
           {["login","signup"].map(m=>(
-            <button key={m} onClick={()=>{setMode(m);setErr("");}} style={{padding:"9px 0",borderRadius:9,border:"none",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".84rem",fontWeight:600,cursor:"pointer",transition:"all .15s",
+            <button key={m} onClick={()=>{setMode(m);setErr("");setConfirmPassword("");}} style={{padding:"9px 0",borderRadius:9,border:"none",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".84rem",fontWeight:600,cursor:"pointer",transition:"all .15s",
               background:mode===m?card:"transparent",color:mode===m?txt:txt3,
               boxShadow:mode===m?`0 2px 8px ${sh2}`:"none"}}>
               {m==="login"?"Sign In":"Sign Up"}
@@ -739,6 +819,39 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
           <label style={lbl}>Email</label>
           <input style={inp} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
         </div>
+        {/* Email verification screen — overlays the form */}
+        {verifyStep&&(
+          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
+            <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:400,boxShadow:`0 24px 60px ${sh2}`,textAlign:"center"}}>
+              <div style={{fontSize:"3rem",marginBottom:16}}>📬</div>
+              <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.3rem",fontWeight:700,color:txt,marginBottom:8}}>Check your email</div>
+              <div style={{fontSize:".83rem",color:txt3,lineHeight:1.7,marginBottom:6}}>
+                We sent a verification link to
+              </div>
+              <div style={{fontWeight:700,color:txt,fontSize:".9rem",marginBottom:20,padding:"8px 14px",background:bg3,borderRadius:10,display:"inline-block"}}>{email}</div>
+              <div style={{fontSize:".78rem",color:txt3,marginBottom:24,lineHeight:1.6}}>
+                Click the link in the email to verify your account. This page will update automatically once verified.
+              </div>
+              {/* Polling indicator */}
+              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:20,fontSize:".78rem",color:txt3}}>
+                <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",animation:"pulse 1.5s ease-in-out infinite"}}/>
+                Waiting for verification...
+              </div>
+              {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"9px 12px",fontSize:".78rem",color:darkMode?"#f87171":"#dc2626",marginBottom:14}}>{err}</div>}
+              <div style={{display:"flex",gap:8,flexDirection:"column"}}>
+                <button onClick={handleResend} disabled={resendCooldown>0||resendLoading}
+                  style={{width:"100%",padding:"11px",borderRadius:11,border:`1.5px solid ${bd}`,background:"transparent",color:resendCooldown>0?txt3:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".85rem",cursor:resendCooldown>0?"not-allowed":"pointer"}}>
+                  {resendLoading?"Sending...":`Resend Email${resendCooldown>0?` (${resendCooldown}s)`:""}`}
+                </button>
+                <button onClick={handleCancelVerify}
+                  style={{width:"100%",padding:"10px",borderRadius:11,border:"none",background:"transparent",color:txt3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,fontSize:".8rem",cursor:"pointer",textDecoration:"underline"}}>
+                  Cancel & use a different email
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         <div style={{marginBottom:8}}>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
             <label style={lbl}>Password</label>
@@ -746,6 +859,13 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
           </div>
           <input style={inp} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
         </div>
+        {mode==="signup"&&(
+          <div style={{marginBottom:8}}>
+            <label style={lbl}>Confirm Password</label>
+            <input style={{...inp,borderColor:confirmPassword&&confirmPassword!==password?"#ef4444":bd}} type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
+            {confirmPassword&&confirmPassword!==password&&<div style={{fontSize:".72rem",color:"#ef4444",marginTop:4}}>Passwords don't match</div>}
+          </div>
+        )}
 
         {/* Forgot password modal */}
         {showReset&&(
@@ -1030,8 +1150,8 @@ export default function StudyDesk() {
   const [agendaSlideLinks, setAgendaSlideLinks] = useState([]); // [{id, title, exportUrl}]
   const [agendaSlideTexts, setAgendaSlideTexts] = useState([]);
   const [canvasStatus, setCanvasStatus] = useState("");
-  const [canvasToken, setCanvasToken] = useState(()=>{try{return localStorage.getItem("sd-canvas-token")||"";}catch{return "";}});
-  const [canvasBaseUrl, setCanvasBaseUrl] = useState(()=>{try{return localStorage.getItem("sd-canvas-url")||"https://naperville.instructure.com";}catch{return "https://naperville.instructure.com";}});
+  const [canvasToken, setCanvasToken] = useState(""); // never stored in localStorage — Firestore only
+  const [canvasBaseUrl, setCanvasBaseUrl] = useState("https://naperville.instructure.com");
   const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:""});
   const [showCanvasSetup, setShowCanvasSetup] = useState(false);
   const [expandedGradeClass, setExpandedGradeClass] = useState(null);
@@ -1059,7 +1179,7 @@ export default function StudyDesk() {
     if(session){
       setUser(session);
       fbLoadData(session.uid, session.idToken).then(d=>{
-        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.token){setCanvasToken(d.cv.token);try{localStorage.setItem("sd-canvas-token",d.cv.token);}catch{}};if(d.cv?.url){setCanvasBaseUrl(d.cv.url);try{localStorage.setItem("sd-canvas-url",d.cv.url);}catch{}}}
+        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url);}}
         saveReady.current=true;
         setLoaded(true);
         const seenVersion=localStorage.getItem("studydesk-seen-version");
@@ -3424,11 +3544,10 @@ async function run(){
             {canvasSync.error&&<div className="err-box" style={{marginBottom:10}}>⚠️ {canvasSync.error}</div>}
 
             <div className="mactions">
-              {canvasToken&&<button className="btn btn-g" onClick={()=>{setCanvasToken("");setCanvasBaseUrl("https://naperville.instructure.com");try{localStorage.removeItem("sd-canvas-token");localStorage.removeItem("sd-canvas-url");}catch{}}}>🗑 Disconnect</button>}
+              {canvasToken&&<button className="btn btn-g" onClick={()=>{setCanvasToken("");setCanvasBaseUrl("https://naperville.instructure.com");}}>🗑 Disconnect</button>}
               <button className="btn btn-g" onClick={()=>setShowCanvasSetup(false)}>Cancel</button>
               <button className="btn btn-p" style={{background:"#4338ca"}} disabled={!canvasToken||!canvasBaseUrl}
                 onClick={()=>{
-                  try{localStorage.setItem("sd-canvas-token",canvasToken);localStorage.setItem("sd-canvas-url",canvasBaseUrl);}catch{}
                   setShowCanvasSetup(false);
                   syncCanvas(canvasToken,canvasBaseUrl);
                 }}>
