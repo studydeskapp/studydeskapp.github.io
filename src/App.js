@@ -8,6 +8,9 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
+function canvasProxyUrl(base, path) {
+  return `https://corsproxy.io/?url=${encodeURIComponent(base+path)}`;
+}
 
 async function fbSignUp(email, password, displayName) {
   const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
@@ -1278,7 +1281,7 @@ export default function StudyDesk() {
     try{
       const today=new Date().toISOString().split("T")[0];
       const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
-      const syncR=await fetch(`${baseUrl}${syncPath}`,{
+      const syncR=await fetch(canvasProxyUrl(baseUrl, syncPath),{
         headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
         signal:AbortSignal.timeout(10000)
       });
@@ -1492,7 +1495,7 @@ export default function StudyDesk() {
       let pageCount=0;
       while(currentPath&&pageCount<20){
         pageCount++;
-        const r=await fetch(`${canvasBaseUrl}${currentPath}`,{
+        const r=await fetch(canvasProxyUrl(canvasBaseUrl, currentPath),{
           headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},
           signal:AbortSignal.timeout(12000)
         });
