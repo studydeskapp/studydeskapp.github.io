@@ -1212,7 +1212,7 @@ export default function StudyDesk() {
   const [canvasStatus, setCanvasStatus] = useState("");
   const [canvasToken, setCanvasToken] = useState(()=>{try{return localStorage.getItem("sd-canvas-token")||"";}catch{return "";}});
   const [canvasBaseUrl, setCanvasBaseUrl] = useState(()=>{try{return localStorage.getItem("sd-canvas-url")||"https://naperville.instructure.com";}catch{return "https://naperville.instructure.com";}});
-  const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:""});
+  const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:"",everSucceeded:false});
   const [showCanvasSetup, setShowCanvasSetup] = useState(false);
   const [expandedGradeClass, setExpandedGradeClass] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -1255,7 +1255,7 @@ export default function StudyDesk() {
   useEffect(()=>{
     if(!saveReady.current||!user) return;
     const t=setTimeout(()=>{
-      fbSaveData(user.uid, user.idToken, {a:assignments,c:classes,g:game,cv:{token:canvasToken,url:canvasBaseUrl}});
+      fbSaveData(user.uid, user.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl}});
     },800); // debounce 800ms
     return()=>clearTimeout(t);
   },[assignments,classes,game,loaded,user]);
@@ -1300,7 +1300,6 @@ export default function StudyDesk() {
           const dueDate=item.plannable_date?item.plannable_date.split("T")[0]:"";
           const subject=item.context_name||"";
           const title=item.plannable?.title||"";
-          // Try to match existing assignment by title + subject similarity
           const match=updated.find(a=>{
             const titleMatch=a.title.toLowerCase().trim()===title.toLowerCase().trim()||
               a.title.toLowerCase().includes(title.toLowerCase().slice(0,15))||
@@ -1311,7 +1310,6 @@ export default function StudyDesk() {
             return titleMatch&&subjectMatch;
           });
           if(match){
-            // Update existing assignment
             const wasSubmitted=match.progress>=100;
             const patch={};
             if(submitted&&!wasSubmitted){ patch.progress=100; newSubmits++; }
@@ -1321,7 +1319,6 @@ export default function StudyDesk() {
               updated=updated.map(a=>a.id===match.id?{...a,...patch}:a);
             }
           } else if(submitted){
-            // Canvas has a submitted assignment we don't know about — add it
             const existing=updated.find(a=>a.title.toLowerCase()===title.toLowerCase());
             if(!existing&&dueDate){
               const today2=new Date(); today2.setHours(0,0,0,0);
@@ -1340,13 +1337,20 @@ export default function StudyDesk() {
         return updated;
       });
 
-      setCanvasSync({lastSync:new Date(),syncing:false,newSubmissions:newSubmits,error:""});
+      setCanvasSync({lastSync:new Date(),syncing:false,newSubmissions:newSubmits,error:"",everSucceeded:true});
       if(newSubmits>0){
         launchConfetti(null);
         setTimeout(()=>setCanvasSync(s=>({...s,newSubmissions:0})),4000);
       }
     } catch(e){
-      setCanvasSync(s=>({...s,syncing:false,error:e.message||"Sync failed"}));
+      setCanvasSync(s=>{
+        // If this was the very first sync attempt and it failed, clear the token so user isn't stuck
+        if(!s.everSucceeded){
+          setCanvasToken("");
+          return {lastSync:null,syncing:false,newSubmissions:0,error:"",everSucceeded:false};
+        }
+        return {...s,syncing:false,error:e.message||"Sync failed"};
+      });
     }
     canvasSyncRef.current=false;
   }
@@ -2389,16 +2393,16 @@ async function run(){
             {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
             <div className="pts-pill">⭐ {game.points}</div>
             {canvasToken&&(
-              <div onClick={()=>syncCanvas(canvasToken,canvasBaseUrl)} title="Click to sync Canvas now"
+              <div onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}} title={canvasSync.error?"Click to dismiss":"Click to sync Canvas now"}
                 style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:20,border:"1.5px solid",
                   borderColor:canvasSync.error?"#fca5a5":canvasSync.newSubmissions>0?"#86efac":"var(--border2)",
                   background:canvasSync.error?"#fef2f2":canvasSync.newSubmissions>0?"#f0fdf4":"var(--bg3)",
                   cursor:"pointer",fontSize:".72rem",fontWeight:700,
                   color:canvasSync.error?"#dc2626":canvasSync.newSubmissions>0?"#16a34a":"var(--text3)"}}>
-                <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":""  ,display:"inline-block"}}>
+                <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
                   {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.newSubmissions>0?"✅":"🎓"}
                 </span>
-                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} submitted!`:canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:canvasToken?"Canvas connected":""}
+                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error — tap to dismiss":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} submitted!`:canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:canvasToken?"Canvas connected":""}
               </div>
             )}
             {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
