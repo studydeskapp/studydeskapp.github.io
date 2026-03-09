@@ -8,7 +8,7 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
-  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 // Cloudflare Worker proxy — free, always on, no cold starts, handles CORS + auth properly
 const CF_PROXY = "https://studydesk-proxy.goyalamars18.workers.dev";
 async function fetchWithFallback(base, path, options={}) {
@@ -188,11 +188,15 @@ async function fbIncrementStat(field, amount, idToken) {
   }catch(e){console.warn("Stat error",e);}
 }
 
-async function fbUpdatePresence(user) {
+async function fbUpdatePresence(user, extra={}) {
   try{
-    await fetch(`${FB_FS}/presence/${user.uid}?key=${FB_KEY}&updateMask.fieldPaths=lastSeen&updateMask.fieldPaths=email&updateMask.fieldPaths=displayName`,{
+    const extraFields = {};
+    if(extra.points!=null) extraFields.points = {integerValue: String(extra.points)};
+    if(extra.streak!=null) extraFields.streak = {integerValue: String(extra.streak)};
+    const fieldPaths = ["lastSeen","email","displayName","photoURL",...Object.keys(extraFields)].map(f=>`updateMask.fieldPaths=${f}`).join("&");
+    await fetch(`${FB_FS}/presence/${user.uid}?key=${FB_KEY}&${fieldPaths}`,{
       method:"PATCH",headers:{"Content-Type":"application/json","Authorization":`Bearer ${user.idToken}`},
-      body:JSON.stringify({fields:{lastSeen:{timestampValue:new Date().toISOString()},email:{stringValue:user.email},displayName:{stringValue:user.displayName||user.email.split("@")[0]}}})
+      body:JSON.stringify({fields:{lastSeen:{timestampValue:new Date().toISOString()},email:{stringValue:user.email},displayName:{stringValue:user.displayName||user.email.split("@")[0]},photoURL:{stringValue:user.photoURL||""},...extraFields}})
     });
   }catch(e){console.warn("Presence error",e);}
 }
@@ -563,6 +567,56 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.6);backdrop-filter:blur(6px);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px}
 .prompt-modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:420px;border:1.5px solid var(--border);box-shadow:0 20px 50px var(--sh2)}
 @media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.pbar-wrap{display:none}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
+/* ── MOBILE BOTTOM NAV ── */
+.bnav{display:none}
+@media(max-width:640px){
+  .app{padding:0 14px 90px}
+  .tabs{display:none}
+  .bnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1.5px solid var(--border);z-index:200;padding:6px 0 calc(6px + env(safe-area-inset-bottom));backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+  .bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;background:none;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.55rem;font-weight:700;color:var(--text4);transition:all .15s;-webkit-tap-highlight-color:transparent}
+  .bnav-btn.on{color:var(--accent)}
+  .bnav-ico{font-size:1.3rem;line-height:1;transition:transform .15s}
+  .bnav-btn.on .bnav-ico{transform:scale(1.15)}
+  .hdr{padding:14px 0 12px;margin-bottom:16px}
+  .hdr-title{font-size:1.4rem}
+  .hdr-r{gap:4px}
+  .hdr-icon-btn{width:30px;height:30px;font-size:.8rem}
+  .modal{padding:20px 16px;border-radius:16px 16px 0 0;max-height:95vh;position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%}
+  .overlay{align-items:flex-end;padding:0}
+  .acard{padding:11px 12px}
+  .btn{padding:10px 14px;font-size:.83rem}
+  .btn-sm{padding:8px 11px;font-size:.77rem}
+  .stat{padding:13px 12px 10px}
+  .stat-n{font-size:1.6rem}
+  .finp,.fsel,.ftxt{font-size:16px}
+}
+/* ── PWA INSTALL BANNER ── */
+.pwa-banner{position:fixed;bottom:calc(70px + env(safe-area-inset-bottom));left:12px;right:12px;background:var(--accent);color:#fff;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:300;box-shadow:0 8px 32px rgba(99,102,241,.4);animation:slideUp .3s ease}
+@media(min-width:641px){.pwa-banner{bottom:20px;max-width:420px;left:50%;transform:translateX(-50%)}}
+/* ── SEARCH BAR ── */
+.search-bar{display:flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:8px 14px;margin-bottom:16px;transition:border-color .15s}
+.search-bar:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--sh)}
+.search-inp{flex:1;border:none;background:none;outline:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:.88rem;color:var(--text)}
+/* ── TIMER ── */
+.timer-card{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:28px 24px;text-align:center;margin-bottom:16px}
+.timer-display{font-family:'Fraunces',serif;font-size:4.5rem;font-weight:700;color:var(--text);line-height:1;letter-spacing:-2px;margin:16px 0}
+.timer-modes{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
+.timer-mode-btn{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.75rem;font-weight:700;cursor:pointer;color:var(--text2);transition:all .15s;font-family:'Plus Jakarta Sans',sans-serif}
+.timer-mode-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.timer-btns{display:flex;gap:10px;justify-content:center}
+.timer-ring{width:180px;height:180px;margin:0 auto}
+/* ── LEADERBOARD ── */
+.lb-row{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;transition:transform .15s}
+.lb-row:hover{transform:translateX(3px)}
+.lb-rank{font-family:'Fraunces',serif;font-size:1.1rem;font-weight:700;color:var(--text3);width:28px;text-align:center;flex-shrink:0}
+.lb-rank.top{color:var(--accent)}
+.lb-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#ec4899);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.8rem;flex-shrink:0;overflow:hidden}
+/* ── ANIMATIONS ── */
+@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
+.tab-content{animation:fadeIn .2s ease}
+.acard{animation:fadeIn .15s ease}
 .auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px}
 .auth-card{background:var(--card);border:1.5px solid var(--border);border-radius:24px;padding:36px 32px;width:100%;max-width:420px;box-shadow:0 24px 60px var(--sh2)}
 .auth-logo{width:56px;height:56px;background:linear-gradient(135deg,var(--text),var(--accent2));border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 16px}
@@ -1174,6 +1228,16 @@ export default function StudyDesk() {
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [showSearch, setShowSearch] = useState(false);
+  const [pwaPrompt, setPwaPrompt] = useState(null);
+  const [timerMode, setTimerMode] = useState("pomodoro"); // pomodoro|short|long|custom
+  const [timerSeconds, setTimerSeconds] = useState(25*60);
+  const [timerRunning, setTimerRunning] = useState(false);
+  const [timerInterval, setTimerInterval] = useState(null);
+  const [timerSessions, setTimerSessions] = useState(0);
+  const [leaderboard, setLeaderboard] = useState([]);
+  const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
   const [showAbout, setShowAbout] = useState(false);
   const [releaseViewed, setReleaseViewed] = useState(false);
@@ -1188,6 +1252,12 @@ export default function StudyDesk() {
   const [adminOpen, setAdminOpen] = useState(false);
   const logoClicks = useRef(0);
   const logoTimer = useRef(null);
+  const [proxyBlocked, setProxyBlocked] = useState(false);
+  useEffect(()=>{
+    if(isLocalhost) return;
+    fetch(CF_PROXY,{mode:"no-cors",signal:AbortSignal.timeout(5000)})
+      .catch(()=>setProxyBlocked(true));
+  },[]);
   function handleLogoClick(){
     logoClicks.current+=1;
     clearTimeout(logoTimer.current);
@@ -1310,6 +1380,10 @@ export default function StudyDesk() {
       setCanvasSync(s=>({...s,syncing:false,error:"Canvas sync doesn't work on localhost — deploy to test it"}));
       return;
     }
+    if(proxyBlocked){
+      setCanvasSync(s=>({...s,syncing:false,error:"Canvas sync is blocked on this network (e.g. school wifi). Try on a personal device or network."}));
+      return;
+    }
     canvasSyncRef.current=true;
     if(!silent) setCanvasSync(s=>({...s,syncing:true,error:""}));
     else setCanvasSync(s=>({...s,syncing:true}));
@@ -1423,6 +1497,66 @@ export default function StudyDesk() {
   }
 
   function addFloat(pts,streak){const id=Date.now()+Math.random();setFloats(f=>[...f,{id,pts,streak}]);setTimeout(()=>setFloats(f=>f.filter(x=>x.id!==id)),2000);}
+  // PWA install prompt — capture beforeinstallprompt for "Add to Home Screen"
+  useEffect(()=>{
+    const handler = e => { e.preventDefault(); setPwaPrompt(e); };
+    window.addEventListener("beforeinstallprompt", handler);
+    return () => window.removeEventListener("beforeinstallprompt", handler);
+  },[]);
+
+  // Timer logic
+  useEffect(()=>{
+    if(timerRunning){
+      const id = setInterval(()=>{
+        setTimerSeconds(s=>{
+          if(s<=1){
+            clearInterval(id);
+            setTimerRunning(false);
+            setTimerSessions(n=>n+1);
+            // Award points for completing a session
+            setGame(g=>({...g,points:g.points+10}));
+            if("Notification" in window && Notification.permission==="granted"){
+              new Notification("StudyDesk ⏱", {body:"Pomodoro session complete! Take a break."});
+            }
+            return 0;
+          }
+          return s-1;
+        });
+      },1000);
+      setTimerInterval(id);
+      return()=>clearInterval(id);
+    }
+  },[timerRunning]);
+
+  function startTimer(secs){ setTimerSeconds(secs); setTimerRunning(true); }
+  function resetTimer(secs){ clearInterval(timerInterval); setTimerRunning(false); setTimerSeconds(secs); }
+  function fmtTimer(s){ return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`; }
+
+  // Leaderboard — fetch top users by points from Firestore presence docs
+  async function fetchLeaderboard(){
+    if(!user) return;
+    try{
+      const r = await fetch(`${FB_FS}/presence?key=${FB_KEY}&pageSize=50`,{headers:{"Authorization":`Bearer ${user.idToken}`}});
+      const d = await r.json();
+      const entries = (d.documents||[]).map(doc=>({
+        name: doc.fields?.displayName?.stringValue||doc.fields?.email?.stringValue?.split("@")[0]||"Anonymous",
+        photo: doc.fields?.photoURL?.stringValue||"",
+        points: parseInt(doc.fields?.points?.integerValue||0),
+        streak: parseInt(doc.fields?.streak?.integerValue||0),
+      })).filter(e=>e.points>0).sort((a,b)=>b.points-a.points).slice(0,10);
+      setLeaderboard(entries);
+    }catch{}
+  }
+
+  // Save points/streak to presence for leaderboard
+  useEffect(()=>{
+    if(!user||!saveReady.current) return;
+    const t = setTimeout(()=>{
+      fbUpdatePresence(user, {points:game.points, streak:game.streak});
+    }, 2000);
+    return()=>clearTimeout(t);
+  },[game.points, game.streak, user]);
+
   function handleComplete(prev,next){
     if(next!==100||prev>=100)return;
     if(user)fbIncrementStat("totalSubmitted",1,user.idToken);if(user)fbIncrementStat("totalPoints",15,user.idToken);
@@ -1528,6 +1662,7 @@ export default function StudyDesk() {
 
   async function importFromCanvasAPI(){
     if(isLocalhost){setImportResult({error:"Canvas API import doesn't work on localhost due to CORS. Deploy the app or use the 'Paste Canvas data' option instead."});return;}
+    if(proxyBlocked){setImportResult({error:"Canvas is blocked on this network (e.g. school wifi). Try on a personal device or home network."});return;}
     setImporting(true); setImportResult(null);
     try{
       const today=new Date(); today.setHours(0,0,0,0);
@@ -2452,6 +2587,7 @@ async function run(){
             )}
             {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
             <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</button>
+            <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} title="Search assignments">🔍</button>
             <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"}>{darkMode?"🌙":"☀️"}</button>
             <button className="hdr-icon-btn" title="What's new" onClick={()=>setShowReleases(true)}>
               🚀{localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span className="notif-dot"/>}
@@ -2490,14 +2626,37 @@ async function run(){
 
         {/* TABS */}
         <div className="tabs">
-          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"]].map(([t,l])=>(
+          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["timer","⏱ Timer"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
 
+        {/* SEARCH BAR */}
+        {showSearch&&(
+          <div className="search-bar">
+            <span style={{fontSize:"1rem",opacity:.5}}>🔍</span>
+            <input className="search-inp" autoFocus placeholder="Search assignments..." value={searchQuery}
+              onChange={e=>setSearchQuery(e.target.value)}/>
+            <button onClick={()=>{setShowSearch(false);setSearchQuery("");}} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text4)",fontSize:"1rem"}}>✕</button>
+          </div>
+        )}
+
+        {/* SEARCH RESULTS */}
+        {showSearch&&searchQuery.trim()&&(()=>{
+          const q=searchQuery.toLowerCase();
+          const results=assignments.filter(a=>a.title.toLowerCase().includes(q)||a.subject.toLowerCase().includes(q)||a.notes?.toLowerCase().includes(q));
+          return(
+            <div style={{marginBottom:20}}>
+              <div className="sec-lbl">{results.length} result{results.length!==1?"s":""} for "{searchQuery}"</div>
+              {results.length===0?<div style={{color:"var(--text4)",fontSize:".85rem",padding:"12px 0"}}>No assignments found.</div>:
+                <div className="alist">{results.map(a=><ACard key={a.id} a={a}/>)}</div>}
+            </div>
+          );
+        })()}
+
         {/* ═══ DASHBOARD ═══════════════════════════════════════════════ */}
         {tab==="dashboard"&&(
-          <div>
+          <div className="tab-content">
             <div className="stats">
               <div className="stat"><div className="sacc" style={{background:"#6366f1"}}/><div className="stat-ico">📝</div><div className="stat-n">{assignments.filter(a=>a.progress<100).length}</div><div className="stat-l">Pending</div></div>
               <div className="stat" style={{borderColor:overdue.length?"#fca5a5":""}}><div className="sacc" style={{background:overdue.length?"#ef4444":"#10b981"}}/><div className="stat-ico">⚠️</div><div className="stat-n" style={{color:overdue.length?"#ef4444":""}}>{overdue.length}</div><div className="stat-l">Overdue</div></div>
@@ -2881,6 +3040,75 @@ async function run(){
                 <div style={{height:1,background:"var(--border)",margin:"6px 0"}}/>
                 <div style={{fontSize:".72rem",color:"var(--text4)",lineHeight:1.5}}>Higher streaks = bigger bonuses!</div>
               </div>
+            </div>
+          );
+        })()}
+
+        {/* ═══ TIMER ════════════════════════════════════════════════ */}
+        {tab==="timer"&&(()=>{
+          const MODES=[
+            {id:"pomodoro",label:"🍅 Pomodoro",secs:25*60},
+            {id:"short",label:"☕ Short Break",secs:5*60},
+            {id:"long",label:"🛋 Long Break",secs:15*60},
+          ];
+          const currentMode=MODES.find(m=>m.id===timerMode)||MODES[0];
+          const pct=timerSeconds/currentMode.secs;
+          const r=80, circ=2*Math.PI*r;
+          return(
+            <div className="tab-content">
+              <div className="sec-hd">
+                <div className="sec-t">⏱ Study Timer</div>
+                <button className="btn btn-g btn-sm" onClick={()=>{setShowLeaderboard(true);fetchLeaderboard();}}>🏆 Leaderboard</button>
+              </div>
+              <div className="timer-card">
+                <div className="timer-modes">
+                  {MODES.map(m=>(
+                    <button key={m.id} className={"timer-mode-btn"+(timerMode===m.id?" on":"")}
+                      onClick={()=>{setTimerMode(m.id);resetTimer(m.secs);}}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+                {/* SVG ring */}
+                <div style={{position:"relative",width:200,height:200,margin:"0 auto 8px"}}>
+                  <svg width="200" height="200" style={{transform:"rotate(-90deg)"}}>
+                    <circle cx="100" cy="100" r={r} fill="none" stroke="var(--bg3)" strokeWidth="10"/>
+                    <circle cx="100" cy="100" r={r} fill="none" stroke="var(--accent)" strokeWidth="10"
+                      strokeDasharray={circ} strokeDashoffset={circ*(1-pct)}
+                      strokeLinecap="round" style={{transition:"stroke-dashoffset .9s linear"}}/>
+                  </svg>
+                  <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                    <div className="timer-display" style={{fontSize:"3.2rem",margin:0}}>{fmtTimer(timerSeconds)}</div>
+                    <div style={{fontSize:".72rem",color:"var(--text4)",fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",marginTop:4}}>{timerRunning?"Focus time":"Ready"}</div>
+                  </div>
+                </div>
+                <div className="timer-btns">
+                  {!timerRunning
+                    ?<button className="btn btn-p" style={{minWidth:100,justifyContent:"center"}} onClick={()=>setTimerRunning(true)}>▶ Start</button>
+                    :<button className="btn btn-g" style={{minWidth:100,justifyContent:"center"}} onClick={()=>setTimerRunning(false)}>⏸ Pause</button>
+                  }
+                  <button className="btn btn-g" onClick={()=>resetTimer(currentMode.secs)}>↺ Reset</button>
+                </div>
+                {timerSessions>0&&<div style={{marginTop:16,fontSize:".78rem",color:"var(--text3)",fontWeight:600}}>🍅 {timerSessions} session{timerSessions!==1?"s":""} completed today · +{timerSessions*10} pts earned</div>}
+              </div>
+              {/* Notification permission */}
+              {"Notification" in window && Notification.permission==="default"&&(
+                <div style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+                  <span style={{fontSize:"1.3rem"}}>🔔</span>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:".84rem",color:"var(--text)"}}>Enable notifications</div>
+                    <div style={{fontSize:".74rem",color:"var(--text3)"}}>Get alerted when your timer ends</div>
+                  </div>
+                  <button className="btn btn-p btn-sm" onClick={()=>Notification.requestPermission()}>Allow</button>
+                </div>
+              )}
+              {/* Due today quick list */}
+              {dueToday.length>0&&(
+                <div>
+                  <div className="sec-lbl">Due today — focus on these</div>
+                  <div className="alist">{dueToday.map(a=><ACard key={a.id} a={a} compact/>)}</div>
+                </div>
+              )}
             </div>
           );
         })()}
@@ -3600,11 +3828,16 @@ async function run(){
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowCanvasSetup(false)}>
           <div className="modal" style={{maxWidth:500}}>
             <div className="modal-t">🎓 Connect Canvas</div>
-            {isChromebook?(
+            {isChromebook||proxyBlocked?(
               <div style={{textAlign:"center",padding:"24px 12px"}}>
                 <div style={{fontSize:"2.5rem",marginBottom:12}}>🚫</div>
-                <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.1rem",fontWeight:700,color:"var(--text)",marginBottom:8}}>Not supported on Chromebooks</div>
-                <div style={{fontSize:".84rem",color:"var(--text2)",lineHeight:1.6,marginBottom:20}}>Canvas sync requires a direct connection to your school's Canvas server, which school Chromebooks block for security reasons.<br/><br/>Please connect Canvas on a <b>personal device</b> — your data will sync to this account automatically.</div>
+                <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.1rem",fontWeight:700,color:"var(--text)",marginBottom:8}}>{isChromebook?"Not supported on Chromebooks":"Canvas blocked on this network"}</div>
+                <div style={{fontSize:".84rem",color:"var(--text2)",lineHeight:1.6,marginBottom:20}}>
+                  {isChromebook
+                    ?"Canvas sync requires a direct connection to your school's Canvas server, which school Chromebooks block for security reasons."
+                    :"Your current network is blocking the Canvas connection (likely school wifi or a firewall)."
+                  }<br/><br/>Please connect Canvas on a <b>personal device or home network</b> — your data will sync to this account automatically.
+                </div>
                 <button className="btn btn-g" onClick={()=>setShowCanvasSetup(false)}>Got it</button>
               </div>
             ):(
@@ -3661,6 +3894,71 @@ async function run(){
           </div>
         </div>
       )}
+
+      {/* PWA INSTALL BANNER */}
+      {pwaPrompt&&(
+        <div className="pwa-banner">
+          <span style={{fontSize:"1.6rem"}}>📱</span>
+          <div style={{flex:1}}>
+            <div style={{fontWeight:700,fontSize:".88rem"}}>Add StudyDesk to Home Screen</div>
+            <div style={{fontSize:".74rem",opacity:.85}}>Access it like an app — works offline too</div>
+          </div>
+          <button onClick={()=>{pwaPrompt.prompt();setPwaPrompt(null);}} style={{background:"rgba(255,255,255,.25)",border:"1.5px solid rgba(255,255,255,.4)",borderRadius:10,color:"#fff",padding:"7px 14px",fontWeight:700,fontSize:".8rem",cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",flexShrink:0}}>Add</button>
+          <button onClick={()=>setPwaPrompt(null)} style={{background:"none",border:"none",color:"rgba(255,255,255,.7)",cursor:"pointer",fontSize:"1.1rem",padding:"0 4px",flexShrink:0}}>✕</button>
+        </div>
+      )}
+
+      {/* LEADERBOARD MODAL */}
+      {showLeaderboard&&(
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowLeaderboard(false)}>
+          <div className="modal" style={{maxWidth:480}}>
+            <div className="modal-t">🏆 Leaderboard</div>
+            <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:16}}>Top students by total points earned</div>
+            {leaderboard.length===0?(
+              <div style={{textAlign:"center",padding:"32px 0",color:"var(--text4)"}}>
+                <div style={{fontSize:"2rem",marginBottom:8}}>🏆</div>
+                <div style={{fontWeight:600}}>Loading...</div>
+              </div>
+            ):(
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {leaderboard.map((entry,i)=>(
+                  <div key={i} className="lb-row">
+                    <div className={"lb-rank"+(i<3?" top":"")}>{i===0?"🥇":i===1?"🥈":i===2?"🥉":`${i+1}`}</div>
+                    <div className="lb-avatar">
+                      {entry.photo?<img src={entry.photo} width="34" height="34" style={{objectFit:"cover"}}/>:entry.name[0].toUpperCase()}
+                    </div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:".85rem",color:"var(--text)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{entry.name}{user&&entry.name===(user.displayName||user.email.split("@")[0])?" (you)":""}</div>
+                      <div style={{fontSize:".7rem",color:"var(--text3)",marginTop:1}}>🔥 {entry.streak} day streak</div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.1rem",fontWeight:700,color:"var(--accent)"}}>{entry.points}</div>
+                      <div style={{fontSize:".65rem",color:"var(--text4)"}}>pts</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="mactions"><button className="btn btn-g" onClick={()=>setShowLeaderboard(false)}>Close</button></div>
+          </div>
+        </div>
+      )}
+
+      {/* MOBILE BOTTOM NAV */}
+      <nav className="bnav">
+        {[
+          ["dashboard","📊","Home"],
+          ["assignments","📝","Tasks"],
+          ["grades","📈","Grades"],
+          ["timer","⏱","Timer"],
+          ["schedule","📅","Schedule"],
+        ].map(([t,ico,lbl])=>(
+          <button key={t} className={"bnav-btn"+(tab===t?" on":"")} onClick={()=>setTab(t)}>
+            <span className="bnav-ico">{ico}</span>
+            {lbl}
+          </button>
+        ))}
+      </nav>
 
     </>
   );
