@@ -9,33 +9,14 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-// Canvas API token goes in URL query param — free proxies block Authorization headers
-// but can't block query params. Canvas officially supports ?access_token= as an alternative.
-const FREE_PROXIES = [
-  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-  u => `https://corsproxy.org/?${encodeURIComponent(u)}`,
-];
+// Cloudflare Worker proxy — free, always on, no cold starts, handles CORS + auth properly
+const CF_PROXY = "https://studydesk-proxy.goyalamars18.workers.dev";
 async function fetchWithFallback(base, path, options={}) {
-  // Extract token from Authorization header → move to query param
-  const auth = options?.headers?.["Authorization"]||"";
-  const token = auth.replace(/^Bearer\s+/i,"").trim();
-  const connector = path.includes("?") ? "&" : "?";
-  const urlWithToken = base.replace(/\/$/,"") + path + (token ? `${connector}access_token=${token}` : "");
-  // Remove Authorization header entirely — not needed since token is in URL
-  const {Authorization, ...cleanHeaders} = options?.headers||{};
-  const cleanOptions = {...options, headers:cleanHeaders};
-  let lastErr;
-  for(const proxy of FREE_PROXIES){
-    try{
-      const r = await fetch(proxy(urlWithToken), {...cleanOptions, signal:AbortSignal.timeout(15000)});
-      if(r.ok) return r;
-      if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
-    }catch(e){
-      lastErr = e;
-      if(e.message?.includes("401")||e.message?.includes("403")) throw e;
-    }
-  }
-  throw lastErr || new Error("Could not reach Canvas — check your connection");
+  const url = `${CF_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
+  const r = await fetch(url, {...options, signal:AbortSignal.timeout(15000)});
+  if(r.ok) return r;
+  if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
+  throw new Error(`Canvas proxy returned ${r.status}`);
 }
 
 async function fbSignUp(email, password, displayName) {
@@ -1190,7 +1171,6 @@ function AdminPanel({user, onClose, inline=false}){
 }
 
 export default function StudyDesk() {
-  console.log("sick and tired of this proxy bs")
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
