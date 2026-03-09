@@ -7,6 +7,10 @@ const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
 const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
 const IS_PREVIEW = false;
+const CANVAS_PROXY = "https://studydesk-proxy.onrender.com";
+function canvasProxyUrl(canvasBase, path) {
+  return `${CANVAS_PROXY}/canvas?base=${encodeURIComponent(canvasBase)}&path=${encodeURIComponent(path)}`;
+}
 
 async function fbSignUp(email, password, displayName) {
   const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
@@ -1337,6 +1341,14 @@ export default function StudyDesk() {
     const t=setInterval(()=>syncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
     return()=>clearInterval(t);
   },[canvasToken, canvasBaseUrl, user]);
+
+  // Keep Render proxy alive — ping every 10 minutes so it never sleeps
+  useEffect(()=>{
+    const ping=()=>fetch(`${CANVAS_PROXY}/health`).catch(()=>{});
+    ping();
+    const t=setInterval(ping, 10*60*1000);
+    return()=>clearInterval(t);
+  },[]);
 
   function getExportUrl(rawUrl){const id=extractId(rawUrl.trim());if(!id)return null;return`https://docs.google.com/presentation/d/${id}/export/txt`;}
 
