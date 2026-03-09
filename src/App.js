@@ -805,7 +805,6 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
         {adminMode&&(
           <div style={{background:darkMode?"#1e1b4b":"#eef2ff",border:`1.5px solid ${darkMode?"#4338ca":"#c7d2fe"}`,borderRadius:12,padding:"10px 14px",marginBottom:20,textAlign:"center"}}>
             <div style={{fontSize:".78rem",fontWeight:700,color:darkMode?"#a5b4fc":"#4338ca"}}>🔐 Admin Access Only</div>
-            <div style={{fontSize:".72rem",color:darkMode?"#818cf8":"#6366f1",marginTop:3}}>Sign in with <b>{adminEmail}</b></div>
           </div>
         )}
 
@@ -1258,23 +1257,15 @@ export default function StudyDesk() {
     else setCanvasSync(s=>({...s,syncing:true}));
     try{
       const today=new Date().toISOString().split("T")[0];
-      const url=`${baseUrl}/api/v1/planner/items?per_page=100&start_date=${today}`;
-      // Try direct first, then CORS proxy
-      let data=null;
-      const tryFetch=async(fetchUrl)=>{
-        const r=await fetch(fetchUrl,{
-          headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
-          signal:AbortSignal.timeout(8000)
-        });
-        if(!r.ok) throw new Error(`Canvas returned ${r.status}`);
-        return r.json();
-      };
-      try{ data=await tryFetch(url); }
-      catch(e){
-        // CORS fallback
-        const proxy=`https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-        data=await tryFetch(proxy);
-      }
+      // Always use Cloudflare worker proxy — fixes school Chromebook CORS issues
+      const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
+      const syncProxyUrl=canvasProxyUrl(baseUrl, syncPath);
+      const syncR=await fetch(syncProxyUrl,{
+        headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
+        signal:AbortSignal.timeout(10000)
+      });
+      if(!syncR.ok) throw new Error(`Canvas returned ${syncR.status}`);
+      let data=await syncR.json();
       if(!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
 
       let newSubmits=0;
@@ -1479,33 +1470,26 @@ export default function StudyDesk() {
       const startDate=today.toISOString().split("T")[0];
       // Fetch ALL pages of upcoming assignments
       let allItems=[];
-      let url=`${canvasBaseUrl}/api/v1/planner/items?per_page=100&start_date=${startDate}`;
+      // Use Cloudflare worker proxy — works on school Chromebooks
+      let currentPath=`/api/v1/planner/items?per_page=100&start_date=${startDate}`;
       let pageCount=0;
-      while(url&&pageCount<20){
+      while(currentPath&&pageCount<20){
         pageCount++;
-        const tryDirect=async()=>{
-          const r=await fetch(url,{headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},signal:AbortSignal.timeout(10000)});
-          if(!r.ok) throw new Error(`Canvas API returned ${r.status} — check your token`);
-          // Get next page from Link header
-          const link=r.headers.get("Link")||"";
-          const nextMatch=link.match(/<([^>]+)>;\s*rel="next"/);
-          const nextUrl=nextMatch?nextMatch[1]:null;
-          const data=await r.json();
-          return{data,nextUrl};
-        };
-        let result;
-        try{ result=await tryDirect(); }
-        catch(e){
-          // CORS fallback
-          const proxyUrl=`https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-          const r=await fetch(proxyUrl,{headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},signal:AbortSignal.timeout(12000)});
-          if(!r.ok) throw new Error(`Canvas API returned ${r.status}`);
-          const data=await r.json();
-          result={data,nextUrl:null}; // proxy doesn't expose Link header
+        const r=await fetch(canvasProxyUrl(canvasBaseUrl, currentPath),{
+          headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},
+          signal:AbortSignal.timeout(12000)
+        });
+        if(!r.ok) throw new Error(`Canvas API returned ${r.status} — check your token`);
+        const link=r.headers.get("Link")||"";
+        const nextMatch=link.match(/<([^>]+)>;\s*rel="next"/);
+        let nextPath=null;
+        if(nextMatch){
+          try{ const nu=new URL(nextMatch[1]); nextPath=nu.pathname+nu.search; }catch{}
         }
-        if(!Array.isArray(result.data)) throw new Error("Unexpected response from Canvas");
-        allItems=[...allItems,...result.data];
-        url=result.nextUrl||null;
+        const data=await r.json();
+        if(!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
+        allItems=[...allItems,...data];
+        currentPath=nextPath;
       }
 
       if(allItems.length===0) throw new Error("No upcoming assignments found on Canvas.");
