@@ -7,10 +7,7 @@ const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
 const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
 const IS_PREVIEW = false;
-const CANVAS_PROXY = "https://studydesk-proxy.onrender.com";
-function canvasProxyUrl(canvasBase, path) {
-  return `${CANVAS_PROXY}/canvas?base=${encodeURIComponent(canvasBase)}&path=${encodeURIComponent(path)}`;
-}
+const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
 
 async function fbSignUp(email, password, displayName) {
   const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
@@ -216,8 +213,21 @@ async function fbGetAdminStats(idToken) {
 }
 
 const STORAGE_KEY = "hw-tracker-v1";
-const APP_VERSION = "1.3.0";
+const APP_VERSION = "1.3.1";
 const RELEASES = [
+  {
+    version: "1.3.1",
+    date: "09 March 2026",
+    title: "UI Cleanup & Chromebook Fix",
+    changes: [
+      "🎨 Cleaner header — icon buttons replace the old row of text buttons for a less cluttered look",
+      "🗂️ Tabs redesigned with a subtle card-style active state instead of the filled color",
+      "✨ Refined color palette, tighter spacing, and smoother hover animations throughout",
+      "🔒 Canvas token no longer synced to the cloud — stays on your device only",
+      "🚫 Canvas Connect now shows a clear message on Chromebooks instead of silently failing",
+      "🐛 Removed background keep-alive requests that were firing even when Canvas wasn't connected",
+    ]
+  },
   {
     version: "1.3.0",
     date: "08 March 2026",
@@ -230,7 +240,7 @@ const RELEASES = [
       "🔁 Import updates existing assignments with latest Canvas data instead of creating duplicates",
       "🏫 School schedule import — search your school and get bell times loaded automatically",
       "📅 Naperville Central fully supported with day-specific times, SOAR period, and Wednesday late start",
-      "🌐 School search uses two APIs in parallel with CORS proxy fallback — 80+ schools pre-loaded for instant results",
+      "🌐 School search uses two APIs in parallel — 80+ schools pre-loaded for instant results",
       "🔐 Google sign-in rebuilt with Google Identity Services — no more authorization errors",
       "👤 Click your username to sign out — cleaner header, no separate sign out button",
     ]
@@ -305,35 +315,39 @@ function extractId(url){const m=url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/)
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#F5F2EC;--bg2:#FFFFFF;--bg3:#F0EDE7;--bg4:#E8E4DC;--border:#E2DDD6;--border2:#C8C3BA;--text:#1B1F3B;--text2:#555;--text3:#888;--text4:#bbb;--accent:#1B1F3B;--accent2:#2d3260;--card:#FFFFFF;--card2:#FAF8F4;--sh:rgba(27,31,59,.07);--sh2:rgba(27,31,59,.14);--mbg:#F5F2EC;--ibg:#FFFFFF;--sg:linear-gradient(135deg,#FFFFFF,#FAF8F4);--hb:#1B1F3B;--tb:#EDE9E2;--tc:#F8F6F0;--schdr:#1B1F3B}
-.dark{--bg:#0F1117;--bg2:#161921;--bg3:#1C1F2B;--bg4:#232738;--border:#262B3C;--border2:#323848;--text:#DDE2F5;--text2:#909BBB;--text3:#5C6480;--text4:#353C58;--accent:#7B83F7;--accent2:#9199FF;--card:#161921;--card2:#1A1D28;--sh:rgba(0,0,0,.3);--sh2:rgba(0,0,0,.5);--mbg:#161921;--ibg:#1C1F2B;--sg:linear-gradient(135deg,#1C1F2B,#161921);--hb:#262B3C;--tb:#1A1D28;--tc:#181B26;--schdr:#161921}
+:root{--bg:#F4F1EB;--bg2:#FFFFFF;--bg3:#EDEAE3;--bg4:#E5E1D8;--border:#DDD9D1;--border2:#C4BFB5;--text:#18192B;--text2:#52556E;--text3:#8F93A8;--text4:#C2C5D4;--accent:#18192B;--accent2:#2B2E50;--card:#FFFFFF;--card2:#F9F7F3;--sh:rgba(24,25,43,.06);--sh2:rgba(24,25,43,.13);--mbg:#F4F1EB;--ibg:#FFFFFF;--sg:linear-gradient(160deg,#FFFFFF,#F5F3EE);--hb:#18192B;--tb:#E8E4DC;--tc:#F5F3ED;--schdr:#18192B;--radius:16px}
+.dark{--bg:#0D0F18;--bg2:#13151F;--bg3:#181B27;--bg4:#1E2130;--border:#232638;--border2:#2E3248;--text:#E0E4F8;--text2:#8A90B8;--text3:#525875;--text4:#303550;--accent:#7C85FF;--accent2:#9199FF;--card:#13151F;--card2:#171A26;--sh:rgba(0,0,0,.35);--sh2:rgba(0,0,0,.55);--mbg:#13151F;--ibg:#181B27;--sg:linear-gradient(160deg,#181B27,#13151F);--hb:#232638;--tb:#171A26;--tc:#161822;--schdr:#13151F;--radius:16px}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:100vh;color:var(--text);transition:background .25s,color .25s}
 .dk{background:var(--bg);min-height:100vh;transition:background .25s}
-.app{max-width:1100px;margin:0 auto;padding:0 22px 100px}
-.hdr{padding:24px 0 18px;display:flex;align-items:center;justify-content:space-between;border-bottom:2px solid var(--hb);margin-bottom:22px;gap:12px;flex-wrap:wrap}
-.hdr-title{font-family:'Fraunces',serif;font-size:2rem;font-weight:700;color:var(--text);letter-spacing:-.5px;line-height:1}
-.hdr-sub{font-size:.78rem;color:var(--text3);margin-top:4px;font-weight:500}
-.hdr-r{display:flex;gap:7px;align-items:center;flex-wrap:wrap}
-.dm-btn{width:46px;height:26px;border-radius:13px;border:1.5px solid var(--border2);background:var(--bg3);cursor:pointer;position:relative;transition:all .2s;flex-shrink:0;padding:0}
+.app{max-width:1080px;margin:0 auto;padding:0 20px 120px}
+.hdr{padding:20px 0 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid var(--border);margin-bottom:24px;gap:12px;flex-wrap:wrap}
+.hdr-title{font-family:'Fraunces',serif;font-size:1.85rem;font-weight:700;color:var(--text);letter-spacing:-.5px;line-height:1}
+.hdr-sub{font-size:.75rem;color:var(--text3);margin-top:3px;font-weight:500}
+.hdr-r{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+.hdr-icon-btn{width:34px;height:34px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.85rem;color:var(--text2);transition:all .15s;position:relative;flex-shrink:0}
+.hdr-icon-btn:hover{background:var(--bg3);border-color:var(--border2);color:var(--text)}
+.hdr-icon-btn .notif-dot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;background:#ef4444;border-radius:50%;border:1.5px solid var(--bg)}
+.dm-btn{width:44px;height:26px;border-radius:13px;border:1.5px solid var(--border2);background:var(--bg3);cursor:pointer;position:relative;transition:all .2s;flex-shrink:0;padding:0}
 .dm-knob{width:20px;height:20px;border-radius:50%;background:var(--text2);position:absolute;top:2px;left:2px;transition:transform .2s;display:flex;align-items:center;justify-content:center;font-size:.65rem;line-height:1}
-.dark .dm-knob{transform:translateX(20px)}
-.tabs{display:flex;gap:3px;margin-bottom:24px;background:var(--tb);padding:4px;border-radius:13px;width:fit-content;overflow-x:auto;max-width:100%;scrollbar-width:none}
+.dark .dm-knob{transform:translateX(18px)}
+.tabs{display:flex;gap:2px;margin-bottom:22px;background:var(--tb);padding:3px;border-radius:14px;width:fit-content;overflow-x:auto;max-width:100%;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
-.tab{padding:7px 16px;border-radius:10px;border:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .15s;white-space:nowrap}
-.tab.on{background:var(--accent);color:#fff;box-shadow:0 2px 8px var(--sh2)}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:12px;margin-bottom:22px}
-.stat{background:var(--sg);border-radius:18px;padding:17px 17px 13px;border:1.5px solid var(--border);position:relative;overflow:hidden;transition:transform .15s,box-shadow .15s}
-.stat:hover{transform:translateY(-2px);box-shadow:0 6px 22px var(--sh2)}
-.sacc{position:absolute;top:0;left:0;right:0;height:4px;border-radius:18px 18px 0 0}
-.stat-n{font-family:'Fraunces',serif;font-size:2rem;font-weight:700;color:var(--text);line-height:1;margin-top:2px}
-.stat-l{font-size:.7rem;color:var(--text3);margin-top:6px;font-weight:700;text-transform:uppercase;letter-spacing:.06em}
-.stat-ico{position:absolute;right:13px;top:13px;font-size:1.4rem;opacity:.16}
+.tab{padding:7px 15px;border-radius:11px;border:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .18s;white-space:nowrap;letter-spacing:.01em}
+.tab:hover:not(.on){background:var(--bg4);color:var(--text2)}
+.tab.on{background:var(--card);color:var(--text);box-shadow:0 1px 6px var(--sh2),0 0 0 1px var(--border)}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px}
+.stat{background:var(--card);border-radius:18px;padding:16px 16px 13px;border:1.5px solid var(--border);position:relative;overflow:hidden;transition:transform .18s,box-shadow .18s;cursor:default}
+.stat:hover{transform:translateY(-2px);box-shadow:0 8px 24px var(--sh2)}
+.sacc{position:absolute;top:0;left:0;right:0;height:3px;border-radius:18px 18px 0 0}
+.stat-n{font-family:'Fraunces',serif;font-size:1.9rem;font-weight:700;color:var(--text);line-height:1;margin-top:4px}
+.stat-l{font-size:.68rem;color:var(--text3);margin-top:5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
+.stat-ico{position:absolute;right:12px;top:12px;font-size:1.2rem;opacity:.12}
 .sec-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .sec-t{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:600;color:var(--text)}
 .sec-lbl{font-size:.67rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
-.alist{display:flex;flex-direction:column;gap:9px}
-.acard{background:var(--card);border-radius:16px;padding:14px 16px;border:1.5px solid var(--border);display:flex;align-items:center;gap:12px;transition:transform .15s,box-shadow .15s}
-.acard:hover{transform:translateY(-1px);box-shadow:0 5px 22px var(--sh)}
+.alist{display:flex;flex-direction:column;gap:8px}
+.acard{background:var(--card);border-radius:14px;padding:13px 15px;border:1.5px solid var(--border);display:flex;align-items:center;gap:11px;transition:all .18s}
+.acard:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--sh);border-color:var(--border2)}
 .acard.ov{border-color:#fca5a5;background:#fff8f8}
 .dark .acard.ov{border-color:#7f1d1d;background:#170808}
 .stripe{width:5px;border-radius:5px;align-self:stretch;min-height:40px;flex-shrink:0}
@@ -357,19 +371,19 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .sfilt{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .sfbtn{padding:5px 13px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.75rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .12s;font-family:'Plus Jakarta Sans',sans-serif}
 .sfbtn:hover{background:var(--bg3);color:var(--text)}
-.btn{padding:8px 16px;border-radius:11px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:.82rem;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
-.btn-p{background:var(--accent);color:#fff}
-.btn-p:hover{background:var(--accent2);transform:translateY(-1px)}
-.btn-g{background:transparent;color:var(--text2);border:1.5px solid var(--border)}
-.btn-g:hover{background:var(--bg3);color:var(--text)}
-.btn-sm{padding:5px 11px;font-size:.76rem;border-radius:8px}
-.overlay{position:fixed;inset:0;background:rgba(8,10,18,.62);backdrop-filter:blur(6px);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal{background:var(--mbg);border-radius:22px;padding:26px;width:100%;max-width:460px;max-height:92vh;overflow-y:auto;border:1.5px solid var(--border);box-shadow:0 24px 60px var(--sh2)}
-.modal-t{font-family:'Fraunces',serif;font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:20px}
-.fg{margin-bottom:13px}
-.flbl{display:block;font-size:.69rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.06em;margin-bottom:5px}
-.finp,.fsel,.ftxt{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:10px;font-family:'Plus Jakarta Sans',sans-serif;font-size:.86rem;background:var(--ibg);color:var(--text);outline:none;transition:border-color .15s}
-.finp:focus,.fsel:focus,.ftxt:focus{border-color:var(--accent)}
+.btn{padding:8px 15px;border-radius:10px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:.81rem;transition:all .16s;display:inline-flex;align-items:center;gap:5px;letter-spacing:.01em}
+.btn-p{background:var(--accent);color:#fff;box-shadow:0 1px 4px var(--sh)}
+.btn-p:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 14px var(--sh2)}
+.btn-g{background:var(--card);color:var(--text2);border:1.5px solid var(--border)}
+.btn-g:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
+.btn-sm{padding:5px 11px;font-size:.75rem;border-radius:8px}
+.overlay{position:fixed;inset:0;background:rgba(8,10,18,.55);backdrop-filter:blur(8px);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:460px;max-height:92vh;overflow-y:auto;border:1.5px solid var(--border);box-shadow:0 20px 60px var(--sh2)}
+.modal-t{font-family:'Fraunces',serif;font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:18px}
+.fg{margin-bottom:12px}
+.flbl{display:block;font-size:.67rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
+.finp,.fsel,.ftxt{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:10px;font-family:'Plus Jakarta Sans',sans-serif;font-size:.85rem;background:var(--ibg);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
+.finp:focus,.fsel:focus,.ftxt:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--sh)}
 .ftxt{resize:vertical;min-height:60px}
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .range{width:100%;accent-color:var(--accent)}
@@ -1263,10 +1277,8 @@ export default function StudyDesk() {
     else setCanvasSync(s=>({...s,syncing:true}));
     try{
       const today=new Date().toISOString().split("T")[0];
-      // Always use Cloudflare worker proxy — fixes school Chromebook CORS issues
       const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
-      const syncProxyUrl=canvasProxyUrl(baseUrl, syncPath);
-      const syncR=await fetch(syncProxyUrl,{
+      const syncR=await fetch(`${baseUrl}${syncPath}`,{
         headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
         signal:AbortSignal.timeout(10000)
       });
@@ -1343,14 +1355,6 @@ export default function StudyDesk() {
     const t=setInterval(()=>syncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
     return()=>clearInterval(t);
   },[canvasToken, canvasBaseUrl, user]);
-
-  // Keep Render proxy alive — ping every 10 minutes so it never sleeps
-  useEffect(()=>{
-    const ping=()=>fetch(`${CANVAS_PROXY}/health`).catch(()=>{});
-    ping();
-    const t=setInterval(ping, 10*60*1000);
-    return()=>clearInterval(t);
-  },[]);
 
   function getExportUrl(rawUrl){const id=extractId(rawUrl.trim());if(!id)return null;return`https://docs.google.com/presentation/d/${id}/export/txt`;}
 
@@ -1484,12 +1488,11 @@ export default function StudyDesk() {
       const startDate=today.toISOString().split("T")[0];
       // Fetch ALL pages of upcoming assignments
       let allItems=[];
-      // Use Cloudflare worker proxy — works on school Chromebooks
       let currentPath=`/api/v1/planner/items?per_page=100&start_date=${startDate}`;
       let pageCount=0;
       while(currentPath&&pageCount<20){
         pageCount++;
-        const r=await fetch(canvasProxyUrl(canvasBaseUrl, currentPath),{
+        const r=await fetch(`${canvasBaseUrl}${currentPath}`,{
           headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},
           signal:AbortSignal.timeout(12000)
         });
@@ -2395,17 +2398,14 @@ async function run(){
                 {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} submitted!`:canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:canvasToken?"Canvas connected":""}
               </div>
             )}
-            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Connect Canvas</button>}
-            <button className="dm-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"} aria-label="Toggle dark mode">
-              <div className="dm-knob">{darkMode?"🌙":"☀️"}</div>
+            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
+            <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</button>
+            <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"}>{darkMode?"🌙":"☀️"}</button>
+            <button className="hdr-icon-btn" title="What's new" onClick={()=>setShowReleases(true)}>
+              🚀{localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span className="notif-dot"/>}
             </button>
-            <button className="btn btn-g btn-sm" onClick={()=>setShowAbout(true)}>About</button>
-            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="btn btn-g btn-sm" style={{textDecoration:"none"}}>💡 Suggest</a>
-            <button className="btn btn-g btn-sm" style={{position:"relative"}} onClick={()=>setShowReleases(true)}>
-              🚀 Releases
-              {localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span style={{position:"absolute",top:-4,right:-4,width:8,height:8,background:"#ef4444",borderRadius:"50%",border:"2px solid var(--bg)"}}/>}
-            </button>
-            <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>📥 Import</button>
+            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="hdr-icon-btn" style={{textDecoration:"none"}} title="Suggest a feature">💡</a>
+            <button className="hdr-icon-btn" onClick={()=>setShowAbout(true)} title="About">ℹ️</button>
             {user&&(
               <div style={{position:"relative"}}>
                 <div className="auth-user-pill" onClick={()=>setShowUserMenu(m=>!m)}
@@ -3548,6 +3548,15 @@ async function run(){
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowCanvasSetup(false)}>
           <div className="modal" style={{maxWidth:500}}>
             <div className="modal-t">🎓 Connect Canvas</div>
+            {isChromebook?(
+              <div style={{textAlign:"center",padding:"24px 12px"}}>
+                <div style={{fontSize:"2.5rem",marginBottom:12}}>🚫</div>
+                <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.1rem",fontWeight:700,color:"var(--text)",marginBottom:8}}>Not supported on Chromebooks</div>
+                <div style={{fontSize:".84rem",color:"var(--text2)",lineHeight:1.6,marginBottom:20}}>Canvas sync requires a direct connection to your school's Canvas server, which school Chromebooks block for security reasons.<br/><br/>Please connect Canvas on a <b>personal device</b> — your data will sync to this account automatically.</div>
+                <button className="btn btn-g" onClick={()=>setShowCanvasSetup(false)}>Got it</button>
+              </div>
+            ):(
+              <>
             <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"13px 15px",marginBottom:16,fontSize:".8rem",color:"#4338ca",lineHeight:1.7}}>
               <b>StudyDesk will check Canvas every 3 minutes</b> and automatically mark assignments as done when you submit them. Grades are shown on cards when posted.
             </div>
@@ -3592,6 +3601,8 @@ async function run(){
                 Connect & Sync →
               </button>
             </div>
+              </>
+            )}
           </div>
         </div>
       )}
