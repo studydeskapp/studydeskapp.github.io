@@ -9,28 +9,26 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const RENDER_PROXY = "https://studydesk-proxy.onrender.com";
-// Free CORS proxies used as fallback only
+// Free proxies don't forward Authorization headers, so we pass the token
+// as a Canvas query param (?access_token=) instead — Canvas supports both methods
 const FREE_PROXIES = [
   url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+  url => `https://thingproxy.freeboard.io/fetch/${url}`,
 ];
 async function fetchWithFallback(base, path, options={}) {
-  const fullUrl = base.replace(/\/$/, "") + path;
-  // Try Render proxy first (most reliable)
-  try {
-    const renderUrl = `${RENDER_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
-    const r = await fetch(renderUrl, {...options, signal:AbortSignal.timeout(12000)});
-    if(r.ok) return r;
-    if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
-  } catch(e) {
-    if(e.message?.includes("401")||e.message?.includes("403")) throw e;
-  }
-  // Fall back to free proxies
+  // Extract token from Authorization header and move it to query param
+  const authHeader = options?.headers?.["Authorization"]||"";
+  const token = authHeader.replace("Bearer ","").trim();
+  const sep = path.includes("?") ? "&" : "?";
+  const pathWithToken = token ? `${path}${sep}access_token=${encodeURIComponent(token)}` : path;
+  const fullUrl = base.replace(/\/$/, "") + pathWithToken;
+  // Strip Authorization from headers since token is now in URL
+  const {Authorization, ...safeHeaders} = options?.headers||{};
+  const safeOptions = {...options, headers:safeHeaders};
   let lastErr;
   for(const proxyFn of FREE_PROXIES){
     try{
-      const r=await fetch(proxyFn(fullUrl),{...options,signal:AbortSignal.timeout(10000)});
+      const r=await fetch(proxyFn(fullUrl),{...safeOptions,signal:AbortSignal.timeout(12000)});
       if(r.ok) return r;
       if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
     }catch(e){
@@ -1193,6 +1191,7 @@ function AdminPanel({user, onClose, inline=false}){
 }
 
 export default function StudyDesk() {
+  console.log("StudyDesk v1.3.2 loaded ✅");
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
