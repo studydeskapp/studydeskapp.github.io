@@ -1237,6 +1237,7 @@ export default function StudyDesk() {
   const [canvasBaseUrl, setCanvasBaseUrl] = useState(()=>{try{return localStorage.getItem("sd-canvas-url")||"https://naperville.instructure.com";}catch{return "https://naperville.instructure.com";}});
   const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:"",everSucceeded:false});
   const [showCanvasSetup, setShowCanvasSetup] = useState(false);
+  const [tokenDraft, setTokenDraft] = useState("");
   const [expandedGradeClass, setExpandedGradeClass] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const canvasSyncRef = useRef(false);
@@ -1281,7 +1282,7 @@ export default function StudyDesk() {
       fbSaveData(user.uid, user.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl}});
     },800); // debounce 800ms
     return()=>clearTimeout(t);
-  },[assignments,classes,game,loaded,user]);
+  },[assignments,classes,game,canvasBaseUrl,loaded,user]);
 
   useEffect(()=>{try{localStorage.setItem("sd-dark",darkMode?"1":"0");}catch{}},[darkMode]);
   useEffect(()=>{try{if(canvasToken)localStorage.setItem("sd-canvas-token",canvasToken);else localStorage.removeItem("sd-canvas-token");}catch{}},[canvasToken]);
@@ -1372,7 +1373,11 @@ export default function StudyDesk() {
           setCanvasToken("");
           return {lastSync:null,syncing:false,newSubmissions:0,error:"",everSucceeded:false};
         }
-        return {...s,syncing:false,error:e.message||"Sync failed"};
+        const msg=e.message||"Sync failed";
+        const friendly=msg.includes("Failed to fetch")||msg.includes("NetworkError")||msg.includes("CORS")
+          ?"Network error — Canvas sync only works on the deployed site, not localhost"
+          :msg;
+        return {...s,syncing:false,error:friendly};
       });
     }
     canvasSyncRef.current=false;
@@ -1501,6 +1506,7 @@ export default function StudyDesk() {
             subject:item.context_name||"Unknown",
             dueDate,
             priority:days<=2?"high":days<=7?"medium":"low",
+            progress:0,
             notes:item.plannable?.points_possible?`${item.plannable.points_possible} pts`:"",
           };
         });
@@ -1875,7 +1881,7 @@ async function run(){
         const days=Math.ceil((new Date(resolvedDate+"T00:00:00")-today)/86400000);
         const priority=days<=1?"high":days<=4?"medium":"low";
         const notes=/canvas/i.test(item)?"Submit to Canvas":"";
-        assignments.push({title,subject,dueDate:resolvedDate,priority,notes});
+        assignments.push({title,subject,dueDate:resolvedDate,priority,progress:0,notes});
       }
     }
 
@@ -1904,7 +1910,7 @@ async function run(){
         const days=Math.ceil((new Date(resolvedDate+"T00:00:00")-today)/86400000);
         const priority=days<=1?"high":days<=4?"medium":"low";
         const notes=/canvas/i.test(item)?"Submit to Canvas":"";
-        assignments.push({title,subject,dueDate:resolvedDate,priority,notes});
+        assignments.push({title,subject,dueDate:resolvedDate,priority,progress:0,notes});
       }
     }
 
@@ -1934,7 +1940,7 @@ async function run(){
       const days=dueDate?Math.ceil((new Date(dueDate+"T00:00:00")-today)/86400000):99;
       const priority=days<=1?"high":days<=4?"medium":"low";
       const notes=/canvas/i.test(line)?"Submit to Canvas":"";
-      assignments.push({title,subject,dueDate,priority,notes});
+      assignments.push({title,subject,dueDate,priority,progress:0,notes});
     }
 
     return assignments;
@@ -2428,7 +2434,7 @@ async function run(){
                 {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error — tap to dismiss":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} submitted!`:canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:canvasToken?"Canvas connected":""}
               </div>
             )}
-            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
+            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
             <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</button>
             <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"}>{darkMode?"🌙":"☀️"}</button>
             <button className="hdr-icon-btn" title="What's new" onClick={()=>setShowReleases(true)}>
@@ -2661,7 +2667,7 @@ async function run(){
                       ))}
                     </div>
                   </div>
-                  {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>setShowCanvasSetup(true)} style={{borderColor:"#c7d2fe",color:"#4338ca",whiteSpace:"nowrap",flexShrink:0}}>🎓 Auto-sync grades</button>}
+                  {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca",whiteSpace:"nowrap",flexShrink:0}}>🎓 Auto-sync grades</button>}
                 </div>
               )}
 
@@ -2671,7 +2677,7 @@ async function run(){
                   <div className="empty-i">📈</div>
                   <div className="empty-t">No grades yet</div>
                   <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Connect Canvas to auto-sync grades, or add them manually on each assignment</div>
-                  {!canvasToken&&<button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>setShowCanvasSetup(true)}>🎓 Connect Canvas</button>}
+                  {!canvasToken&&<button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>🎓 Connect Canvas</button>}
                 </div>
               )}
 
@@ -2749,7 +2755,7 @@ async function run(){
                 <div style={{marginTop:16,padding:"12px 16px",background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,fontSize:".78rem",color:"var(--text3)",display:"flex",alignItems:"center",gap:10}}>
                   <span>💡</span>
                   <span>Connect Canvas to auto-sync grades, or set progress to 100% on an assignment and manually enter a grade by editing it.</span>
-                  <button className="btn btn-g btn-sm" style={{marginLeft:"auto",flexShrink:0,borderColor:"#c7d2fe",color:"#4338ca"}} onClick={()=>setShowCanvasSetup(true)}>🎓 Connect</button>
+                  <button className="btn btn-g btn-sm" style={{marginLeft:"auto",flexShrink:0,borderColor:"#c7d2fe",color:"#4338ca"}} onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>🎓 Connect</button>
                 </div>
               )}
             </div>
@@ -3236,7 +3242,7 @@ async function run(){
                         <div style={{fontWeight:700,color:"#4338ca",fontSize:".85rem"}}>Canvas connected</div>
                         <div style={{fontSize:".72rem",color:"#6366f1",marginTop:2}}>{canvasBaseUrl}</div>
                       </div>
-                      <div style={{marginLeft:"auto",fontSize:".7rem",color:"#6366f1",fontWeight:600,cursor:"pointer",textDecoration:"underline"}} onClick={()=>{setImportOpen(false);resetImport();setShowCanvasSetup(true);}}>Change</div>
+                      <div style={{marginLeft:"auto",fontSize:".7rem",color:"#6366f1",fontWeight:600,cursor:"pointer",textDecoration:"underline"}} onClick={()=>{setImportOpen(false);resetImport();setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>Change</div>
                     </div>
                     <div style={{fontSize:".8rem",color:"var(--text3)",marginBottom:18,lineHeight:1.6}}>
                       This will fetch <b>all upcoming assignments</b> from Canvas and add them to StudyDesk. Assignments already in your list will be updated with the latest Canvas data.
@@ -3266,7 +3272,7 @@ async function run(){
                     <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"13px 15px",marginBottom:14}}>
                       <div style={{fontWeight:700,color:"#4338ca",fontSize:".84rem",marginBottom:6}}>🎓 Connect Canvas for one-click import</div>
                       <div style={{fontSize:".77rem",color:"#6366f1",marginBottom:10}}>Connect your Canvas API token once and import all assignments with a single button — no copy-pasting ever again.</div>
-                      <button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>{setImportOpen(false);resetImport();setShowCanvasSetup(true);}}>Connect Canvas →</button>
+                      <button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>{setImportOpen(false);resetImport();setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>Connect Canvas →</button>
                     </div>
                     <div style={{fontSize:".72rem",fontWeight:700,color:"var(--text4)",textTransform:"uppercase",letterSpacing:".06em",marginBottom:10}}>Or import manually</div>
                     <div style={{background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,padding:"12px 14px",marginBottom:14,fontSize:".78rem",color:"var(--text3)"}}>
@@ -3428,7 +3434,7 @@ async function run(){
               <>
                 <div className="err-box">⚠️ {importResult.error}</div>
                 <div className="mactions">
-                  <button className="btn btn-g" onClick={()=>{setImportResult(null);setCanvasStatus("");setFetchStatus("");}}>← Try Again</button>
+                  <button className="btn btn-g" onClick={()=>{setImportResult(null);setCanvasStatus("");setFetchStatus("");setImporting(false);}}>← Try Again</button>
                   <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Close</button>
                 </div>
               </>
@@ -3469,7 +3475,7 @@ async function run(){
                   </div>
                 </div>
                 <div className="mactions">
-                  <button className="btn btn-g" onClick={()=>{setImportResult(null);setFetchStatus("");setCanvasStatus("");}}>← Redo</button>
+                  <button className="btn btn-g" onClick={()=>{setImportResult(null);setFetchStatus("");setCanvasStatus("");setImporting(false);}}>← Redo</button>
                   <button className="btn btn-p" onClick={confirmImport} disabled={!importResult.assignments.length}>Add {importResult.assignments.length} to Tracker →</button>
                 </div>
               </>
@@ -3613,20 +3619,23 @@ async function run(){
             </div>
             <div className="fg">
               <label className="flbl">Canvas API Token</label>
-              <input className="finp" type="password" value={canvasToken}
-                onChange={e=>setCanvasToken(e.target.value)}
+              <input className="finp" type="password" value={tokenDraft}
+                onChange={e=>setTokenDraft(e.target.value)}
                 placeholder="Paste your token here..."/>
             </div>
 
             {canvasSync.error&&<div className="err-box" style={{marginBottom:10}}>⚠️ {canvasSync.error}</div>}
 
             <div className="mactions">
-              {canvasToken&&<button className="btn btn-g" onClick={()=>{setCanvasToken("");setCanvasBaseUrl("https://naperville.instructure.com");}}>🗑 Disconnect</button>}
+              {canvasToken&&<button className="btn btn-g" onClick={()=>{setCanvasToken("");setTokenDraft("");setCanvasBaseUrl("https://naperville.instructure.com");}}>🗑 Disconnect</button>}
               <button className="btn btn-g" onClick={()=>setShowCanvasSetup(false)}>Cancel</button>
-              <button className="btn btn-p" style={{background:"#4338ca"}} disabled={!canvasToken||!canvasBaseUrl}
+              <button className="btn btn-p" style={{background:"#4338ca"}} disabled={!tokenDraft.trim()||!canvasBaseUrl}
                 onClick={()=>{
+                  const tok=tokenDraft.trim();
+                  setCanvasToken(tok);
+                  setCanvasSync(s=>({...s,everSucceeded:true}));
                   setShowCanvasSetup(false);
-                  syncCanvas(canvasToken,canvasBaseUrl);
+                  syncCanvas(tok,canvasBaseUrl);
                 }}>
                 Connect & Sync →
               </button>
