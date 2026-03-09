@@ -9,25 +9,33 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const RENDER_PROXY = "https://studydesk-proxy.onrender.com";
+// Canvas API token goes in URL query param — free proxies block Authorization headers
+// but can't block query params. Canvas officially supports ?access_token= as an alternative.
+const FREE_PROXIES = [
+  u => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+  u => `https://corsproxy.org/?${encodeURIComponent(u)}`,
+];
 async function fetchWithFallback(base, path, options={}) {
-  const authHeader = options?.headers?.["Authorization"]||"";
-  // Build Render proxy URL — passes Authorization header server-side (no CORS issue)
-  const renderUrl = `${RENDER_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
-  // Render can take up to 30s to wake from cold start — use 40s timeout
-  try{
-    const r = await fetch(renderUrl, {
-      ...options,
-      redirect: "follow",
-      signal: AbortSignal.timeout(40000)
-    });
-    if(r.ok) return r;
-    if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
-    throw new Error(`Proxy returned ${r.status}`);
-  }catch(e){
-    if(e.message?.includes("401")||e.message?.includes("403")) throw e;
-    throw new Error("Could not reach Canvas — the proxy may be starting up, try again in 30 seconds");
+  // Extract token from Authorization header → move to query param
+  const auth = options?.headers?.["Authorization"]||"";
+  const token = auth.replace(/^Bearer\s+/i,"").trim();
+  const connector = path.includes("?") ? "&" : "?";
+  const urlWithToken = base.replace(/\/$/,"") + path + (token ? `${connector}access_token=${token}` : "");
+  // Remove Authorization header entirely — not needed since token is in URL
+  const {Authorization, ...cleanHeaders} = options?.headers||{};
+  const cleanOptions = {...options, headers:cleanHeaders};
+  let lastErr;
+  for(const proxy of FREE_PROXIES){
+    try{
+      const r = await fetch(proxy(urlWithToken), {...cleanOptions, signal:AbortSignal.timeout(15000)});
+      if(r.ok) return r;
+      if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
+    }catch(e){
+      lastErr = e;
+      if(e.message?.includes("401")||e.message?.includes("403")) throw e;
+    }
   }
+  throw lastErr || new Error("Could not reach Canvas — check your connection");
 }
 
 async function fbSignUp(email, password, displayName) {
@@ -1182,7 +1190,7 @@ function AdminPanel({user, onClose, inline=false}){
 }
 
 export default function StudyDesk() {
-  console.log("fixing even stupider api bro wallahi")
+  console.log("sick and tired of this proxy bs")
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
@@ -1411,15 +1419,6 @@ export default function StudyDesk() {
     const t=setInterval(()=>syncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
     return()=>clearInterval(t);
   },[canvasToken, canvasBaseUrl, user]);
-
-  // Keep Render proxy awake (free tier sleeps after 15min inactivity → CORS 307 bug)
-  useEffect(()=>{
-    if(isLocalhost) return;
-    const ping=()=>fetch(`${RENDER_PROXY}/health`,{mode:"no-cors"}).catch(()=>{});
-    ping(); // ping immediately on load
-    const t=setInterval(ping, 14*60*1000); // every 14 minutes
-    return()=>clearInterval(t);
-  },[]);
 
   function getExportUrl(rawUrl){const id=extractId(rawUrl.trim());if(!id)return null;return`https://docs.google.com/presentation/d/${id}/export/txt`;}
 
