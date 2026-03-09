@@ -79,6 +79,14 @@ async function fbDeleteAccount(idToken) {
   });
 }
 
+async function fbAdminDeleteUserData(uid, adminIdToken) {
+  // Delete user's Firestore docs (users + presence)
+  await Promise.allSettled([
+    fetch(`${FB_FS}/users/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
+    fetch(`${FB_FS}/presence/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
+  ]);
+}
+
 // ── Google Identity Services sign-in ─────────────────────────────────────────
 // IMPORTANT: Replace the value below with your real Web Client ID from:
 // Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID
@@ -195,7 +203,7 @@ async function fbGetAdminStats(idToken) {
     const allP=(pSnap.documents||[]);
     const online=allP.filter(p=>{const ls=p.fields?.lastSeen?.timestampValue;return ls&&new Date(ls)>twoMin;})
       .map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||"",lastSeen:p.fields?.lastSeen?.timestampValue}));
-    const allUsers=(uSnap.documents||[]).map(u=>({email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
+    const allUsers=(uSnap.documents||[]).map(u=>({uid:u.name.split("/").pop(),email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
     // Use actual document counts from Firestore — more reliable than manual counters
     const totalUsersReal = Math.max(gi(g.totalUsers), allUsers.length, allP.length);
     const today = new Date().toISOString().split("T")[0];
@@ -210,7 +218,7 @@ async function fbGetAdminStats(idToken) {
       totalClasses:gi(g.totalClasses),totalPoints:gi(g.totalPoints),
       newUsersToday:newToday,
       allUsers: allUsers.length > 0 ? allUsers :
-        allP.map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||""})),
+        allP.map(p=>({uid:p.name.split("/").pop(),email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||""})),
     };
   }catch(e){console.warn("Admin error",e);return null;}
 }
@@ -976,10 +984,11 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
 
 function AdminPanel({user, onClose, inline=false}){
   const [pass, setPass] = useState("");
-  const [authed, setAuthed] = useState(inline); // skip password gate when shown via /admin route
+  const [authed, setAuthed] = useState(inline);
   const [stats, setStats] = useState(null);
   const [loading, setLoading] = useState(false);
   const [err, setPassErr] = useState("");
+  const [deletingUser, setDeletingUser] = useState(null);
   const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
 
   const bg=darkMode?"#0F1117":"#F5F2EC", card=darkMode?"#161921":"#fff", bd=darkMode?"#262B3C":"#E2DDD6";
@@ -1105,16 +1114,30 @@ function AdminPanel({user, onClose, inline=false}){
                   {stats.allUsers&&stats.allUsers.length>0&&(
                     <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px"}}>
                       <div style={{fontWeight:700,color:txt,fontSize:".88rem",marginBottom:12}}>👥 All Registered Users ({stats.allUsers.length})</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:220,overflow:"auto"}}>
+                      <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:260,overflow:"auto"}}>
                         {stats.allUsers.map((u,i)=>(
                           <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${bd}`}}>
                             <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#3b82f6,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:".7rem",flexShrink:0}}>
                               {(u.displayName||u.email||"?")[0].toUpperCase()}
                             </div>
-                            <div>
-                              <div style={{fontSize:".8rem",fontWeight:600,color:txt}}>{u.displayName||u.email.split("@")[0]}</div>
-                              <div style={{fontSize:".69rem",color:txt3}}>{u.email}</div>
+                            <div style={{flex:1,minWidth:0}}>
+                              <div style={{fontSize:".8rem",fontWeight:600,color:txt,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.displayName||u.email.split("@")[0]}</div>
+                              <div style={{fontSize:".69rem",color:txt3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.email}</div>
                             </div>
+                            {u.uid&&(
+                              <button
+                                disabled={deletingUser===u.uid}
+                                onClick={async()=>{
+                                  if(!window.confirm(`Remove ${u.email} from StudyDesk?\n\nThis deletes their Firestore data. Their login account will remain.`)) return;
+                                  setDeletingUser(u.uid);
+                                  await fbAdminDeleteUserData(u.uid, user.idToken);
+                                  setStats(s=>({...s,allUsers:s.allUsers.filter(x=>x.uid!==u.uid),totalUsers:s.totalUsers-1}));
+                                  setDeletingUser(null);
+                                }}
+                                style={{padding:"4px 10px",borderRadius:7,border:"1.5px solid #fca5a5",background:deletingUser===u.uid?"#fca5a5":"#fef2f2",color:"#dc2626",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".7rem",fontWeight:700,cursor:deletingUser===u.uid?"not-allowed":"pointer",flexShrink:0,transition:"all .15s"}}>
+                                {deletingUser===u.uid?"...":"🗑 Remove"}
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
