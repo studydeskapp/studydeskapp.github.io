@@ -1193,8 +1193,8 @@ export default function StudyDesk() {
   const [agendaSlideLinks, setAgendaSlideLinks] = useState([]); // [{id, title, exportUrl}]
   const [agendaSlideTexts, setAgendaSlideTexts] = useState([]);
   const [canvasStatus, setCanvasStatus] = useState("");
-  const [canvasToken, setCanvasToken] = useState(""); // never stored in localStorage — Firestore only
-  const [canvasBaseUrl, setCanvasBaseUrl] = useState("https://naperville.instructure.com");
+  const [canvasToken, setCanvasToken] = useState(()=>{try{return localStorage.getItem("sd-canvas-token")||"";}catch{return "";}});
+  const [canvasBaseUrl, setCanvasBaseUrl] = useState(()=>{try{return localStorage.getItem("sd-canvas-url")||"https://naperville.instructure.com";}catch{return "https://naperville.instructure.com";}});
   const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:""});
   const [showCanvasSetup, setShowCanvasSetup] = useState(false);
   const [expandedGradeClass, setExpandedGradeClass] = useState(null);
@@ -1244,6 +1244,8 @@ export default function StudyDesk() {
   },[assignments,classes,game,loaded,user]);
 
   useEffect(()=>{try{localStorage.setItem("sd-dark",darkMode?"1":"0");}catch{}},[darkMode]);
+  useEffect(()=>{try{if(canvasToken)localStorage.setItem("sd-canvas-token",canvasToken);else localStorage.removeItem("sd-canvas-token");}catch{}},[canvasToken]);
+  useEffect(()=>{try{localStorage.setItem("sd-canvas-url",canvasBaseUrl);}catch{}},[canvasBaseUrl]);
 
   // Presence heartbeat — updates every 60s while logged in
   useEffect(()=>{
