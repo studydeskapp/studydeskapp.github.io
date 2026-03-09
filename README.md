@@ -148,6 +148,14 @@ To deploy your own instance, swap these values for your own Firebase project.
 
 ## 📋 Changelog
 
+### v1.3.1 — March 2026
+- Cleaner header with icon buttons replacing the old text button row
+- Tabs redesigned with subtle card-style active state
+- Canvas token no longer synced to the cloud — stays on device only
+- Canvas Connect shows a clear message on Chromebooks instead of failing silently
+- Removed background keep-alive requests firing unnecessarily
+- Refined color palette, spacing, and hover animations throughout
+
 ### v1.3.0 — March 2026
 - Canvas one-click import (fetches all upcoming assignments via API)
 - Canvas auto-sync every 3 minutes
