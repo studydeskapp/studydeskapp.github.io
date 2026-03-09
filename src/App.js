@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-// ── Firebase REST API (no SDK needed) ───────────────────────────────────────
+// ── Firebase REST API (no SDK needed) ────────────────────────────────────────
 const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
 const FB_PROJECT = "studydesk-1b251";
 const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
@@ -8,8 +8,37 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
-function canvasProxyUrl(base, path) {
-  return `https://corsproxy.io/?url=${encodeURIComponent(base+path)}`;
+  const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
+const RENDER_PROXY = "https://studydesk-proxy.onrender.com";
+// Free CORS proxies used as fallback only
+const FREE_PROXIES = [
+  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+  url => `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+];
+async function fetchWithFallback(base, path, options={}) {
+  const fullUrl = base.replace(/\/$/, "") + path;
+  // Try Render proxy first (most reliable)
+  try {
+    const renderUrl = `${RENDER_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
+    const r = await fetch(renderUrl, {...options, signal:AbortSignal.timeout(12000)});
+    if(r.ok) return r;
+    if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
+  } catch(e) {
+    if(e.message?.includes("401")||e.message?.includes("403")) throw e;
+  }
+  // Fall back to free proxies
+  let lastErr;
+  for(const proxyFn of FREE_PROXIES){
+    try{
+      const r=await fetch(proxyFn(fullUrl),{...options,signal:AbortSignal.timeout(10000)});
+      if(r.ok) return r;
+      if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
+    }catch(e){
+      lastErr=e;
+      if(e.message?.includes("401")||e.message?.includes("403")) throw e;
+    }
+  }
+  throw lastErr||new Error("Could not reach Canvas — check your internet connection");
 }
 
 async function fbSignUp(email, password, displayName) {
@@ -1299,17 +1328,19 @@ export default function StudyDesk() {
   // ── Canvas Auto-Sync ────────────────────────────────────────────────────────
   async function syncCanvas(token, baseUrl, silent=false){
     if(!token||canvasSyncRef.current) return;
+    if(isLocalhost){
+      setCanvasSync(s=>({...s,syncing:false,error:"Canvas sync doesn't work on localhost — deploy to test it"}));
+      return;
+    }
     canvasSyncRef.current=true;
     if(!silent) setCanvasSync(s=>({...s,syncing:true,error:""}));
     else setCanvasSync(s=>({...s,syncing:true}));
     try{
       const today=new Date().toISOString().split("T")[0];
       const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
-      const syncR=await fetch(canvasProxyUrl(baseUrl, syncPath),{
+      const syncR=await fetchWithFallback(baseUrl, syncPath,{
         headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
-        signal:AbortSignal.timeout(10000)
       });
-      if(!syncR.ok) throw new Error(`Canvas returned ${syncR.status}`);
       let data=await syncR.json();
       if(!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
 
@@ -1518,6 +1549,7 @@ export default function StudyDesk() {
   }
 
   async function importFromCanvasAPI(){
+    if(isLocalhost){setImportResult({error:"Canvas API import doesn't work on localhost due to CORS. Deploy the app or use the 'Paste Canvas data' option instead."});return;}
     setImporting(true); setImportResult(null);
     try{
       const today=new Date(); today.setHours(0,0,0,0);
@@ -1528,11 +1560,9 @@ export default function StudyDesk() {
       let pageCount=0;
       while(currentPath&&pageCount<20){
         pageCount++;
-        const r=await fetch(canvasProxyUrl(canvasBaseUrl, currentPath),{
+        const r=await fetchWithFallback(canvasBaseUrl, currentPath,{
           headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},
-          signal:AbortSignal.timeout(12000)
         });
-        if(!r.ok) throw new Error(`Canvas API returned ${r.status} — check your token`);
         const link=r.headers.get("Link")||"";
         const nextMatch=link.match(/<([^>]+)>;\s*rel="next"/);
         let nextPath=null;
@@ -1589,10 +1619,18 @@ export default function StudyDesk() {
   function extractDocId(url){const m=url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
 
   async function fetchViaProxy(url){
-    const proxy=`https://corsproxy.io/?url=${encodeURIComponent(url)}`;
-    const res=await fetch(proxy);
-    if(!res.ok)throw new Error(`Failed to fetch (${res.status}). Make sure the link is set to "Anyone with link can view".`);
-    return res.text();
+    const FREE_SLIDE_PROXIES=[
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+      `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
+    ];
+    let lastErr;
+    for(const proxyUrl of FREE_SLIDE_PROXIES){
+      try{
+        const res=await fetch(proxyUrl,{signal:AbortSignal.timeout(10000)});
+        if(res.ok) return res.text();
+      }catch(e){lastErr=e;}
+    }
+    throw new Error(`Failed to fetch slides. Make sure the link is set to "Anyone with link can view".`);
   }
 
   async function importFromSlidesUrl(){
@@ -2186,7 +2224,7 @@ async function run(){
     const enc=encodeURIComponent(q);
     const odsUrl=`https://public.opendatasoft.com/api/explore/v2.1/catalog/datasets/us-public-schools/records?where=search(NAME%2C%22${enc}%22)%20AND%20LEVEL%3D%22High%22&limit=10&select=NAME%2CCITY%2CSTATE%2CNCESSCH&order_by=NAME`;
     // CORS proxy as backup for OpenDataSoft
-    const proxyUrl=`https://corsproxy.io/?url=${encodeURIComponent(odsUrl)}`;
+    const proxyUrl=`https://api.allorigins.win/raw?url=${encodeURIComponent(odsUrl)}`;
 
     function parseODS(d){
       return(d.results||[]).map(s=>({
