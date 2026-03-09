@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from "react";
 
-// ── Firebase REST API (no SDK needed) ────────────────────────────────────────
+// ── Firebase REST API (no SDK needed) ───────────────────────────────────────
 const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
 const FB_PROJECT = "studydesk-1b251";
 const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
