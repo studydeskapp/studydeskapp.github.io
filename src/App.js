@@ -9,34 +9,25 @@ const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databa
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
   const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-// Free proxies don't forward Authorization headers, so we pass the token
-// as a Canvas query param (?access_token=) instead — Canvas supports both methods
-const FREE_PROXIES = [
-  url => `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-  url => `https://thingproxy.freeboard.io/fetch/${url}`,
-];
+const RENDER_PROXY = "https://studydesk-proxy.onrender.com";
 async function fetchWithFallback(base, path, options={}) {
-  // Extract token from Authorization header and move it to query param
   const authHeader = options?.headers?.["Authorization"]||"";
-  const token = authHeader.replace("Bearer ","").trim();
-  const sep = path.includes("?") ? "&" : "?";
-  const pathWithToken = token ? `${path}${sep}access_token=${encodeURIComponent(token)}` : path;
-  const fullUrl = base.replace(/\/$/, "") + pathWithToken;
-  // Strip Authorization from headers since token is now in URL
-  const {Authorization, ...safeHeaders} = options?.headers||{};
-  const safeOptions = {...options, headers:safeHeaders};
-  let lastErr;
-  for(const proxyFn of FREE_PROXIES){
-    try{
-      const r=await fetch(proxyFn(fullUrl),{...safeOptions,signal:AbortSignal.timeout(12000)});
-      if(r.ok) return r;
-      if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
-    }catch(e){
-      lastErr=e;
-      if(e.message?.includes("401")||e.message?.includes("403")) throw e;
-    }
+  // Build Render proxy URL — passes Authorization header server-side (no CORS issue)
+  const renderUrl = `${RENDER_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
+  // Render can take up to 30s to wake from cold start — use 40s timeout
+  try{
+    const r = await fetch(renderUrl, {
+      ...options,
+      redirect: "follow",
+      signal: AbortSignal.timeout(40000)
+    });
+    if(r.ok) return r;
+    if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
+    throw new Error(`Proxy returned ${r.status}`);
+  }catch(e){
+    if(e.message?.includes("401")||e.message?.includes("403")) throw e;
+    throw new Error("Could not reach Canvas — the proxy may be starting up, try again in 30 seconds");
   }
-  throw lastErr||new Error("Could not reach Canvas — check your internet connection");
 }
 
 async function fbSignUp(email, password, displayName) {
@@ -1191,7 +1182,7 @@ function AdminPanel({user, onClose, inline=false}){
 }
 
 export default function StudyDesk() {
-  console.log("StudyDesk v1.3.2 loaded ✅");
+  console.log("fixing stupid api");
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
@@ -1334,6 +1325,8 @@ export default function StudyDesk() {
     canvasSyncRef.current=true;
     if(!silent) setCanvasSync(s=>({...s,syncing:true,error:""}));
     else setCanvasSync(s=>({...s,syncing:true}));
+    // Wake up Render proxy if it's sleeping (free tier spins down after inactivity)
+    try{ await fetch(`${RENDER_PROXY}/health`,{signal:AbortSignal.timeout(35000)}); }catch{}
     try{
       const today=new Date().toISOString().split("T")[0];
       const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
@@ -1551,6 +1544,8 @@ export default function StudyDesk() {
     if(isLocalhost){setImportResult({error:"Canvas API import doesn't work on localhost due to CORS. Deploy the app or use the 'Paste Canvas data' option instead."});return;}
     setImporting(true); setImportResult(null);
     try{
+      // Wake up Render proxy if sleeping
+      try{ await fetch(`${RENDER_PROXY}/health`,{signal:AbortSignal.timeout(35000)}); }catch{}
       const today=new Date(); today.setHours(0,0,0,0);
       const startDate=today.toISOString().split("T")[0];
       // Fetch ALL pages of upcoming assignments
