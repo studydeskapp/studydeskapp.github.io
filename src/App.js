@@ -1182,7 +1182,7 @@ function AdminPanel({user, onClose, inline=false}){
 }
 
 export default function StudyDesk() {
-  console.log("fixing stupid api");
+  console.log("fixing even stupider api bro wallahi")
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [tab, setTab] = useState("dashboard");
@@ -1325,8 +1325,6 @@ export default function StudyDesk() {
     canvasSyncRef.current=true;
     if(!silent) setCanvasSync(s=>({...s,syncing:true,error:""}));
     else setCanvasSync(s=>({...s,syncing:true}));
-    // Wake up Render proxy if it's sleeping (free tier spins down after inactivity)
-    try{ await fetch(`${RENDER_PROXY}/health`,{signal:AbortSignal.timeout(35000)}); }catch{}
     try{
       const today=new Date().toISOString().split("T")[0];
       const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
@@ -1413,6 +1411,15 @@ export default function StudyDesk() {
     const t=setInterval(()=>syncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
     return()=>clearInterval(t);
   },[canvasToken, canvasBaseUrl, user]);
+
+  // Keep Render proxy awake (free tier sleeps after 15min inactivity → CORS 307 bug)
+  useEffect(()=>{
+    if(isLocalhost) return;
+    const ping=()=>fetch(`${RENDER_PROXY}/health`,{mode:"no-cors"}).catch(()=>{});
+    ping(); // ping immediately on load
+    const t=setInterval(ping, 14*60*1000); // every 14 minutes
+    return()=>clearInterval(t);
+  },[]);
 
   function getExportUrl(rawUrl){const id=extractId(rawUrl.trim());if(!id)return null;return`https://docs.google.com/presentation/d/${id}/export/txt`;}
 
@@ -1544,8 +1551,6 @@ export default function StudyDesk() {
     if(isLocalhost){setImportResult({error:"Canvas API import doesn't work on localhost due to CORS. Deploy the app or use the 'Paste Canvas data' option instead."});return;}
     setImporting(true); setImportResult(null);
     try{
-      // Wake up Render proxy if sleeping
-      try{ await fetch(`${RENDER_PROXY}/health`,{signal:AbortSignal.timeout(35000)}); }catch{}
       const today=new Date(); today.setHours(0,0,0,0);
       const startDate=today.toISOString().split("T")[0];
       // Fetch ALL pages of upcoming assignments
