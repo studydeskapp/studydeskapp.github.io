@@ -302,7 +302,7 @@
     // ── 1. Verify email ──────────────────────────────────────
     async function handleVerifyEmail() {
       try {
-        const r = await fetch(`${FB_AUTH}:confirm?key=${FB_KEY}`, {
+        const r = await fetch(`${FB_AUTH}:update?key=${FB_KEY}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ oobCode })
@@ -413,4 +413,4 @@
     init();
   </script>
 </body>
-</html> 
+</html>
