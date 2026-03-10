@@ -997,7 +997,7 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
       const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FB_KEY}`,{
         method:"POST", headers:{"Content-Type":"application/json"},
         body: JSON.stringify({
-          requestUri:"http://localhost",
+          requestUri:window.location.origin,
           postBody:`id_token=${result.idToken}&providerId=google.com`,
           returnSecureToken:true,
           returnIdpCredential:true
