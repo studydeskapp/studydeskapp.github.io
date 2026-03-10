@@ -568,27 +568,70 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .prompt-modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:420px;border:1.5px solid var(--border);box-shadow:0 20px 50px var(--sh2)}
 @media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.pbar-wrap{display:none}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
 /* ── MOBILE BOTTOM NAV ── */
+.mob-content{padding:0}
 .bnav{display:none}
+.mob-hdr{display:none}.mob-status{display:none}
+.mob-icon-btn{width:36px;height:36px;border-radius:50%;border:none;background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);transition:all .15s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
+.mob-icon-btn:active{background:var(--bg4);transform:scale(.93)}
 @media(max-width:640px){
-  .app{padding:0 14px 90px}
+  .app{padding:0 0 88px}
   .tabs{display:none}
-  .bnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1.5px solid var(--border);z-index:200;padding:6px 0 calc(6px + env(safe-area-inset-bottom));backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
-  .bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;background:none;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.55rem;font-weight:700;color:var(--text4);transition:all .15s;-webkit-tap-highlight-color:transparent}
+  /* Show mobile header, hide desktop */
+  .hdr{display:none}
+  .mob-status{display:flex;}
+  .mob-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 18px 10px;position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--border)}
+  .mob-hdr-title{font-family:'Fraunces',serif;font-size:1.35rem;font-weight:700;color:var(--text);letter-spacing:-.3px}
+  .mob-hdr-date{font-size:.67rem;color:var(--text3);margin-top:2px;font-weight:500}
+  .mob-hdr-r{display:flex;align-items:center;gap:8px}
+  .mob-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.8rem;overflow:hidden;flex-shrink:0;cursor:pointer;border:2px solid var(--bg3)}
+  /* Status strip */
+  .mob-status{display:flex;align-items:center;gap:7px;padding:9px 18px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border);background:var(--bg)}
+  .mob-status::-webkit-scrollbar{display:none}
+  .mob-pill{display:inline-flex;align-items:center;gap:4px;padding:6px 11px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.73rem;font-weight:700;color:var(--text2);white-space:nowrap;cursor:pointer;flex-shrink:0;-webkit-tap-highlight-color:transparent}
+  .mob-pill:active{opacity:.75}
+  .mob-pill.fire{border-color:#FDDCB5;background:#FFF7F0;color:#EA580C}
+  .mob-pill.star{border-color:#FDE68A;background:#FFFBEB;color:#D97706}
+  .mob-pill.canvas{border-color:#c7d2fe;background:#eef2ff;color:#4338ca}
+  .mob-pill.err{border-color:#fca5a5;background:#fef2f2;color:#dc2626}
+  .mob-pill.ok{border-color:#86efac;background:#f0fdf4;color:#16a34a}
+  .dark .mob-pill.fire{background:#200E00;border-color:#7A3000;color:#FB923C}
+  .dark .mob-pill.star{background:#231800;border-color:#8A5000;color:#F59E0B}
+  .dark .mob-pill.canvas{background:#1e1b4b;border-color:#4338ca;color:#a5b4fc}
+  .dark .mob-pill{border-color:var(--border2);background:var(--card);color:var(--text2)}
+  /* Page padding */
+  .mob-content{padding:16px 18px 0}
+  /* Content area */
+  .tab-content,.sfilt,.sec-hd,.alist,.stats,.sec-lbl,.empty,.twocol{padding-left:0;padding-right:0}
+  /* Bottom nav */
+  .bnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);z-index:200;padding:8px 0 calc(8px + env(safe-area-inset-bottom));backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
+  .bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;background:none;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.58rem;font-weight:600;color:var(--text4);transition:color .15s;-webkit-tap-highlight-color:transparent;letter-spacing:.01em}
   .bnav-btn.on{color:var(--accent)}
-  .bnav-ico{font-size:1.3rem;line-height:1;transition:transform .15s}
-  .bnav-btn.on .bnav-ico{transform:scale(1.15)}
-  .hdr{padding:14px 0 12px;margin-bottom:16px}
-  .hdr-title{font-size:1.4rem}
-  .hdr-r{gap:4px}
-  .hdr-icon-btn{width:30px;height:30px;font-size:.8rem}
-  .modal{padding:20px 16px;border-radius:16px 16px 0 0;max-height:95vh;position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%}
+  .bnav-ico{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:all .15s;font-size:0}
+  .bnav-btn.on .bnav-ico{background:var(--bg3)}
+  /* Modals as bottom sheets */
+  .modal{padding:0 20px 24px;border-radius:20px 20px 0 0;max-height:92vh;position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;box-shadow:0 -8px 40px var(--sh2)}
+  .modal::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--border2);margin:12px auto 16px}
   .overlay{align-items:flex-end;padding:0}
-  .acard{padding:11px 12px}
-  .btn{padding:10px 14px;font-size:.83rem}
-  .btn-sm{padding:8px 11px;font-size:.77rem}
-  .stat{padding:13px 12px 10px}
-  .stat-n{font-size:1.6rem}
-  .finp,.fsel,.ftxt{font-size:16px}
+  /* Cards */
+  .acard{padding:13px 14px;border-radius:14px}
+  .stat{padding:14px 14px 11px;border-radius:16px}
+  .stats{grid-template-columns:repeat(3,1fr);gap:8px}
+  .stat-n{font-size:1.5rem}
+  .stat-l{font-size:.62rem}
+  .stat-ico{font-size:1rem;right:10px;top:10px}
+  /* Buttons */
+  .btn{padding:12px 16px;font-size:.85rem;border-radius:12px;min-height:44px}
+  .btn-sm{padding:9px 13px;font-size:.77rem;border-radius:9px;min-height:38px}
+  /* Inputs */
+  .finp,.fsel,.ftxt{font-size:16px;padding:12px 14px;min-height:44px}
+  /* Section headers */
+  .sec-t{font-size:1.08rem}
+  .sec-hd{margin-bottom:14px}
+  /* Grid fixes */
+  .twocol{grid-template-columns:1fr}
+  .sched-layout{grid-template-columns:1fr}
+  .frow{grid-template-columns:1fr}
+  .pbar-wrap{width:72px}
 }
 /* ── PWA INSTALL BANNER ── */
 .pwa-banner{position:fixed;bottom:calc(70px + env(safe-area-inset-bottom));left:12px;right:12px;background:var(--accent);color:#fff;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:300;box-shadow:0 8px 32px rgba(99,102,241,.4);animation:slideUp .3s ease}
@@ -2563,10 +2606,85 @@ async function run(){
       <div className={"dk"+(darkMode?" dark":"")}>
       <div className="app">
 
-        {/* HEADER */}
+        {/* MOBILE HEADER — only visible on small screens */}
+        <div className="mob-hdr">
+          <div>
+            <div className="mob-hdr-title" onClick={handleLogoClick}>Study Desk</div>
+            <div className="mob-hdr-date">{dateStr}</div>
+          </div>
+          <div className="mob-hdr-r">
+            <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} style={{width:32,height:32}}>🔍</button>
+            <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} style={{width:32,height:32}}>{darkMode?"🌙":"☀️"}</button>
+            <div className="mob-avatar" onClick={()=>setShowUserMenu(m=>!m)}>
+              {user?.photoURL?<img src={user.photoURL} width="32" height="32" style={{objectFit:"cover"}}/>:(user?.displayName||user?.email||"?")[0].toUpperCase()}
+            </div>
+          </div>
+        </div>
+
+        {/* MOBILE STATUS STRIP */}
+        <div className="mob-status">
+          {game.streak>0&&<div className="mob-pill fire">🔥 {game.streak}d streak</div>}
+          <div className="mob-pill star">⭐ {game.points} pts</div>
+          {canvasToken&&(
+            <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.newSubmissions>0?"ok":"canvas")}
+              onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}}>
+              {canvasSync.syncing?"⟳ Syncing...":canvasSync.error?"⚠️ Sync error":canvasSync.newSubmissions>0?`✅ ${canvasSync.newSubmissions} submitted`:"🎓 Canvas"}
+            </div>
+          )}
+          {!canvasToken&&<div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>}
+          <div className="mob-pill" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</div>
+        </div>
+
+
+        {/* ── MOBILE HEADER ─────────────────────────────────────── */}
+        <div className="mob-hdr">
+          <div>
+            <div className="mob-hdr-title" onClick={handleLogoClick}>Study Desk</div>
+            <div className="mob-hdr-date">{dateStr}</div>
+          </div>
+          <div className="mob-hdr-r">
+            <button className="mob-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+            </button>
+            <button className="mob-icon-btn" onClick={()=>setDarkMode(d=>!d)}>
+              {darkMode
+                ?<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                :<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+              }
+            </button>
+            <button className="mob-icon-btn" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+            </button>
+            {user&&(
+              <div className="mob-avatar" onClick={()=>setShowUserMenu(m=>!m)}>
+                {user.photoURL?<img src={user.photoURL} width="32" height="32" style={{objectFit:"cover"}}/>:(user.displayName||user.email||"?")[0].toUpperCase()}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── MOBILE STATUS STRIP ───────────────────────────────── */}
+        <div className="mob-status">
+          {game.streak>0&&<div className="mob-pill fire">🔥 {game.streak}d streak</div>}
+          <div className="mob-pill star">⭐ {game.points} pts</div>
+          {canvasToken?(
+            <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.syncing?"canvas":canvasSync.lastSync?"ok":"canvas")}
+              onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}}>
+              <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
+                {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.lastSync?"✓":"🎓"}
+              </span>
+              {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"\Canvas"}
+            </div>
+          ):(
+            <div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>
+          )}
+          <div className="mob-pill" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</div>
+        </div>
+
+        {/* ── DESKTOP HEADER ────────────────────────────────────── */}
         <div className="hdr">
           <div>
-            <div className="hdr-title" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}} title="Study Desk">Study Desk</div>
+            <div className="hdr-title" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}}>Study Desk</div>
             <div className="hdr-sub">{dateStr}</div>
           </div>
           <div className="hdr-r">
@@ -2608,7 +2726,7 @@ async function run(){
                   <>
                     <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setShowUserMenu(false)}/>
                     <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:12,boxShadow:"0 8px 24px var(--sh)",zIndex:100,minWidth:160,overflow:"hidden"}}>
-                      <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border)"}}>
+                      <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border))"}}>
                         <div style={{fontWeight:700,fontSize:".82rem",color:"var(--text)"}}>{user.displayName||user.email.split("@")[0]}</div>
                         <div style={{fontSize:".7rem",color:"var(--text4)",marginTop:1}}>{user.email}</div>
                       </div>
@@ -2624,12 +2742,15 @@ async function run(){
           </div>
         </div>
 
+
         {/* TABS */}
         <div className="tabs">
           {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["timer","⏱ Timer"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
+
+        <div className="mob-content">
 
         {/* SEARCH BAR */}
         {showSearch&&(
@@ -3895,6 +4016,8 @@ async function run(){
         </div>
       )}
 
+        </div>{/* end mob-content */}
+
       {/* PWA INSTALL BANNER */}
       {pwaPrompt&&(
         <div className="pwa-banner">
@@ -3946,16 +4069,16 @@ async function run(){
 
       {/* MOBILE BOTTOM NAV */}
       <nav className="bnav">
-        {[
-          ["dashboard","📊","Home"],
-          ["assignments","📝","Tasks"],
-          ["grades","📈","Grades"],
-          ["timer","⏱","Timer"],
-          ["schedule","📅","Schedule"],
-        ].map(([t,ico,lbl])=>(
+        {([
+          ["dashboard","Home",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>],
+          ["assignments","Tasks",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>],
+          ["grades","Grades",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>],
+          ["timer","Timer",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 1h6M12 1v3"/></svg>],
+          ["schedule","Plan",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>],
+        ]).map(([t,lbl,icon])=>(
           <button key={t} className={"bnav-btn"+(tab===t?" on":"")} onClick={()=>setTab(t)}>
-            <span className="bnav-ico">{ico}</span>
-            {lbl}
+            <span className="bnav-ico">{icon}</span>
+            <span>{lbl}</span>
           </button>
         ))}
       </nav>
