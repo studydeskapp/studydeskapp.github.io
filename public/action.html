@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>StudyDesk</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:      #F4F1EB;
+      --card:    #FFFFFF;
+      --border:  #DDD9D1;
+      --border2: #C4BFB5;
+      --text:    #18192B;
+      --text2:   #52556E;
+      --text3:   #8F93A8;
+      --accent:  #18192B;
+      --green:   #16a34a;
+      --green-bg:#f0fdf4;
+      --green-b: #86efac;
+      --red:     #dc2626;
+      --red-bg:  #fef2f2;
+      --red-b:   #fca5a5;
+      --sh:      rgba(24,25,43,.08);
+      --sh2:     rgba(24,25,43,.16);
+    }
+
+    body {
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      background: var(--bg);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 24px 20px;
+      color: var(--text);
+    }
+
+    /* ── Card ── */
+    .card {
+      background: var(--card);
+      border: 1.5px solid var(--border);
+      border-radius: 24px;
+      padding: 40px 36px 36px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 24px 60px var(--sh2);
+      text-align: center;
+      animation: fadeUp .35s cubic-bezier(.34,1.2,.64,1) both;
+    }
+    @keyframes fadeUp {
+      from { opacity:0; transform:translateY(22px) scale(.97); }
+      to   { opacity:1; transform:translateY(0)    scale(1);   }
+    }
+
+    /* ── Logo ── */
+    .logo {
+      width: 64px;
+      height: 64px;
+      background: var(--text);
+      border-radius: 18px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 2rem;
+      box-shadow: 0 8px 24px var(--sh2);
+    }
+
+    /* ── Icon circle ── */
+    .icon-circle {
+      width: 72px;
+      height: 72px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin: 0 auto 20px;
+      font-size: 2rem;
+      transition: all .4s cubic-bezier(.34,1.4,.64,1);
+    }
+    .icon-circle.loading { background: #f0f2ff; color: #6366f1; animation: pulse 1.4s ease-in-out infinite; }
+    .icon-circle.success { background: var(--green-bg); border: 2px solid var(--green-b); }
+    .icon-circle.error   { background: var(--red-bg);   border: 2px solid var(--red-b); }
+    @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:.6;transform:scale(.92)} }
+
+    /* ── Typography ── */
+    h1 {
+      font-family: 'Fraunces', serif;
+      font-size: 1.55rem;
+      font-weight: 700;
+      color: var(--text);
+      letter-spacing: -.4px;
+      margin-bottom: 8px;
+      line-height: 1.2;
+    }
+    .sub {
+      font-size: .88rem;
+      color: var(--text2);
+      line-height: 1.6;
+      margin-bottom: 28px;
+    }
+    .sub strong { color: var(--text); font-weight: 700; }
+
+    /* ── Button ── */
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      padding: 13px 28px;
+      border-radius: 14px;
+      border: none;
+      background: var(--text);
+      color: #fff;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: .92rem;
+      font-weight: 700;
+      cursor: pointer;
+      text-decoration: none;
+      transition: all .18s;
+      width: 100%;
+      margin-top: 4px;
+      letter-spacing: .01em;
+    }
+    .btn:hover { opacity: .88; transform: translateY(-1px); box-shadow: 0 6px 20px var(--sh2); }
+    .btn:active { transform: scale(.97); }
+    .btn.outline {
+      background: transparent;
+      color: var(--text2);
+      border: 1.5px solid var(--border2);
+      margin-top: 10px;
+    }
+    .btn.outline:hover { background: var(--bg); border-color: var(--text2); color: var(--text); }
+
+    /* ── Password form ── */
+    .form-group { text-align: left; margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: .67rem;
+      font-weight: 800;
+      color: var(--text3);
+      text-transform: uppercase;
+      letter-spacing: .07em;
+      margin-bottom: 6px;
+    }
+    .form-group input {
+      width: 100%;
+      padding: 12px 14px;
+      border: 1.5px solid var(--border);
+      border-radius: 12px;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+      font-size: 16px; /* prevent iOS zoom */
+      background: var(--bg);
+      color: var(--text);
+      outline: none;
+      transition: border-color .15s, box-shadow .15s;
+    }
+    .form-group input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(24,25,43,.08);
+    }
+
+    /* ── App name footer ── */
+    footer {
+      margin-top: 32px;
+      font-size: .74rem;
+      color: var(--text3);
+      text-align: center;
+    }
+    footer a { color: var(--text2); font-weight: 600; text-decoration: none; }
+    footer a:hover { color: var(--text); }
+
+    /* ── Spinner ── */
+    .spinner {
+      width: 28px; height: 28px;
+      border: 3px solid rgba(99,102,241,.2);
+      border-top-color: #6366f1;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      margin: 0 auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+  <div class="card" id="card">
+    <!-- Logo -->
+    <div class="logo">📚</div>
+
+    <!-- State: loading -->
+    <div id="state-loading">
+      <div class="icon-circle loading"><div class="spinner"></div></div>
+      <h1>One moment…</h1>
+      <p class="sub">We're processing your request.</p>
+    </div>
+
+    <!-- State: email verified -->
+    <div id="state-verified" style="display:none">
+      <div class="icon-circle success">✓</div>
+      <h1>Email confirmed!</h1>
+      <p class="sub" id="verified-msg">Your StudyDesk account is ready to go.</p>
+      <a href="https://studydeskapp.github.io" class="btn">Open StudyDesk →</a>
+    </div>
+
+    <!-- State: password reset form -->
+    <div id="state-reset-form" style="display:none">
+      <div class="icon-circle loading">🔐</div>
+      <h1>Set new password</h1>
+      <p class="sub">Choose a strong password for <strong id="reset-email"></strong>.</p>
+      <div class="form-group">
+        <label>New password</label>
+        <input type="password" id="new-password" placeholder="At least 6 characters" autocomplete="new-password"/>
+      </div>
+      <div class="form-group">
+        <label>Confirm password</label>
+        <input type="password" id="confirm-password" placeholder="Repeat password" autocomplete="new-password"/>
+      </div>
+      <p id="reset-err" style="font-size:.82rem;color:var(--red);margin-bottom:12px;display:none;text-align:left"></p>
+      <button class="btn" onclick="submitNewPassword()">Update password</button>
+    </div>
+
+    <!-- State: password reset success -->
+    <div id="state-reset-done" style="display:none">
+      <div class="icon-circle success">✓</div>
+      <h1>Password updated!</h1>
+      <p class="sub">You can now sign in to StudyDesk with your new password.</p>
+      <a href="https://studydeskapp.github.io" class="btn">Sign in →</a>
+    </div>
+
+    <!-- State: email change revoked -->
+    <div id="state-revoked" style="display:none">
+      <div class="icon-circle success">✓</div>
+      <h1>Email change undone</h1>
+      <p class="sub">Your email has been restored to <strong id="revoked-email"></strong>. If you didn't request this change, your account is now secure.</p>
+      <a href="https://studydeskapp.github.io" class="btn">Back to StudyDesk →</a>
+    </div>
+
+    <!-- State: error -->
+    <div id="state-error" style="display:none">
+      <div class="icon-circle error">✕</div>
+      <h1 id="error-title">Something went wrong</h1>
+      <p class="sub" id="error-msg">This link may have expired or already been used. Try again from the app.</p>
+      <a href="https://studydeskapp.github.io" class="btn">Back to StudyDesk →</a>
+      <a href="https://studydeskapp.github.io" class="btn outline">Request a new link</a>
+    </div>
+  </div>
+
+  <footer>
+    <a href="https://studydeskapp.github.io">StudyDesk</a> &nbsp;·&nbsp; Made for Naperville 203
+  </footer>
+
+  <script>
+    // ── Firebase config ──────────────────────────────────────
+    const FB_KEY     = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
+    const FB_AUTH    = "https://identitytoolkit.googleapis.com/v1/accounts";
+
+    // ── Parse URL params ─────────────────────────────────────
+    const params   = new URLSearchParams(window.location.search);
+    const mode     = params.get("mode");
+    const oobCode  = params.get("oobCode");
+
+    let pendingOobCode = null; // saved for password reset submit
+
+    // ── Show/hide helpers ────────────────────────────────────
+    function show(id) {
+      ["state-loading","state-verified","state-reset-form",
+       "state-reset-done","state-revoked","state-error"]
+        .forEach(s => document.getElementById(s).style.display = s === id ? "" : "none");
+    }
+
+    function showError(title, msg) {
+      document.getElementById("error-title").textContent = title;
+      document.getElementById("error-msg").textContent   = msg;
+      show("state-error");
+    }
+
+    // ── Handle mode ──────────────────────────────────────────
+    async function init() {
+      if (!oobCode || !mode) {
+        showError("Invalid link", "This link is missing required information. Please request a new one from the app.");
+        return;
+      }
+
+      if (mode === "verifyEmail") {
+        await handleVerifyEmail();
+      } else if (mode === "resetPassword") {
+        await handleResetPassword();
+      } else if (mode === "recoverEmail") {
+        await handleRecoverEmail();
+      } else {
+        showError("Unknown action", "This link type isn't recognised. Head back to StudyDesk and try again.");
+      }
+    }
+
+    // ── 1. Verify email ──────────────────────────────────────
+    async function handleVerifyEmail() {
+      try {
+        const r = await fetch(`${FB_AUTH}:confirm?key=${FB_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oobCode })
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message);
+        const email = d.email || "";
+        document.getElementById("verified-msg").innerHTML =
+          email
+            ? `<strong>${email}</strong> is confirmed. Your StudyDesk account is all set.`
+            : "Your StudyDesk account is all set.";
+        show("state-verified");
+      } catch(e) {
+        const msg = friendlyError(e.message);
+        showError("Couldn't verify email", msg);
+      }
+    }
+
+    // ── 2. Reset password — first verify the code ────────────
+    async function handleResetPassword() {
+      try {
+        const r = await fetch(`${FB_AUTH}:resetPassword?key=${FB_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oobCode })  // verify only, no newPassword = returns email
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message);
+        pendingOobCode = oobCode;
+        document.getElementById("reset-email").textContent = d.email || "your account";
+        show("state-reset-form");
+      } catch(e) {
+        showError("Link expired", "This password reset link has expired or already been used. Request a new one from the StudyDesk sign-in page.");
+      }
+    }
+
+    // ── 2b. Submit the new password ──────────────────────────
+    async function submitNewPassword() {
+      const pw  = document.getElementById("new-password").value;
+      const pw2 = document.getElementById("confirm-password").value;
+      const errEl = document.getElementById("reset-err");
+
+      errEl.style.display = "none";
+
+      if (pw.length < 6) {
+        errEl.textContent = "Password must be at least 6 characters.";
+        errEl.style.display = "block";
+        return;
+      }
+      if (pw !== pw2) {
+        errEl.textContent = "Passwords don't match.";
+        errEl.style.display = "block";
+        return;
+      }
+
+      try {
+        const r = await fetch(`${FB_AUTH}:resetPassword?key=${FB_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oobCode: pendingOobCode, newPassword: pw })
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message);
+        show("state-reset-done");
+      } catch(e) {
+        errEl.textContent = friendlyError(e.message);
+        errEl.style.display = "block";
+      }
+    }
+
+    // ── 3. Recover email (undo email change) ─────────────────
+    async function handleRecoverEmail() {
+      try {
+        // First check what email we're restoring to
+        const check = await fetch(`${FB_AUTH}:resetPassword?key=${FB_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oobCode })
+        });
+        const cd = await check.json();
+
+        const r = await fetch(`${FB_AUTH}:update?key=${FB_KEY}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ oobCode })
+        });
+        const d = await r.json();
+        if (d.error) throw new Error(d.error.message);
+
+        document.getElementById("revoked-email").textContent = cd.email || "your original address";
+        show("state-revoked");
+      } catch(e) {
+        showError("Couldn't restore email", "This link may have expired. If you need help, contact support.");
+      }
+    }
+
+    // ── Friendly error messages ───────────────────────────────
+    function friendlyError(code = "") {
+      const c = code.toUpperCase();
+      if (c.includes("EXPIRED"))       return "This link has expired. Please request a new one from the app.";
+      if (c.includes("INVALID"))       return "This link is invalid or has already been used.";
+      if (c.includes("USER_NOT_FOUND"))return "No account found for this link.";
+      if (c.includes("WEAK_PASSWORD")) return "Password is too weak — please use at least 6 characters.";
+      return "Something went wrong. Please go back to the app and try again.";
+    }
+
+    // ── Run ──────────────────────────────────────────────────
+    init();
+  </script>
+</body>
+</html> 

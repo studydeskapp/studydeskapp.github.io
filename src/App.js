@@ -490,7 +490,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .btn-g:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
 .btn-sm{padding:5px 11px;font-size:.75rem;border-radius:8px}
 .overlay{position:fixed;inset:0;background:rgba(8,10,18,.55);backdrop-filter:blur(8px);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:460px;max-height:92vh;overflow-y:auto;border:1.5px solid var(--border);box-shadow:0 20px 60px var(--sh2)}
+.modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:460px;max-height:min(92vh,92dvh);overflow-y:auto;border:1.5px solid var(--border);box-shadow:0 20px 60px var(--sh2)}
 .modal-t{font-family:'Fraunces',serif;font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:18px}
 .fg{margin-bottom:12px}
 .flbl{display:block;font-size:.67rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
@@ -500,6 +500,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .frow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .range{width:100%;accent-color:var(--accent)}
 .mactions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
+@media(max-width:768px){.mactions{position:sticky;bottom:0;background:var(--mbg);padding:12px 0 4px;margin-top:12px;border-top:1.5px solid var(--border)}}
 .dtoggle{padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;font-size:.76rem;font-weight:600;background:var(--card);color:var(--text2);transition:all .15s;font-family:'Plus Jakarta Sans',sans-serif}
 .dtoggle.on{border-color:var(--accent);background:var(--accent);color:#fff}
 .dtogglerow{display:flex;gap:5px;flex-wrap:wrap}
@@ -699,8 +700,8 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .bnav-ico{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:all .15s;font-size:0}
   .bnav-btn.on .bnav-ico{background:var(--bg3)}
   /* Modals as bottom sheets */
-  .modal{padding:0 20px 24px;border-radius:20px 20px 0 0;max-height:92vh;position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;box-shadow:0 -8px 40px var(--sh2)}
-  .modal::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--border2);margin:12px auto 16px}
+  .modal{padding:0 20px 24px;border-radius:20px 20px 0 0;max-height:min(92vh,92dvh);position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;box-shadow:0 -8px 40px var(--sh2);overflow-y:auto}
+  .modal::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--border2);margin:12px auto 16px;flex-shrink:0}
   .overlay{align-items:flex-end;padding:0}
   /* Cards */
   .acard{padding:13px 14px;border-radius:14px}
@@ -2699,27 +2700,9 @@ async function run(){
     );
   }
 
-  function SubjectPicker({value,onChange}){
-    const schSubs=classes.map(c=>c.name);
-    const prevSubs=[...new Set(assignments.map(a=>a.subject).filter(Boolean))].filter(s=>!schSubs.includes(s));
-    const all=[...schSubs,...prevSubs];
-    if(all.length===0||subjMode==="type"){
-      return(
-        <div style={{display:"flex",gap:6}}>
-          <input className="finp" style={{flex:1}} value={value} onChange={e=>onChange(e.target.value)} placeholder="Type subject name..." autoFocus={subjMode==="type"}/>
-          {all.length>0&&<button type="button" className="btn btn-sm btn-g" onClick={()=>{setSubjMode("select");onChange("");}}>← Back</button>}
-        </div>
-      );
-    }
-    return(
-      <select className="fsel" value={value} onChange={e=>{if(e.target.value==="__new"){setSubjMode("type");onChange("");}else onChange(e.target.value);}}>
-        <option value="">— Select class —</option>
-        {schSubs.length>0&&<optgroup label="📅 From Schedule">{schSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
-        {prevSubs.length>0&&<optgroup label="📝 Previous">{prevSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
-        <option value="__new">＋ Type a new one…</option>
-      </select>
-    );
-  }
+  // Subject picker is inlined directly in the Add Assignment modal (see § ADD ASSIGNMENT modal)
+  // Keeping it as a component caused focus loss — every keystroke re-rendered the parent,
+  // React saw a new function reference, and unmounted/remounted the input.
 
   const dateStr=new Date().toLocaleDateString("en-US",{weekday:"long",month:"long",day:"numeric"});
   const todayStr2=new Date().toISOString().split("T")[0];
@@ -3462,22 +3445,61 @@ async function run(){
       )}
 
       {/* ADD ASSIGNMENT */}
-      {addingA&&(
+      {addingA&&(()=>{
+        const schSubs=classes.map(c=>c.name);
+        const prevSubs=[...new Set(assignments.map(a=>a.subject).filter(Boolean))].filter(s=>!schSubs.includes(s));
+        const allSubs=[...schSubs,...prevSubs];
+        return(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&(setAddingA(false),setAf(emptyAF),setSubjMode("select"))}>
-          <div className="modal">
+          <div className="modal" style={{display:"flex",flexDirection:"column"}}>
             <div className="modal-t">New Assignment</div>
-            <div className="fg"><label className="flbl">Title *</label><input className="finp" autoFocus value={af.title} onChange={e=>setAf({...af,title:e.target.value})} placeholder="e.g. Chapter 5 Essay"/></div>
-            <div className="fg"><label className="flbl">Class / Subject *</label><SubjectPicker value={af.subject} onChange={v=>setAf({...af,subject:v})}/></div>
-            <div className="frow">
-              <div className="fg"><label className="flbl">Due Date</label><input className="finp" type="date" value={af.dueDate} onChange={e=>setAf({...af,dueDate:e.target.value})}/></div>
-              <div className="fg"><label className="flbl">Priority</label><select className="fsel" value={af.priority} onChange={e=>setAf({...af,priority:e.target.value})}><option value="high">🔴 High</option><option value="medium">🟡 Medium</option><option value="low">🟢 Low</option></select></div>
+            <div style={{flex:1,overflowY:"auto"}}>
+              <div className="fg"><label className="flbl">Title *</label>
+                <input className="finp" autoFocus value={af.title} onChange={e=>setAf({...af,title:e.target.value})} placeholder="e.g. Chapter 5 Essay"/>
+              </div>
+              <div className="fg"><label className="flbl">Class / Subject *</label>
+                {allSubs.length===0||subjMode==="type"?(
+                  <div style={{display:"flex",gap:6}}>
+                    <input className="finp" style={{flex:1}} value={af.subject}
+                      onChange={e=>setAf({...af,subject:e.target.value})}
+                      placeholder="Type subject name..." autoFocus={subjMode==="type"}/>
+                    {allSubs.length>0&&<button type="button" className="btn btn-sm btn-g" onClick={()=>{setSubjMode("select");setAf({...af,subject:""});}}>← Back</button>}
+                  </div>
+                ):(
+                  <select className="fsel" value={af.subject} onChange={e=>{
+                    if(e.target.value==="__new"){setSubjMode("type");setAf({...af,subject:""});}
+                    else setAf({...af,subject:e.target.value});
+                  }}>
+                    <option value="">— Select class —</option>
+                    {schSubs.length>0&&<optgroup label="📅 From Schedule">{schSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
+                    {prevSubs.length>0&&<optgroup label="📝 Previous">{prevSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
+                    <option value="__new">＋ Type a new one…</option>
+                  </select>
+                )}
+              </div>
+              <div className="frow">
+                <div className="fg"><label className="flbl">Due Date</label><input className="finp" type="date" value={af.dueDate} onChange={e=>setAf({...af,dueDate:e.target.value})}/></div>
+                <div className="fg"><label className="flbl">Priority</label>
+                  <select className="fsel" value={af.priority} onChange={e=>setAf({...af,priority:e.target.value})}>
+                    <option value="high">🔴 High</option><option value="medium">🟡 Medium</option><option value="low">🟢 Low</option>
+                  </select>
+                </div>
+              </div>
+              <div className="fg"><label className="flbl">Progress — {af.progress}%</label>
+                <input className="range" type="range" min="0" max="100" step="5" value={af.progress} onChange={e=>setAf({...af,progress:+e.target.value})}/>
+              </div>
+              <div className="fg"><label className="flbl">Notes</label>
+                <textarea className="ftxt" value={af.notes} onChange={e=>setAf({...af,notes:e.target.value})} placeholder="Any notes..." style={{minHeight:72}}/>
+              </div>
             </div>
-            <div className="fg"><label className="flbl">Progress — {af.progress}%</label><input className="range" type="range" min="0" max="100" step="5" value={af.progress} onChange={e=>setAf({...af,progress:+e.target.value})}/></div>
-            <div className="fg"><label className="flbl">Notes</label><textarea className="ftxt" value={af.notes} onChange={e=>setAf({...af,notes:e.target.value})} placeholder="Any notes..."/></div>
-            <div className="mactions"><button className="btn btn-g" onClick={()=>{setAddingA(false);setAf(emptyAF);setSubjMode("select");}}>Cancel</button><button className="btn btn-p" onClick={addAssignment} disabled={!af.title||!af.subject}>Add Assignment</button></div>
+            <div className="mactions" style={{borderTop:"1.5px solid var(--border)",paddingTop:14,marginTop:6,flexShrink:0}}>
+              <button className="btn btn-g" onClick={()=>{setAddingA(false);setAf(emptyAF);setSubjMode("select");}}>Cancel</button>
+              <button className="btn btn-p" onClick={addAssignment} disabled={!af.title||!af.subject}>Add Assignment</button>
+            </div>
           </div>
         </div>
-      )}
+        );
+      })()}
 
       {/* ADD CLASS */}
       {/* SCHOOL WIZARD */}
@@ -3729,17 +3751,22 @@ async function run(){
 
       {addingC&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&(setAddingC(false),setCf(emptyCF))}>
-          <div className="modal">
+          <div className="modal" style={{display:"flex",flexDirection:"column"}}>
             <div className="modal-t">New Class</div>
-            <div className="fg"><label className="flbl">Class Name *</label><input className="finp" autoFocus value={cf.name} onChange={e=>setCf({...cf,name:e.target.value})} placeholder="e.g. Calculus II"/></div>
-            <div className="fg"><label className="flbl">Days</label><div className="dtogglerow">{DAYS.map(d=><button key={d} className={"dtoggle"+(cf.days.includes(d)?" on":"")} onClick={()=>setCf({...cf,days:cf.days.includes(d)?cf.days.filter(x=>x!==d):[...cf.days,d]})}>{d}</button>)}</div></div>
-            <div className="frow">
-              <div className="fg"><label className="flbl">Start Time</label><input className="finp" type="time" value={cf.startTime} onChange={e=>setCf({...cf,startTime:e.target.value})}/></div>
-              <div className="fg"><label className="flbl">End Time</label><input className="finp" type="time" value={cf.endTime} onChange={e=>setCf({...cf,endTime:e.target.value})}/></div>
+            <div style={{flex:1,overflowY:"auto"}}>
+              <div className="fg"><label className="flbl">Class Name *</label><input className="finp" autoFocus value={cf.name} onChange={e=>setCf({...cf,name:e.target.value})} placeholder="e.g. Calculus II"/></div>
+              <div className="fg"><label className="flbl">Days</label><div className="dtogglerow">{DAYS.map(d=><button key={d} className={"dtoggle"+(cf.days.includes(d)?" on":"")} onClick={()=>setCf({...cf,days:cf.days.includes(d)?cf.days.filter(x=>x!==d):[...cf.days,d]})}>{d}</button>)}</div></div>
+              <div className="frow">
+                <div className="fg"><label className="flbl">Start Time</label><input className="finp" type="time" value={cf.startTime} onChange={e=>setCf({...cf,startTime:e.target.value})}/></div>
+                <div className="fg"><label className="flbl">End Time</label><input className="finp" type="time" value={cf.endTime} onChange={e=>setCf({...cf,endTime:e.target.value})}/></div>
+              </div>
+              <div className="fg"><label className="flbl">Room</label><input className="finp" value={cf.room} onChange={e=>setCf({...cf,room:e.target.value})} placeholder="e.g. Room 204"/></div>
+              <div className="fg"><label className="flbl">Color</label><div className="swatches">{SUBJECT_COLORS.map(col=><div key={col} className={"swatch"+(cf.color===col?" on":"")} style={{background:col}} onClick={()=>setCf({...cf,color:col})}/>)}</div></div>
             </div>
-            <div className="fg"><label className="flbl">Room</label><input className="finp" value={cf.room} onChange={e=>setCf({...cf,room:e.target.value})} placeholder="e.g. Room 204"/></div>
-            <div className="fg"><label className="flbl">Color</label><div className="swatches">{SUBJECT_COLORS.map(col=><div key={col} className={"swatch"+(cf.color===col?" on":"")} style={{background:col}} onClick={()=>setCf({...cf,color:col})}/>)}</div></div>
-            <div className="mactions"><button className="btn btn-g" onClick={()=>{setAddingC(false);setCf(emptyCF);}}>Cancel</button><button className="btn btn-p" onClick={addClass}>Add Class</button></div>
+            <div className="mactions" style={{borderTop:"1.5px solid var(--border)",paddingTop:14,marginTop:6,flexShrink:0}}>
+              <button className="btn btn-g" onClick={()=>{setAddingC(false);setCf(emptyCF);}}>Cancel</button>
+              <button className="btn btn-p" onClick={addClass}>Add Class</button>
+            </div>
           </div>
         </div>
       )}
