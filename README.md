@@ -2,7 +2,7 @@
 
 > A smart homework tracker for high school students — built with React, Firebase, and Canvas API integration.
 
-**Live app → [studydeskapp.github.io](https://studydeskapp.github.io)**
+**Live app → [mystudydesk.app](https://mystudydesk.app)**
 
 ---
 
@@ -46,6 +46,12 @@
 ### 🛍️ Shop
 - 12 accessories to customize your buddy
 - Spend points earned from completing assignments
+
+### ⏱️ Study Timer
+- Pomodoro timer with short and long break modes
+- Custom focus/break durations and session counts
+- Earn points for completing focus sessions
+- Global leaderboard — see top students by points
 
 ### 🔐 Auth & Sync
 - Google sign-in or email/password via Firebase Authentication
@@ -111,7 +117,8 @@ For all other schools, StudyDesk searches the NCES database (~100,000 US public 
 | Frontend | React (Create React App) |
 | Auth | Firebase Authentication (Google + Email) |
 | Database | Cloud Firestore (REST API, no SDK) |
-| Hosting | GitHub Pages |
+| Hosting | GitHub Pages + mystudydesk.app |
+| Canvas Proxy | Cloudflare Workers (CORS proxy) |
 | Canvas | Canvas LMS REST API |
 | School Search | OpenDataSoft NCES dataset + CORS proxy fallback |
 
@@ -123,23 +130,26 @@ For all other schools, StudyDesk searches the NCES database (~100,000 US public 
 
 ```
 src/
-  StudyDesk.jsx    # Entire app — single component file (~3400 lines)
+  App.js           # Entire app — single file (~4600 lines)
   index.js         # Entry point
-  App.js           # Renders StudyDesk
 public/
   index.html
+  CNAME            # mystudydesk.app
+  action.html      # Firebase email action handler
+  manifest.json
 ```
 
 ---
 
 ## 🔒 Environment / Config
 
-All config is hardcoded in `StudyDesk.jsx` at the top of the file:
+All config is hardcoded in `App.js` at the top of the file:
 
 ```js
-const FB_KEY = "...";          // Firebase API key
-const FB_PROJECT = "...";      // Firebase project ID
+const FB_KEY = "...";           // Firebase API key
+const FB_PROJECT = "...";       // Firebase project ID
 const GOOGLE_CLIENT_ID = "..."; // Google OAuth Web Client ID
+const CF_PROXY = "...";         // Cloudflare Worker URL
 ```
 
 To deploy your own instance, swap these values for your own Firebase project.
@@ -148,7 +158,16 @@ To deploy your own instance, swap these values for your own Firebase project.
 
 ## 📋 Changelog
 
-### v1.3.1 — March 2026
+### v1.3.2 — 10 March 2026
+- StudyDesk is now live at **mystudydesk.app**
+- Fixed Google sign-in on the custom domain
+- Fixed modals being covered by the mobile bottom nav bar
+- Fixed import assignments not appearing on mobile
+- Subject filter tabs now only show when there are pending assignments
+- Assignments tab shows correct empty state when nothing is due
+- Email verification link updated to mystudydesk.app
+
+### v1.3.1 — 09 March 2026
 - Cleaner header with icon buttons replacing the old text button row
 - Tabs redesigned with subtle card-style active state
 - Canvas token no longer synced to the cloud — stays on device only
@@ -156,7 +175,7 @@ To deploy your own instance, swap these values for your own Firebase project.
 - Removed background keep-alive requests firing unnecessarily
 - Refined color palette, spacing, and hover animations throughout
 
-### v1.3.0 — March 2026
+### v1.3.0 — 08 March 2026
 - Canvas one-click import (fetches all upcoming assignments via API)
 - Canvas auto-sync every 3 minutes
 - Grades tab with per-class averages and letter grades
@@ -164,18 +183,18 @@ To deploy your own instance, swap these values for your own Firebase project.
 - Google sign-in rebuilt with Google Identity Services
 - Cleaner header — username dropdown replaces separate sign-out button
 
-### v1.2.0 — March 2026
+### v1.2.0 — 03 March 2026
 - Dark mode
 - Redesigned dashboard with stat cards and overdue banner
 - Schedule reworked into two-panel layout
 - Smart subject picker
 
-### v1.1.0 — March 2026
+### v1.1.0 — 03 March 2026
 - Study Buddy with 6 evolution stages
 - Points, streaks, and daily quests
 - Shop with 12 accessories
 
-### v1.0.0 — March 2026
+### v1.0.0 — 03 March 2026
 - Initial launch
 - Assignment tracking with Canvas, Google Slides, and Agenda import
 - Weekly schedule view

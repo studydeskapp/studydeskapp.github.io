@@ -302,8 +302,22 @@ async function fbGetAdminStats(idToken) {
 // │  MONTHS       — month name → number mapping for import parser               │
 // └──────────────────────────────────────────────────────────────────────────────┘
 const STORAGE_KEY = "hw-tracker-v1";
-const APP_VERSION = "1.3.1";
+const APP_VERSION = "1.3.2";
 const RELEASES = [
+  {
+    version: "1.3.2",
+    date: "10 March 2026",
+    title: "Custom Domain & Bug Fixes",
+    changes: [
+      "🌐 StudyDesk is now live at mystudydesk.app — a proper home for the app",
+      "🔒 Google sign-in now works correctly on the custom domain",
+      "📱 Fixed modals and import dialogs being covered by the mobile bottom nav bar",
+      "✅ Import assignments now shows up properly on mobile after fetching",
+      "🗂️ Subject filter tabs now only appear when there are pending assignments",
+      "📝 Assignments tab now shows the empty state correctly when you have nothing due",
+      "📧 Email verification link now points to mystudydesk.app",
+    ]
+  },
   {
     version: "1.3.1",
     date: "09 March 2026",
