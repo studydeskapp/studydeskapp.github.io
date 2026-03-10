@@ -2725,7 +2725,7 @@ async function run(){
   }
   function delClass(id){setClasses(p=>p.filter(x=>x.id!==id));}
 
-  const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean).filter(s=>assignments.some(a=>a.subject===s));
+  const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean).filter(s=>assignments.some(a=>a.subject===s&&a.progress<100));
   const todayC=classes.filter(c=>c.days.includes(todayAbbr()));
   const upcoming=[...assignments].filter(a=>a.progress<100).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
