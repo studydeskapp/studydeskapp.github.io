@@ -115,7 +115,7 @@ async function fbSendVerificationEmail(idToken) {
     body: JSON.stringify({
       requestType:"VERIFY_EMAIL",
       idToken,
-      continueUrl:"https://studydeskapp.github.io"
+      continueUrl:"https://mystudydesk.app"
     })
   });
   const d = await r.json();
