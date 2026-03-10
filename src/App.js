@@ -489,7 +489,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .btn-g{background:var(--card);color:var(--text2);border:1.5px solid var(--border)}
 .btn-g:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
 .btn-sm{padding:5px 11px;font-size:.75rem;border-radius:8px}
-.overlay{position:fixed;inset:0;background:rgba(8,10,18,.55);backdrop-filter:blur(8px);z-index:100;display:flex;align-items:center;justify-content:center;padding:16px}
+.overlay{position:fixed;inset:0;background:rgba(8,10,18,.55);backdrop-filter:blur(8px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
 .modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:460px;max-height:min(92vh,92dvh);overflow-y:auto;border:1.5px solid var(--border);box-shadow:0 20px 60px var(--sh2)}
 .modal-t{font-family:'Fraunces',serif;font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:18px}
 .fg{margin-bottom:12px}
@@ -591,7 +591,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .shop-desc{font-size:.73rem;color:var(--text3);margin-bottom:10px;line-height:1.4}
 .eq-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px;min-height:20px}
 .eq-chip{background:var(--bg3);border-radius:20px;padding:3px 10px;font-size:.72rem;font-weight:600;color:var(--text3)}
-.release-overlay{position:fixed;inset:0;background:rgba(8,10,18,.62);backdrop-filter:blur(6px);z-index:200;display:flex;align-items:center;justify-content:center;padding:20px}
+.release-overlay{position:fixed;inset:0;background:rgba(8,10,18,.62);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px}
 .release-box{background:var(--mbg);border-radius:22px;width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px var(--sh2);border:1.5px solid var(--border)}
 .release-hd{padding:22px 24px 16px;border-bottom:1.5px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
 .release-title{font-family:'Fraunces',serif;font-size:1.35rem;font-weight:700;color:var(--text)}
@@ -655,7 +655,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .tclass{display:flex;flex-direction:column;gap:7px}
 .clsrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:13px}
 .clstag{display:flex;align-items:center;gap:5px;padding:4px 10px;background:var(--card);border-radius:9px;border:1.5px solid var(--border)}
-.prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.6);backdrop-filter:blur(6px);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px}
+.prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.6);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
 .prompt-modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:420px;border:1.5px solid var(--border);box-shadow:0 20px 50px var(--sh2)}
 @media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.pbar-wrap{display:none}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
 /* ── MOBILE BOTTOM NAV ── */
@@ -690,7 +690,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .dark .mob-pill.canvas{background:#1e1b4b;border-color:#4338ca;color:#a5b4fc}
   .dark .mob-pill{border-color:var(--border2);background:var(--card);color:var(--text2)}
   /* Page padding */
-  .mob-content{padding:16px 18px calc(80px + env(safe-area-inset-bottom))}
+  .mob-content{padding:16px 18px calc(100px + env(safe-area-inset-bottom))}
   /* Content area */
   .tab-content,.sfilt,.sec-hd,.alist,.stats,.sec-lbl,.empty,.twocol{padding-left:0;padding-right:0}
   /* Bottom nav */
@@ -700,7 +700,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .bnav-ico{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:all .15s;font-size:0}
   .bnav-btn.on .bnav-ico{background:var(--bg3)}
   /* Modals as bottom sheets */
-  .modal{padding:0 20px 24px;border-radius:20px 20px 0 0;max-height:min(92vh,92dvh);position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;box-shadow:0 -8px 40px var(--sh2);overflow-y:auto}
+  .modal{padding:0 20px calc(24px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;max-height:min(92vh,92dvh);position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;box-shadow:0 -8px 40px var(--sh2);overflow-y:auto}
   .modal::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--border2);margin:12px auto 16px;flex-shrink:0}
   .overlay{align-items:flex-end;padding:0}
   /* Cards */
@@ -771,7 +771,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .auth-user-pill{display:flex;align-items:center;gap:7px;background:var(--bg3);border:1.5px solid var(--border);border-radius:20px;padding:4px 10px 4px 6px;font-size:.75rem;font-weight:600;color:var(--text2)}
 .auth-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden}
 
-.prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.5);backdrop-filter:blur(6px);z-index:150;display:flex;align-items:center;justify-content:center;padding:16px}
+.prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.5);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
 .prompt-card{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:400px;border:1.5px solid var(--border);box-shadow:0 24px 60px var(--sh2);animation:slideUp .28s cubic-bezier(.34,1.56,.64,1) forwards}
 @keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
 .prompt-icon{font-size:2.2rem;margin-bottom:12px;display:block;text-align:center}
@@ -1744,32 +1744,83 @@ export default function StudyDesk() {
     return () => window.removeEventListener("beforeinstallprompt", handler);
   },[]);
 
-  // Timer logic
+  // Timer — timestamp-based so backgrounding/throttling can't drift it
+  const timerStartRef   = useRef(null); // Date.now() when timer last started
+  const timerSecsAtStart= useRef(0);    // timerSeconds value when timer last started
+  const [timerDone, setTimerDone] = useState(false); // in-app completion banner
+
+  function playDoneSound(){
+    try{
+      const ctx = new (window.AudioContext||window.webkitAudioContext)();
+      // Three ascending beeps
+      [[0,.12,660],[.18,.30,880],[.36,.54,1100]].forEach(([start,end,freq])=>{
+        const osc=ctx.createOscillator();
+        const gain=ctx.createGain();
+        osc.connect(gain); gain.connect(ctx.destination);
+        osc.frequency.value=freq; osc.type="sine";
+        gain.gain.setValueAtTime(0,ctx.currentTime+start);
+        gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+start+0.02);
+        gain.gain.linearRampToValueAtTime(0,ctx.currentTime+end);
+        osc.start(ctx.currentTime+start);
+        osc.stop(ctx.currentTime+end+0.05);
+      });
+    }catch(e){}
+  }
+
+  function onTimerComplete(){
+    setTimerRunning(false);
+    setTimerSessions(n=>n+1);
+    setGame(g=>({...g,points:g.points+10}));
+    setTimerDone(true);
+    playDoneSound();
+    // Web Notification (works on Android PWA / desktop, not iOS)
+    if("Notification" in window && Notification.permission==="granted"){
+      new Notification("StudyDesk — Session complete! 🎉",{body:"Time for a break. You earned 10 points.",icon:"/logo192.png"});
+    }
+    setTimeout(()=>setTimerDone(false), 8000);
+  }
+
   useEffect(()=>{
     if(timerRunning){
+      timerStartRef.current    = Date.now();
+      timerSecsAtStart.current = timerSeconds;
+
       const id = setInterval(()=>{
-        setTimerSeconds(s=>{
-          if(s<=1){
-            clearInterval(id);
-            setTimerRunning(false);
-            setTimerSessions(n=>n+1);
-            // Award points for completing a session
-            setGame(g=>({...g,points:g.points+10}));
-            if("Notification" in window && Notification.permission==="granted"){
-              new Notification("StudyDesk ⏱", {body:"Pomodoro session complete! Take a break."});
-            }
-            return 0;
-          }
-          return s-1;
-        });
-      },1000);
+        const elapsed = Math.floor((Date.now()-timerStartRef.current)/1000);
+        const remaining = timerSecsAtStart.current - elapsed;
+        if(remaining<=0){
+          clearInterval(id);
+          setTimerSeconds(0);
+          onTimerComplete();
+        } else {
+          setTimerSeconds(remaining);
+        }
+      },500); // poll every 500ms for accuracy
       setTimerInterval(id);
       return()=>clearInterval(id);
     }
   },[timerRunning]);
 
+  // When app comes back from background, recalculate elapsed time immediately
+  useEffect(()=>{
+    function onVisible(){
+      if(!timerRunning||!timerStartRef.current) return;
+      const elapsed = Math.floor((Date.now()-timerStartRef.current)/1000);
+      const remaining = timerSecsAtStart.current - elapsed;
+      if(remaining<=0){
+        clearInterval(timerInterval);
+        setTimerSeconds(0);
+        onTimerComplete();
+      } else {
+        setTimerSeconds(remaining);
+      }
+    }
+    document.addEventListener("visibilitychange",onVisible);
+    return()=>document.removeEventListener("visibilitychange",onVisible);
+  },[timerRunning,timerInterval]);
+
   function startTimer(secs){ setTimerSeconds(secs); setTimerRunning(true); }
-  function resetTimer(secs){ clearInterval(timerInterval); setTimerRunning(false); setTimerSeconds(secs); }
+  function resetTimer(secs){ clearInterval(timerInterval); setTimerRunning(false); setTimerSeconds(secs); setTimerDone(false); }
   function fmtTimer(s){ return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`; }
 
   // Leaderboard — fetch top users by points from Firestore presence docs
@@ -3382,6 +3433,18 @@ async function run(){
                 <div className="sec-t">⏱ Study Timer</div>
                 <button className="btn btn-g btn-sm" onClick={()=>{setShowLeaderboard(true);fetchLeaderboard();}}>🏆 Leaderboard</button>
               </div>
+
+              {/* Session complete banner */}
+              {timerDone&&(
+                <div style={{background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",borderRadius:16,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:12,animation:"slideUp .3s ease",boxShadow:"0 4px 20px rgba(22,163,74,.35)"}}>
+                  <span style={{fontSize:"1.6rem"}}>🎉</span>
+                  <div>
+                    <div style={{fontWeight:700,fontSize:".95rem"}}>Session complete!</div>
+                    <div style={{fontSize:".8rem",opacity:.9}}>+10 points earned. Time for a break.</div>
+                  </div>
+                  <button onClick={()=>setTimerDone(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:"1rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
+                </div>
+              )}
 
               <div className="timer-card">
                 {/* Mode tabs */}
