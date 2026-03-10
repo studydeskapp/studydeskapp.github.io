@@ -1,6 +1,49 @@
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║                        STUDYDESK — App.js                                   ║
+// ║                                                                              ║
+// ║  QUICK NAVIGATION (Ctrl+F the section name):                                ║
+// ║    § FIREBASE CONFIG       — constants, auth, Firestore REST helpers        ║
+// ║    § CANVAS PROXY          — Cloudflare Worker proxy + fetchWithFallback    ║
+// ║    § FIREBASE AUTH         — signUp, signIn, Google SSO, session            ║
+// ║    § FIREBASE DATA         — load/save/presence/admin                       ║
+// ║    § CSS                   — all styles (one big template string)           ║
+// ║    § CONSTANTS             — colors, shop items, release notes              ║
+// ║    § HELPER FUNCTIONS      — date utils, color utils, subject utils         ║
+// ║    § SMALL COMPONENTS      — CopyBtn, FetcherCopyBox, BuddyCreature         ║
+// ║    § AUTH SCREEN           — login / signup / Google SSO UI                 ║
+// ║    § ADMIN PANEL           — stats dashboard, user management               ║
+// ║    § MAIN COMPONENT        — StudyDesk() — all state lives here            ║
+// ║      ├─ STATE              — useState declarations (grouped by feature)     ║
+// ║      ├─ REFS               — useRef declarations                            ║
+// ║      ├─ EFFECTS            — useEffect hooks (load, save, sync, etc.)       ║
+// ║      ├─ CANVAS SYNC        — syncCanvas(), importFromCanvasAPI()            ║
+// ║      ├─ IMPORT LOGIC       — parseHomeworkFromText(), importFromDoc()       ║
+// ║      ├─ GAME LOGIC         — handleComplete(), spawnFloat()                 ║
+// ║      ├─ TIMER LOGIC        — startTimer(), resetTimer(), fmtTimer()        ║
+// ║      ├─ LEADERBOARD        — fetchLeaderboard()                             ║
+// ║      └─ RENDER             — JSX (tabs, modals, bottom nav)                 ║
+// ║           ├─ MOBILE HEADER                                                  ║
+// ║           ├─ DESKTOP HEADER                                                 ║
+// ║           ├─ TAB: DASHBOARD                                                 ║
+// ║           ├─ TAB: ASSIGNMENTS                                               ║
+// ║           ├─ TAB: GRADES                                                    ║
+// ║           ├─ TAB: SCHEDULE                                                  ║
+// ║           ├─ TAB: TIMER                                                     ║
+// ║           ├─ TAB: BUDDY                                                     ║
+// ║           ├─ TAB: SHOP                                                      ║
+// ║           ├─ MODALS (add assignment, add class, import, canvas setup...)    ║
+// ║           ├─ PWA BANNER                                                     ║
+// ║           ├─ LEADERBOARD MODAL                                              ║
+// ║           └─ MOBILE BOTTOM NAV                                              ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
+
 import { useState, useEffect, useRef } from "react";
 
-// ── Firebase REST API (no SDK needed) ────────────────────────────────────────
+
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § FIREBASE CONFIG                                                           │
+// │  All Firebase project constants. No Firebase SDK — pure REST API calls.     │
+// └──────────────────────────────────────────────────────────────────────────────┘
 const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
 const FB_PROJECT = "studydesk-1b251";
 const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
@@ -11,6 +54,12 @@ const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || naviga
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
 // Cloudflare Worker proxy — free, always on, no cold starts, handles CORS + auth properly
 const CF_PROXY = "https://studydesk-proxy.goyalamars18.workers.dev";
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § CANVAS PROXY                                                              │
+// │  Routes Canvas API calls through a Cloudflare Worker to bypass CORS.        │
+// │  Worker code: https://github.com/studydeskapp/studydesk-proxy               │
+// │  Deploy/edit: dash.cloudflare.com → Workers → studydesk-proxy               │
+// └──────────────────────────────────────────────────────────────────────────────┘
 async function fetchWithFallback(base, path, options={}) {
   const url = `${CF_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
   const r = await fetch(url, {...options, signal:AbortSignal.timeout(15000)});
@@ -19,6 +68,11 @@ async function fetchWithFallback(base, path, options={}) {
   throw new Error(`Canvas proxy returned ${r.status}`);
 }
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § FIREBASE AUTH                                                             │
+// │  Email/password sign up, sign in, password reset, email verification,       │
+// │  account deletion, Google SSO via Google Identity Services (GSI).           │
+// └──────────────────────────────────────────────────────────────────────────────┘
 async function fbSignUp(email, password, displayName) {
   const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
     method:"POST", headers:{"Content-Type":"application/json"},
@@ -146,6 +200,11 @@ async function fbGoogleSignIn() {
   });
 }
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § FIREBASE DATA                                                             │
+// │  Load/save user data (assignments + classes + game state) via Firestore     │
+// │  REST. Also handles presence tracking and admin stats.                      │
+// └──────────────────────────────────────────────────────────────────────────────┘
 async function fbLoadData(uid, idToken) {
   const r = await fetch(`${FB_FS}/users/${uid}`, {
     headers:{"Authorization":`Bearer ${idToken}`}
@@ -234,6 +293,14 @@ async function fbGetAdminStats(idToken) {
   }catch(e){console.warn("Admin error",e);return null;}
 }
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § CONSTANTS                                                                 │
+// │  APP_VERSION  — bump this when deploying a new release                      │
+// │  RELEASES     — release notes shown in the 🚀 What's New modal              │
+// │  SUBJECT_COLORS — color palette for auto-assigning class colors             │
+// │  SHOP_ITEMS   — all purchasable buddy accessories                           │
+// │  MONTHS       — month name → number mapping for import parser               │
+// └──────────────────────────────────────────────────────────────────────────────┘
 const STORAGE_KEY = "hw-tracker-v1";
 const APP_VERSION = "1.3.1";
 const RELEASES = [
@@ -323,6 +390,11 @@ const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
 const HOURS = Array.from({length:15},(_,i)=>i+7);
 const SHOP_ITEMS=[{id:"party_hat",name:"Party Hat",cat:"hat",price:50,emoji:"🎉",desc:"Ready to celebrate!"},{id:"crown",name:"Royal Crown",cat:"hat",price:200,emoji:"👑",desc:"Fit for royalty"},{id:"wizard_hat",name:"Wizard Hat",cat:"hat",price:150,emoji:"🪄",desc:"Full of magic"},{id:"santa_hat",name:"Santa Hat",cat:"hat",price:100,emoji:"🎅",desc:"Ho ho homework!"},{id:"sunglasses",name:"Sunglasses",cat:"face",price:75,emoji:"😎",desc:"Too cool for school"},{id:"heart_eyes",name:"Heart Glasses",cat:"face",price:120,emoji:"🩷",desc:"Love studying"},{id:"monocle",name:"Monocle",cat:"face",price:130,emoji:"🧐",desc:"Very distinguished"},{id:"bow_tie",name:"Bow Tie",cat:"body",price:60,emoji:"🎀",desc:"Dressed to impress"},{id:"cape",name:"Hero Cape",cat:"body",price:220,emoji:"🦸",desc:"Study hero!"},{id:"halo",name:"Halo",cat:"special",price:280,emoji:"😇",desc:"Pure dedication"},{id:"wings",name:"Fairy Wings",cat:"special",price:350,emoji:"🦋",desc:"Soar through homework"},{id:"rainbow",name:"Rainbow Aura",cat:"special",price:420,emoji:"🌈",desc:"Legendary scholar"}];
 const BUDDY_STAGES=[{name:"Sleeping Egg",min:0,next:1,desc:"Complete your first streak to hatch!"},{name:"Baby Bud",min:1,next:3,desc:"A little buddy is growing..."},{name:"Tiny Tot",min:3,next:7,desc:"Getting bigger every day!"},{name:"Young Pal",min:7,next:14,desc:"Really coming into their own!"},{name:"Study Star",min:14,next:30,desc:"Nearly at legendary status!"},{name:"Legend",min:30,next:null,desc:"You have reached the pinnacle!"}];
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § HELPER FUNCTIONS                                                          │
+// │  Pure utility functions — no side effects, no state.                        │
+// │  getBuddyStage, daysUntil, fmtDate, fmt12, subjectColor, extractId, etc.    │
+// └──────────────────────────────────────────────────────────────────────────────┘
 function getBuddyStage(s){return s>=30?5:s>=14?4:s>=7?3:s>=3?2:s>=1?1:0;}
 
 
@@ -334,6 +406,24 @@ function todayAbbr(){return DAYS[[6,0,1,2,3,4,5][new Date().getDay()]];}
 function subjectColor(name,classes){const c=classes.find(x=>x.name===name);if(c?.color)return c.color;let h=0;for(const ch of(name||""))h=(h*31+ch.charCodeAt(0))%SUBJECT_COLORS.length;return SUBJECT_COLORS[h];}
 function extractId(url){const m=url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § CSS                                                                       │
+// │  All styles in a single template string, injected via <style>{css}</style>  │
+// │                                                                              │
+// │  STRUCTURE:                                                                  │
+// │    :root / .dark  — CSS variables (colors, spacing)                         │
+// │    .app .hdr      — layout, desktop header                                  │
+// │    .tabs .tab     — top navigation tabs                                      │
+// │    .acard         — assignment card                                          │
+// │    .modal .overlay — modal / overlay                                         │
+// │    .stats .stat   — dashboard stat cards                                     │
+// │    .timer-*       — study timer                                              │
+// │    .lb-*          — leaderboard                                              │
+// │    .mob-*         — mobile header + status strip                             │
+// │    .bnav .bnav-btn — mobile bottom navigation bar                            │
+// │    @media(max-width:768px) — mobile overrides                               │
+// │    @keyframes     — animations (fadeIn, slideUp, spin, etc.)                │
+// └──────────────────────────────────────────────────────────────────────────────┘
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
@@ -573,7 +663,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .mob-hdr{display:none}.mob-status{display:none}
 .mob-icon-btn{width:36px;height:36px;border-radius:50%;border:none;background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);transition:all .15s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
 .mob-icon-btn:active{background:var(--bg4);transform:scale(.93)}
-@media(max-width:640px){
+@media(max-width:768px){
   .app{padding:0 0 88px}
   .tabs{display:none}
   /* Show mobile header, hide desktop */
@@ -635,7 +725,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 }
 /* ── PWA INSTALL BANNER ── */
 .pwa-banner{position:fixed;bottom:calc(70px + env(safe-area-inset-bottom));left:12px;right:12px;background:var(--accent);color:#fff;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:300;box-shadow:0 8px 32px rgba(99,102,241,.4);animation:slideUp .3s ease}
-@media(min-width:641px){.pwa-banner{bottom:20px;max-width:420px;left:50%;transform:translateX(-50%)}}
+@media(min-width:769px){.pwa-banner{bottom:20px;max-width:420px;left:50%;transform:translateX(-50%)}}
 /* ── SEARCH BAR ── */
 .search-bar{display:flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:8px 14px;margin-bottom:16px;transition:border-color .15s}
 .search-bar:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--sh)}
@@ -691,6 +781,12 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 `;
 
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § SMALL COMPONENTS                                                          │
+// │  CopyBtn — one-click copy with checkmark feedback                           │
+// │  FetcherCopyBox — renders HTML content + copy button                        │
+// │  BuddyCreature — SVG avatar that changes with streak stage                  │
+// └──────────────────────────────────────────────────────────────────────────────┘
 function CopyBtn({text}){
   const [copied,setCopied]=useState(false);
   return(
@@ -764,6 +860,14 @@ function BuddyCreature({stage,eq={}}){
     </svg>
   );
 }
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § AUTH SCREEN                                                               │
+// │  Full login/signup UI. Handles:                                              │
+// │    - Email + password login & signup                                         │
+// │    - Google Sign-In (GSI popup)                                              │
+// │    - Email verification flow                                                 │
+// │    - Password reset                                                          │
+// └──────────────────────────────────────────────────────────────────────────────┘
 function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   const [mode, setMode] = useState("login");
   const [email, setEmail] = useState("");
@@ -1086,6 +1190,14 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   );
 }
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § ADMIN PANEL                                                               │
+// │  Password-protected admin dashboard. Shows:                                 │
+// │    - Live user count, assignment count, total sessions                      │
+// │    - Online users (last seen < 2 min ago)                                   │
+// │    - All registered users with delete option                                │
+// │  Only accessible to: asgoyal1@stu.naperville203.org                         │
+// └──────────────────────────────────────────────────────────────────────────────┘
 function AdminPanel({user, onClose, inline=false}){
   const [pass, setPass] = useState("");
   const [authed, setAuthed] = useState(inline);
@@ -1267,13 +1379,27 @@ function AdminPanel({user, onClose, inline=false}){
   );
 }
 
+// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ║  § MAIN COMPONENT — StudyDesk()                                             ║
+// ║  This is the entire app in one component. All state lives here.             ║
+// ║  Scroll down for STATE → EFFECTS → LOGIC → RENDER                          ║
+// ╚══════════════════════════════════════════════════════════════════════════════╝
 export default function StudyDesk() {
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Core data (persisted to Firestore)
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — UI / Navigation
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [tab, setTab] = useState("dashboard");
   const [searchQuery, setSearchQuery] = useState("");
   const [showSearch, setShowSearch] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState(null);
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Study Timer + Leaderboard
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [timerMode, setTimerMode] = useState("pomodoro"); // pomodoro|short|long|custom
   const [timerSeconds, setTimerSeconds] = useState(25*60);
   const [timerRunning, setTimerRunning] = useState(false);
@@ -1291,11 +1417,20 @@ export default function StudyDesk() {
   // schoolWiz = null | {step:"search"|"confirm"|"periods", query, results, school, numPeriods, periods:[{name,start,end,days}], currentPeriod}
   const [filter, setFilter] = useState("all");
   const [darkMode, setDarkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Auth + User session
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [user, setUser] = useState(null);
   const [adminOpen, setAdminOpen] = useState(false);
   const logoClicks = useRef(0);
   const logoTimer = useRef(null);
   const [proxyBlocked, setProxyBlocked] = useState(false);
+  const [isMobile, setIsMobile] = useState(()=>window.innerWidth<=768);
+  useEffect(()=>{
+    const handler=()=>setIsMobile(window.innerWidth<=768);
+    window.addEventListener("resize",handler);
+    return()=>window.removeEventListener("resize",handler);
+  },[]);
   useEffect(()=>{
     if(isLocalhost) return;
     fetch(CF_PROXY,{mode:"no-cors",signal:AbortSignal.timeout(5000)})
@@ -1313,6 +1448,13 @@ export default function StudyDesk() {
   const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
 
   const [authLoading, setAuthLoading] = useState(true);
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Game / Buddy / Shop
+  // game.points  = total XP earned
+  // game.streak  = consecutive days with assignments done
+  // game.owned   = array of purchased shop item IDs
+  // game.equipped = {hat, face, body, special} item IDs
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [game, setGame] = useState({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});
   const [shopCat, setShopCat] = useState("all");
   const [floats, setFloats] = useState([]);
@@ -1340,6 +1482,9 @@ export default function StudyDesk() {
   const [schedPrompt, setSchedPrompt] = useState(null);
   const [subjMode, setSubjMode] = useState("select");
 
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Import wizard (Canvas paste, doc, agenda)
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [importOpen, setImportOpen] = useState(false);
   const [importMode, setImportMode] = useState("canvas");
   const [importUrl, setImportUrl] = useState("");
@@ -1353,6 +1498,13 @@ export default function StudyDesk() {
   const [agendaSlideLinks, setAgendaSlideLinks] = useState([]); // [{id, title, exportUrl}]
   const [agendaSlideTexts, setAgendaSlideTexts] = useState([]);
   const [canvasStatus, setCanvasStatus] = useState("");
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Canvas LMS integration
+  // canvasToken   = API token (stored in localStorage)
+  // canvasBaseUrl = school Canvas URL (e.g. naperville.instructure.com)
+  // canvasSync    = { lastSync, syncing, newSubmissions, error, everSucceeded }
+  // tokenDraft    = temp value while user types in the Canvas setup modal
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [canvasToken, setCanvasToken] = useState(()=>{try{return localStorage.getItem("sd-canvas-token")||"";}catch{return "";}});
   const [canvasBaseUrl, setCanvasBaseUrl] = useState(()=>{try{return localStorage.getItem("sd-canvas-url")||"https://naperville.instructure.com";}catch{return "https://naperville.instructure.com";}});
   const [canvasSync, setCanvasSync] = useState({lastSync:null,syncing:false,newSubmissions:0,error:"",everSucceeded:false});
@@ -1368,6 +1520,11 @@ export default function StudyDesk() {
   const [af, setAf] = useState(emptyAF);
   const [cf, setCf] = useState(emptyCF);
 
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // REFS
+  // saveReady — blocks Firestore saves until initial data has loaded
+  // logoClicks — tracks clicks on the logo for the easter egg
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const saveReady=useRef(false);
 
   // Restore session on mount — always force fresh login on /admin route
@@ -1404,6 +1561,9 @@ export default function StudyDesk() {
     return()=>clearTimeout(t);
   },[assignments,classes,game,canvasBaseUrl,loaded,user]);
 
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // EFFECTS — localStorage persistence (dark mode, Canvas token/URL)
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   useEffect(()=>{try{localStorage.setItem("sd-dark",darkMode?"1":"0");}catch{}},[darkMode]);
   useEffect(()=>{try{if(canvasToken)localStorage.setItem("sd-canvas-token",canvasToken);else localStorage.removeItem("sd-canvas-token");}catch{}},[canvasToken]);
   useEffect(()=>{try{localStorage.setItem("sd-canvas-url",canvasBaseUrl);}catch{}},[canvasBaseUrl]);
@@ -1416,7 +1576,13 @@ export default function StudyDesk() {
     return()=>clearInterval(t);
   },[user]);
 
-  // ── Canvas Auto-Sync ────────────────────────────────────────────────────────
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // CANVAS SYNC
+  // syncCanvas()         — fetches submitted assignments from Canvas API
+  // importFromCanvasAPI() — imports upcoming assignments from Canvas
+  // Auto-sync fires every 3 minutes when a token is set
+  // All requests go through the Cloudflare Worker proxy (CF_PROXY)
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   async function syncCanvas(token, baseUrl, silent=false){
     if(!token||canvasSyncRef.current) return;
     if(isLocalhost){
@@ -1540,6 +1706,9 @@ export default function StudyDesk() {
   }
 
   function addFloat(pts,streak){const id=Date.now()+Math.random();setFloats(f=>[...f,{id,pts,streak}]);setTimeout(()=>setFloats(f=>f.filter(x=>x.id!==id)),2000);}
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // EFFECTS — Startup (PWA, timer, responsive breakpoint, leaderboard)
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // PWA install prompt — capture beforeinstallprompt for "Add to Home Screen"
   useEffect(()=>{
     const handler = e => { e.preventDefault(); setPwaPrompt(e); };
@@ -1600,6 +1769,12 @@ export default function StudyDesk() {
     return()=>clearTimeout(t);
   },[game.points, game.streak, user]);
 
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // GAME LOGIC
+  // handleComplete(prev, next) — awards XP when assignment progress hits 100
+  // spawnFloat(text, x, y)     — shows floating +pts animation
+  // Streak logic runs in the save useEffect (increments once per day)
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   function handleComplete(prev,next){
     if(next!==100||prev>=100)return;
     if(user)fbIncrementStat("totalSubmitted",1,user.idToken);if(user)fbIncrementStat("totalPoints",15,user.idToken);
@@ -1622,6 +1797,13 @@ export default function StudyDesk() {
   function buyItem(id){const it=SHOP_ITEMS.find(i=>i.id===id);if(!it||game.owned.includes(id)||game.points<it.price)return;setGame(g=>({...g,points:g.points-it.price,owned:[...g.owned,id]}));}
   function equipItem(id){const it=SHOP_ITEMS.find(i=>i.id===id);if(!it||!game.owned.includes(id))return;setGame(g=>({...g,equipped:{...g.equipped,[it.cat]:g.equipped[it.cat]===id?"":id}}));}
   function checkUnknown(adds){const cn=new Set(classes.map(c=>c.name));for(const a of adds){if(a.subject&&!cn.has(a.subject)){setSchedPrompt({subject:a.subject,pf:{name:a.subject,days:[],startTime:"09:00",endTime:"10:00",room:"",color:SUBJECT_COLORS[0]}});return;}}}
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // IMPORT LOGIC
+  // resetImport()          — clears all import wizard state
+  // parseHomeworkFromText() — AI-powered text → assignment parser
+  // importFromDoc()         — fetches Google Doc/Slides content
+  // importFromCanvasPaste() — parses pasted Canvas assignment list
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   function resetImport(){setImportUrl("");setPasteText("");setCanvasPaste("");setImportResult(null);setImportStep("url");setCanvasStatus("");setAgendaUrl("");setFetchStatus("");setAgendaStep("url");setAgendaDocText("");setAgendaSlideLinks([]);setAgendaSlideTexts([]);}
 
   function dismissReleases(){
@@ -2467,6 +2649,12 @@ async function run(){
   const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean);
   const todayC=classes.filter(c=>c.days.includes(todayAbbr()));
   const upcoming=[...assignments].filter(a=>a.progress<100).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // DERIVED VALUES (computed from state on every render — not stored)
+  // overdue  = assignments past due date, not complete
+  // dueToday = assignments due today, not complete
+  // completed = assignments with progress === 100
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const overdue=assignments.filter(a=>daysUntil(a.dueDate)<0&&a.progress<100);
   const dueToday=assignments.filter(a=>daysUntil(a.dueDate)===0&&a.progress<100);
   const completed=assignments.filter(a=>a.progress>=100);
@@ -2537,7 +2725,10 @@ async function run(){
   const todayStr2=new Date().toISOString().split("T")[0];
   const todayCnt=game.dailyDate===todayStr2?game.dailyCount:0;
 
-  // ── /admin route — checked BEFORE authLoading so it never shows blank/spinner ──
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // RENDER
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // /admin route — checked BEFORE authLoading so it never shows blank/spinner
   if(isAdminRoute){
     if(!user){
       return <AuthScreen adminMode adminEmail={ADMIN_EMAIL} onAuth={u=>{
@@ -2606,83 +2797,55 @@ async function run(){
       <div className={"dk"+(darkMode?" dark":"")}>
       <div className="app">
 
-        {/* MOBILE HEADER — only visible on small screens */}
-        <div className="mob-hdr">
-          <div>
-            <div className="mob-hdr-title" onClick={handleLogoClick}>Study Desk</div>
-            <div className="mob-hdr-date">{dateStr}</div>
-          </div>
-          <div className="mob-hdr-r">
-            <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} style={{width:32,height:32}}>🔍</button>
-            <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} style={{width:32,height:32}}>{darkMode?"🌙":"☀️"}</button>
-            <div className="mob-avatar" onClick={()=>setShowUserMenu(m=>!m)}>
-              {user?.photoURL?<img src={user.photoURL} width="32" height="32" style={{objectFit:"cover"}}/>:(user?.displayName||user?.email||"?")[0].toUpperCase()}
+
+
+        {/* ── MOBILE HEADER + STATUS ────────────────────────────── */}
+        {isMobile&&(<>
+          <div className="mob-hdr">
+            <div>
+              <div className="mob-hdr-title" onClick={handleLogoClick}>Study Desk</div>
+              <div className="mob-hdr-date">{dateStr}</div>
+            </div>
+            <div className="mob-hdr-r">
+              <button className="mob-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
+              </button>
+              <button className="mob-icon-btn" onClick={()=>setDarkMode(d=>!d)}>
+                {darkMode
+                  ?<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+                  :<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+                }
+              </button>
+              <button className="mob-icon-btn" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
+              </button>
+              {user&&(
+                <div className="mob-avatar" onClick={()=>setShowUserMenu(m=>!m)}>
+                  {user.photoURL?<img src={user.photoURL} width="32" height="32" style={{objectFit:"cover"}}/>:(user.displayName||user.email||"?")[0].toUpperCase()}
+                </div>
+              )}
             </div>
           </div>
-        </div>
-
-        {/* MOBILE STATUS STRIP */}
-        <div className="mob-status">
-          {game.streak>0&&<div className="mob-pill fire">🔥 {game.streak}d streak</div>}
-          <div className="mob-pill star">⭐ {game.points} pts</div>
-          {canvasToken&&(
-            <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.newSubmissions>0?"ok":"canvas")}
-              onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}}>
-              {canvasSync.syncing?"⟳ Syncing...":canvasSync.error?"⚠️ Sync error":canvasSync.newSubmissions>0?`✅ ${canvasSync.newSubmissions} submitted`:"🎓 Canvas"}
-            </div>
-          )}
-          {!canvasToken&&<div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>}
-          <div className="mob-pill" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</div>
-        </div>
-
-
-        {/* ── MOBILE HEADER ─────────────────────────────────────── */}
-        <div className="mob-hdr">
-          <div>
-            <div className="mob-hdr-title" onClick={handleLogoClick}>Study Desk</div>
-            <div className="mob-hdr-date">{dateStr}</div>
-          </div>
-          <div className="mob-hdr-r">
-            <button className="mob-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-            </button>
-            <button className="mob-icon-btn" onClick={()=>setDarkMode(d=>!d)}>
-              {darkMode
-                ?<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
-                :<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
-              }
-            </button>
-            <button className="mob-icon-btn" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/></svg>
-            </button>
-            {user&&(
-              <div className="mob-avatar" onClick={()=>setShowUserMenu(m=>!m)}>
-                {user.photoURL?<img src={user.photoURL} width="32" height="32" style={{objectFit:"cover"}}/>:(user.displayName||user.email||"?")[0].toUpperCase()}
+          <div className="mob-status">
+            {game.streak>0&&<div className="mob-pill fire">🔥 {game.streak}d streak</div>}
+            <div className="mob-pill star">⭐ {game.points} pts</div>
+            {canvasToken?(
+              <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.syncing?"canvas":canvasSync.lastSync?"ok":"canvas")}
+                onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}}>
+                <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
+                  {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.lastSync?"✓":"🎓"}
+                </span>
+                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"\Canvas"}
               </div>
+            ):(
+              <div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>
             )}
+            <div className="mob-pill" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</div>
           </div>
-        </div>
-
-        {/* ── MOBILE STATUS STRIP ───────────────────────────────── */}
-        <div className="mob-status">
-          {game.streak>0&&<div className="mob-pill fire">🔥 {game.streak}d streak</div>}
-          <div className="mob-pill star">⭐ {game.points} pts</div>
-          {canvasToken?(
-            <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.syncing?"canvas":canvasSync.lastSync?"ok":"canvas")}
-              onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}}>
-              <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
-                {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.lastSync?"✓":"🎓"}
-              </span>
-              {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"\Canvas"}
-            </div>
-          ):(
-            <div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>
-          )}
-          <div className="mob-pill" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</div>
-        </div>
+        </>)}
 
         {/* ── DESKTOP HEADER ────────────────────────────────────── */}
-        <div className="hdr">
+        {!isMobile&&<div className="hdr">
           <div>
             <div className="hdr-title" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}}>Study Desk</div>
             <div className="hdr-sub">{dateStr}</div>
@@ -2740,7 +2903,7 @@ async function run(){
               </div>
             )}
           </div>
-        </div>
+        </div>}
 
 
         {/* TABS */}
