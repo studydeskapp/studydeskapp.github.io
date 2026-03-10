@@ -3105,14 +3105,14 @@ async function run(){
                 <button className="btn btn-p btn-sm" onClick={()=>{setSubjMode("select");setAddingA(true);}}>＋ Add</button>
               </div>
             </div>
-            <div className="sfilt">
+            {subjects.length>0&&<div className="sfilt">
               {["all",...subjects].map(s=>(
                 <button key={s} className="sfbtn" onClick={()=>setFilter(s)}
                   style={filter===s?{background:s==="all"?"var(--accent)":subjectColor(s,classes),borderColor:s==="all"?"var(--accent)":subjectColor(s,classes),color:"#fff"}:{}}>
                   {s==="all"?"✦ All":s}
                 </button>
               ))}
-            </div>
+            </div>}
             {pending.length>0&&(
               <div style={{marginBottom:22}}>
                 <div className="sec-lbl">Pending — {pending.length}</div>
