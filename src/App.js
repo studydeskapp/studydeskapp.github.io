@@ -1,6 +1,6 @@
-// ╔═════════════════════════════════════════════════════════════════════════════╗
+// ╔══════════════════════════════════════════════════════════════════════════════╗
 // ║                        STUDYDESK — App.js                                   ║
-// ║                                                                             ║
+// ║                                                                              ║
 // ║  QUICK NAVIGATION (Ctrl+F the section name):                                ║
 // ║    § FIREBASE CONFIG       — constants, auth, Firestore REST helpers        ║
 // ║    § CANVAS PROXY          — Cloudflare Worker proxy + fetchWithFallback    ║
@@ -12,14 +12,14 @@
 // ║    § SMALL COMPONENTS      — CopyBtn, FetcherCopyBox, BuddyCreature         ║
 // ║    § AUTH SCREEN           — login / signup / Google SSO UI                 ║
 // ║    § ADMIN PANEL           — stats dashboard, user management               ║
-// ║    § MAIN COMPONENT        — StudyDesk() — all state lives here             ║
+// ║    § MAIN COMPONENT        — StudyDesk() — all state lives here            ║
 // ║      ├─ STATE              — useState declarations (grouped by feature)     ║
 // ║      ├─ REFS               — useRef declarations                            ║
 // ║      ├─ EFFECTS            — useEffect hooks (load, save, sync, etc.)       ║
 // ║      ├─ CANVAS SYNC        — syncCanvas(), importFromCanvasAPI()            ║
 // ║      ├─ IMPORT LOGIC       — parseHomeworkFromText(), importFromDoc()       ║
 // ║      ├─ GAME LOGIC         — handleComplete(), spawnFloat()                 ║
-// ║      ├─ TIMER LOGIC        — startTimer(), resetTimer(), fmtTimer()         ║
+// ║      ├─ TIMER LOGIC        — startTimer(), resetTimer(), fmtTimer()        ║
 // ║      ├─ LEADERBOARD        — fetchLeaderboard()                             ║
 // ║      └─ RENDER             — JSX (tabs, modals, bottom nav)                 ║
 // ║           ├─ MOBILE HEADER                                                  ║
@@ -35,7 +35,7 @@
 // ║           ├─ PWA BANNER                                                     ║
 // ║           ├─ LEADERBOARD MODAL                                              ║
 // ║           └─ MOBILE BOTTOM NAV                                              ║
-// ╚═════════════════════════════════════════════════════════════════════════════╝
+// ╚══════════════════════════════════════════════════════════════════════════════╝
 
 import { useState, useEffect, useRef } from "react";
 
@@ -690,7 +690,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .dark .mob-pill.canvas{background:#1e1b4b;border-color:#4338ca;color:#a5b4fc}
   .dark .mob-pill{border-color:var(--border2);background:var(--card);color:var(--text2)}
   /* Page padding */
-  .mob-content{padding:16px 18px 0}
+  .mob-content{padding:16px 18px calc(80px + env(safe-area-inset-bottom))}
   /* Content area */
   .tab-content,.sfilt,.sec-hd,.alist,.stats,.sec-lbl,.empty,.twocol{padding-left:0;padding-right:0}
   /* Bottom nav */
@@ -1037,7 +1037,27 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
       <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:420,boxShadow:`0 24px 60px ${sh2}`}}>
 
         {/* Logo + title */}
-        <div style={{width:56,height:56,background:`linear-gradient(135deg,${txt},${acc2})`,borderRadius:16,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.8rem",margin:"0 auto 16px"}}>📚</div>
+        <div style={{width:56,height:56,borderRadius:16,overflow:"hidden",margin:"0 auto 16px"}}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sd-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#1B1F3B"/>
+      <stop offset="100%" stopColor="#2d3561"/>
+    </linearGradient>
+    <linearGradient id="sd-acc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#f5a623"/>
+      <stop offset="100%" stopColor="#f7c059"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="url(#sd-bg)"/>
+  <rect x="24" y="30" width="24" height="38" rx="3" fill="#fff" opacity="0.15"/>
+  <rect x="26" y="30" width="22" height="38" rx="2" fill="#fff" opacity="0.9"/>
+  <rect x="24" y="30" width="4" height="38" rx="2" fill="#ddd"/>
+  <line x1="32" y1="40" x2="44" y2="40" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="45" x2="44" y2="45" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="50" x2="40" y2="50" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <circle cx="63" cy="57" r="16" fill="url(#sd-acc)"/>
+  <polyline points="55,57 61,63 72,50" fill="none" stroke="#1B1F3B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+</svg></div>
         <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.75rem",fontWeight:700,color:txt,textAlign:"center",marginBottom:4}}>Study Desk</div>
         <div style={{fontSize:".83rem",color:txt3,textAlign:"center",marginBottom:adminMode?12:24}}>{mode==="login"?"Welcome back! Sign in to continue.":"Create your free account."}</div>
         {adminMode&&(
@@ -1406,6 +1426,13 @@ export default function StudyDesk() {
   const [timerRunning, setTimerRunning] = useState(false);
   const [timerInterval, setTimerInterval] = useState(null);
   const [timerSessions, setTimerSessions] = useState(0);
+  const [showCustomTimer, setShowCustomTimer] = useState(false);
+  const [customFocus,  setCustomFocus]  = useState(25); // minutes
+  const [customShort,  setCustomShort]  = useState(5);
+  const [customLong,   setCustomLong]   = useState(15);
+  const [customRounds, setCustomRounds] = useState(4);  // sessions before long break
+  const [autoStartBreaks, setAutoStartBreaks] = useState(false);
+  const [sessionCount, setSessionCount] = useState(0); // tracks rounds for auto long-break
   const [leaderboard, setLeaderboard] = useState([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
@@ -2647,7 +2674,7 @@ async function run(){
   }
   function delClass(id){setClasses(p=>p.filter(x=>x.id!==id));}
 
-  const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean);
+  const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean).filter(s=>assignments.some(a=>a.subject===s));
   const todayC=classes.filter(c=>c.days.includes(todayAbbr()));
   const upcoming=[...assignments].filter(a=>a.progress<100).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -2660,6 +2687,8 @@ async function run(){
   const dueToday=assignments.filter(a=>daysUntil(a.dueDate)===0&&a.progress<100);
   const completed=assignments.filter(a=>a.progress>=100);
   const filteredA=filter==="all"?assignments:assignments.filter(a=>a.subject===filter);
+  // If the active filter subject no longer has any assignments, reset to "all"
+  if(filter!=="all"&&!subjects.includes(filter)) setFilter("all");
   const sortedA=[...filteredA].sort((a,b)=>{if(!a.dueDate)return 1;if(!b.dueDate)return -1;return new Date(a.dueDate)-new Date(b.dueDate);});
 
   function ACard({a,compact}){
@@ -2766,7 +2795,27 @@ async function run(){
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:"var(--bg)",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
       <style>{`@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@600&display=swap');*{box-sizing:border-box;margin:0;padding:0}:root{--bg:#F5F2EC}.dark{--bg:#0F1117}body{background:var(--bg)}`}</style>
       <div style={{textAlign:"center"}}>
-        <div style={{fontSize:"2.5rem",marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block"}}>📚</div>
+        <div style={{width:48,height:48,marginBottom:12,animation:"spin 1s linear infinite",display:"inline-block",borderRadius:12,overflow:"hidden"}}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sd-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#1B1F3B"/>
+      <stop offset="100%" stopColor="#2d3561"/>
+    </linearGradient>
+    <linearGradient id="sd-acc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#f5a623"/>
+      <stop offset="100%" stopColor="#f7c059"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="url(#sd-bg)"/>
+  <rect x="24" y="30" width="24" height="38" rx="3" fill="#fff" opacity="0.15"/>
+  <rect x="26" y="30" width="22" height="38" rx="2" fill="#fff" opacity="0.9"/>
+  <rect x="24" y="30" width="4" height="38" rx="2" fill="#ddd"/>
+  <line x1="32" y1="40" x2="44" y2="40" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="45" x2="44" y2="45" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="50" x2="40" y2="50" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <circle cx="63" cy="57" r="16" fill="url(#sd-acc)"/>
+  <polyline points="55,57 61,63 72,50" fill="none" stroke="#1B1F3B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+</svg></div>
         <div style={{fontSize:".9rem",color:"#888",fontWeight:600}}>Loading...</div>
       </div>
     </div>
@@ -3314,71 +3363,222 @@ async function run(){
         {/* ═══ TIMER ════════════════════════════════════════════════ */}
         {tab==="timer"&&(()=>{
           const MODES=[
-            {id:"pomodoro",label:"🍅 Pomodoro",secs:25*60},
-            {id:"short",label:"☕ Short Break",secs:5*60},
-            {id:"long",label:"🛋 Long Break",secs:15*60},
+            {id:"pomodoro", label:"🍅 Focus",       secs:customFocus*60},
+            {id:"short",    label:"☕ Short Break",  secs:customShort*60},
+            {id:"long",     label:"🛋 Long Break",   secs:customLong*60},
+            {id:"custom",   label:"⚙️ Custom",       secs:null},
           ];
-          const currentMode=MODES.find(m=>m.id===timerMode)||MODES[0];
-          const pct=timerSeconds/currentMode.secs;
+          const currentMode = MODES.find(m=>m.id===timerMode)||MODES[0];
+          const activeSecs  = currentMode.secs || customFocus*60;
+          const pct = activeSecs>0 ? timerSeconds/activeSecs : 0;
           const r=80, circ=2*Math.PI*r;
+
+          // Pick ring color based on mode
+          const ringColor = timerMode==="short"?"#10b981":timerMode==="long"?"#6366f1":timerMode==="custom"?"#f59e0b":"var(--accent)";
+
           return(
             <div className="tab-content">
               <div className="sec-hd">
                 <div className="sec-t">⏱ Study Timer</div>
                 <button className="btn btn-g btn-sm" onClick={()=>{setShowLeaderboard(true);fetchLeaderboard();}}>🏆 Leaderboard</button>
               </div>
+
               <div className="timer-card">
+                {/* Mode tabs */}
                 <div className="timer-modes">
                   {MODES.map(m=>(
                     <button key={m.id} className={"timer-mode-btn"+(timerMode===m.id?" on":"")}
-                      onClick={()=>{setTimerMode(m.id);resetTimer(m.secs);}}>
+                      onClick={()=>{
+                        if(m.id==="custom"){ setShowCustomTimer(true); return; }
+                        setTimerMode(m.id);
+                        resetTimer(m.secs);
+                      }}>
                       {m.label}
                     </button>
                   ))}
                 </div>
+
                 {/* SVG ring */}
                 <div style={{position:"relative",width:200,height:200,margin:"0 auto 8px"}}>
                   <svg width="200" height="200" style={{transform:"rotate(-90deg)"}}>
                     <circle cx="100" cy="100" r={r} fill="none" stroke="var(--bg3)" strokeWidth="10"/>
-                    <circle cx="100" cy="100" r={r} fill="none" stroke="var(--accent)" strokeWidth="10"
-                      strokeDasharray={circ} strokeDashoffset={circ*(1-pct)}
+                    <circle cx="100" cy="100" r={r} fill="none" stroke={ringColor} strokeWidth="10"
+                      strokeDasharray={circ} strokeDashoffset={circ*(1-Math.max(0,Math.min(1,pct)))}
                       strokeLinecap="round" style={{transition:"stroke-dashoffset .9s linear"}}/>
                   </svg>
                   <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                     <div className="timer-display" style={{fontSize:"3.2rem",margin:0}}>{fmtTimer(timerSeconds)}</div>
-                    <div style={{fontSize:".72rem",color:"var(--text4)",fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",marginTop:4}}>{timerRunning?"Focus time":"Ready"}</div>
+                    <div style={{fontSize:".72rem",color:"var(--text4)",fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",marginTop:4}}>
+                      {timerRunning
+                        ? timerMode==="short"||timerMode==="long" ? "Break time 😌" : "Focus time 🎯"
+                        : timerSeconds===0 ? "Done! ✓" : "Ready"}
+                    </div>
                   </div>
                 </div>
+
+                {/* Controls */}
                 <div className="timer-btns">
                   {!timerRunning
-                    ?<button className="btn btn-p" style={{minWidth:100,justifyContent:"center"}} onClick={()=>setTimerRunning(true)}>▶ Start</button>
-                    :<button className="btn btn-g" style={{minWidth:100,justifyContent:"center"}} onClick={()=>setTimerRunning(false)}>⏸ Pause</button>
+                    ?<button className="btn btn-p" style={{minWidth:110,justifyContent:"center"}} onClick={()=>setTimerRunning(true)}>
+                      {timerSeconds===0?"↺ Again":"▶ Start"}
+                    </button>
+                    :<button className="btn btn-g" style={{minWidth:110,justifyContent:"center"}} onClick={()=>setTimerRunning(false)}>⏸ Pause</button>
                   }
-                  <button className="btn btn-g" onClick={()=>resetTimer(currentMode.secs)}>↺ Reset</button>
+                  <button className="btn btn-g" onClick={()=>resetTimer(activeSecs)}>↺ Reset</button>
                 </div>
-                {timerSessions>0&&<div style={{marginTop:16,fontSize:".78rem",color:"var(--text3)",fontWeight:600}}>🍅 {timerSessions} session{timerSessions!==1?"s":""} completed today · +{timerSessions*10} pts earned</div>}
+
+                {/* Session dots */}
+                {customRounds>1&&(
+                  <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:16}}>
+                    {Array.from({length:customRounds}).map((_,i)=>(
+                      <div key={i} style={{width:8,height:8,borderRadius:"50%",
+                        background:i<(timerSessions%customRounds)?"var(--accent)":"var(--bg3)",
+                        transition:"background .3s"}}/>
+                    ))}
+                  </div>
+                )}
+
+                {timerSessions>0&&(
+                  <div style={{marginTop:12,fontSize:".78rem",color:"var(--text3)",fontWeight:600}}>
+                    🍅 {timerSessions} session{timerSessions!==1?"s":""} completed · +{timerSessions*10} pts earned
+                    {timerSessions>=customRounds&&<span style={{color:"#6366f1",marginLeft:6}}>→ Take a long break!</span>}
+                  </div>
+                )}
               </div>
+
+              {/* Auto-start toggle */}
+              <div style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                <span style={{fontSize:"1.1rem"}}>▶️</span>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,fontSize:".84rem",color:"var(--text)"}}>Auto-start breaks</div>
+                  <div style={{fontSize:".73rem",color:"var(--text3)"}}>Timer starts automatically after each session</div>
+                </div>
+                <button onClick={()=>setAutoStartBreaks(v=>!v)} style={{
+                  width:44,height:26,borderRadius:13,border:"none",cursor:"pointer",padding:0,position:"relative",
+                  background:autoStartBreaks?"var(--accent)":"var(--bg3)",transition:"background .2s",flexShrink:0}}>
+                  <span style={{position:"absolute",top:3,left:autoStartBreaks?20:3,width:20,height:20,borderRadius:"50%",
+                    background:"#fff",transition:"left .2s",display:"block",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
+                </button>
+              </div>
+
               {/* Notification permission */}
               {"Notification" in window && Notification.permission==="default"&&(
-                <div style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"14px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
-                  <span style={{fontSize:"1.3rem"}}>🔔</span>
+                <div style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
+                  <span style={{fontSize:"1.1rem"}}>🔔</span>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:700,fontSize:".84rem",color:"var(--text)"}}>Enable notifications</div>
-                    <div style={{fontSize:".74rem",color:"var(--text3)"}}>Get alerted when your timer ends</div>
+                    <div style={{fontSize:".73rem",color:"var(--text3)"}}>Get alerted when your timer ends</div>
                   </div>
                   <button className="btn btn-p btn-sm" onClick={()=>Notification.requestPermission()}>Allow</button>
                 </div>
               )}
-              {/* Due today quick list */}
+
+              {/* Due today */}
               {dueToday.length>0&&(
                 <div>
                   <div className="sec-lbl">Due today — focus on these</div>
-                  <div className="alist">{dueToday.map(a=><ACard key={a.id} a={a} compact/>)}</div>
+                  <div className="alist">{dueToday.map(a=><ACard key={a.id} a={a}/>)}</div>
                 </div>
               )}
             </div>
           );
         })()}
+
+        {/* CUSTOM TIMER MODAL */}
+        {showCustomTimer&&(
+          <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowCustomTimer(false)}>
+            <div className="modal" style={{display:"flex",flexDirection:"column"}}>
+              <div className="modal-t">⚙️ Custom Timer</div>
+              <div style={{flex:1,overflowY:"auto"}}>
+
+                {/* Focus duration */}
+                <div className="fg">
+                  <label className="flbl">Focus duration — {customFocus} min</label>
+                  <input className="range" type="range" min="1" max="90" step="1"
+                    value={customFocus} onChange={e=>setCustomFocus(+e.target.value)}/>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:".68rem",color:"var(--text4)",marginTop:3}}>
+                    <span>1 min</span><span>90 min</span>
+                  </div>
+                  {/* Quick presets */}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {[15,20,25,30,45,60].map(v=>(
+                      <button key={v} className={"dtoggle"+(customFocus===v?" on":"")} onClick={()=>setCustomFocus(v)}>{v}m</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Short break */}
+                <div className="fg">
+                  <label className="flbl">Short break — {customShort} min</label>
+                  <input className="range" type="range" min="1" max="30" step="1"
+                    value={customShort} onChange={e=>setCustomShort(+e.target.value)}/>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {[3,5,8,10,15].map(v=>(
+                      <button key={v} className={"dtoggle"+(customShort===v?" on":"")} onClick={()=>setCustomShort(v)}>{v}m</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Long break */}
+                <div className="fg">
+                  <label className="flbl">Long break — {customLong} min</label>
+                  <input className="range" type="range" min="5" max="60" step="1"
+                    value={customLong} onChange={e=>setCustomLong(+e.target.value)}/>
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {[10,15,20,25,30].map(v=>(
+                      <button key={v} className={"dtoggle"+(customLong===v?" on":"")} onClick={()=>setCustomLong(v)}>{v}m</button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Rounds before long break */}
+                <div className="fg">
+                  <label className="flbl">Sessions before long break — {customRounds}</label>
+                  <input className="range" type="range" min="1" max="8" step="1"
+                    value={customRounds} onChange={e=>setCustomRounds(+e.target.value)}/>
+                  <div style={{display:"flex",justifyContent:"space-between",fontSize:".68rem",color:"var(--text4)",marginTop:3}}>
+                    <span>1 session</span><span>8 sessions</span>
+                  </div>
+                </div>
+
+                {/* Auto-start */}
+                <div className="fg">
+                  <label className="flbl">Auto-start breaks</label>
+                  <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
+                    <button onClick={()=>setAutoStartBreaks(v=>!v)} style={{
+                      width:44,height:26,borderRadius:13,border:"none",cursor:"pointer",padding:0,position:"relative",
+                      background:autoStartBreaks?"var(--accent)":"var(--bg3)",transition:"background .2s",flexShrink:0}}>
+                      <span style={{position:"absolute",top:3,left:autoStartBreaks?20:3,width:20,height:20,borderRadius:"50%",
+                        background:"#fff",transition:"left .2s",display:"block",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
+                    </button>
+                    <span style={{fontSize:".82rem",color:"var(--text2)"}}>Start break automatically when focus ends</span>
+                  </div>
+                </div>
+
+                {/* Preview */}
+                <div style={{background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,padding:"12px 14px",fontSize:".8rem",color:"var(--text2)",lineHeight:1.7}}>
+                  <div style={{fontWeight:700,color:"var(--text)",marginBottom:4,fontSize:".75rem",textTransform:"uppercase",letterSpacing:".06em"}}>Session preview</div>
+                  {Array.from({length:customRounds}).map((_,i)=>(
+                    <div key={i}>🎯 Focus #{i+1} — <strong style={{color:"var(--text)"}}>{customFocus} min</strong>
+                      {i<customRounds-1&&<> → ☕ Short break — <strong style={{color:"var(--text)"}}>{customShort} min</strong></>}
+                    </div>
+                  ))}
+                  <div style={{marginTop:4}}>🛋 Long break — <strong style={{color:"var(--text)"}}>{customLong} min</strong></div>
+                  <div style={{marginTop:6,color:"var(--text3)"}}>Total focus time: <strong style={{color:"var(--text)"}}>{customFocus*customRounds} min</strong></div>
+                </div>
+              </div>
+
+              <div className="mactions" style={{borderTop:"1.5px solid var(--border)",paddingTop:14,marginTop:6,flexShrink:0}}>
+                <button className="btn btn-g" onClick={()=>setShowCustomTimer(false)}>Cancel</button>
+                <button className="btn btn-p" onClick={()=>{
+                  setTimerMode("pomodoro");
+                  resetTimer(customFocus*60);
+                  setShowCustomTimer(false);
+                }}>Start Focus →</button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ═══ SHOP ═════════════════════════════════════════════════ */}
         {tab==="shop"&&(
@@ -3433,7 +3633,27 @@ async function run(){
           <div className="prompt-modal">
             <div className="modal-t" style={{marginBottom:12}}>Add to Schedule?</div>
             <div style={{background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:13,padding:"13px 15px",marginBottom:18,display:"flex",gap:12,alignItems:"center"}}>
-              <span style={{fontSize:"1.5rem"}}>📚</span>
+              <span style={{display:"inline-block",width:28,height:28,borderRadius:8,overflow:"hidden",verticalAlign:"middle",flexShrink:0}}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sd-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#1B1F3B"/>
+      <stop offset="100%" stopColor="#2d3561"/>
+    </linearGradient>
+    <linearGradient id="sd-acc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#f5a623"/>
+      <stop offset="100%" stopColor="#f7c059"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="url(#sd-bg)"/>
+  <rect x="24" y="30" width="24" height="38" rx="3" fill="#fff" opacity="0.15"/>
+  <rect x="26" y="30" width="22" height="38" rx="2" fill="#fff" opacity="0.9"/>
+  <rect x="24" y="30" width="4" height="38" rx="2" fill="#ddd"/>
+  <line x1="32" y1="40" x2="44" y2="40" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="45" x2="44" y2="45" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="50" x2="40" y2="50" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <circle cx="63" cy="57" r="16" fill="url(#sd-acc)"/>
+  <polyline points="55,57 61,63 72,50" fill="none" stroke="#1B1F3B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+</svg></span>
               <div style={{fontSize:".84rem",color:"var(--text2)",lineHeight:1.5}}><b style={{color:"var(--text)"}}>&ldquo;{schedPrompt.subject}&rdquo;</b> isn&apos;t in your schedule yet.<br/>Want to add it so it shows in your timetable?</div>
             </div>
             <div className="mactions">
@@ -4051,7 +4271,27 @@ async function run(){
             </div>
             <div className="about-body">
               <div className="about-hero">
-                <div className="about-logo">📚</div>
+                <div className="about-logo" style={{padding:0,overflow:"hidden"}}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
+  <defs>
+    <linearGradient id="sd-bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#1B1F3B"/>
+      <stop offset="100%" stopColor="#2d3561"/>
+    </linearGradient>
+    <linearGradient id="sd-acc" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#f5a623"/>
+      <stop offset="100%" stopColor="#f7c059"/>
+    </linearGradient>
+  </defs>
+  <circle cx="50" cy="50" r="48" fill="url(#sd-bg)"/>
+  <rect x="24" y="30" width="24" height="38" rx="3" fill="#fff" opacity="0.15"/>
+  <rect x="26" y="30" width="22" height="38" rx="2" fill="#fff" opacity="0.9"/>
+  <rect x="24" y="30" width="4" height="38" rx="2" fill="#ddd"/>
+  <line x1="32" y1="40" x2="44" y2="40" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="45" x2="44" y2="45" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <line x1="32" y1="50" x2="40" y2="50" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
+  <circle cx="63" cy="57" r="16" fill="url(#sd-acc)"/>
+  <polyline points="55,57 61,63 72,50" fill="none" stroke="#1B1F3B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+</svg></div>
                 <div className="about-name">Study Desk</div>
                 <div className="about-tagline">Your homework, organized.</div>
               </div>
@@ -4208,8 +4448,8 @@ async function run(){
 
         </div>{/* end mob-content */}
 
-      {/* PWA INSTALL BANNER */}
-      {pwaPrompt&&(
+      {/* PWA INSTALL BANNER — mobile only */}
+      {pwaPrompt&&isMobile&&(
         <div className="pwa-banner">
           <span style={{fontSize:"1.6rem"}}>📱</span>
           <div style={{flex:1}}>
