@@ -3125,7 +3125,7 @@ async function run(){
                 <div className="alist" style={{opacity:.55}}>{done.map(a=><ACard key={a.id} a={a}/>)}</div>
               </div>
             )}
-            {sortedA.length===0&&(
+            {assignments.length===0&&(
               <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
                 <div className="empty-i">📝</div>
                 <div className="empty-t">No assignments yet</div>
