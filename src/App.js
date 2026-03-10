@@ -533,12 +533,13 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .shdr{display:grid;grid-template-columns:48px repeat(7,1fr);background:var(--schdr);color:#fff;min-width:520px;border-radius:14px 14px 0 0}
 .shcell{padding:10px 3px;text-align:center;font-size:.72rem;font-weight:700;letter-spacing:.04em}
 .shcell.tdy{background:rgba(255,255,255,.13)}
-.srow{display:grid;grid-template-columns:48px repeat(7,1fr);border-top:1px solid var(--border);min-height:40px;min-width:520px;transition:background .1s}
-.srow:hover{background:var(--bg3)}
-.stime{padding:4px 6px 0 0;font-size:.62rem;color:var(--text4);text-align:right;font-weight:600}
-.scell{border-left:1px solid var(--border);position:relative;padding:1px 2px}
-.scell.tdy{background:var(--tc)}
-.cblock{border-radius:6px;padding:3px 5px;font-size:.64rem;font-weight:700;color:#fff;height:100%;display:flex;flex-direction:column;justify-content:center;line-height:1.3}
+.sgrid-body{display:grid;grid-template-columns:48px repeat(7,1fr);min-width:520px;position:relative}
+.sgrid-times{display:flex;flex-direction:column}
+.stime-row{height:52px;padding:4px 6px 0 0;font-size:.62rem;color:var(--text4);text-align:right;font-weight:600;border-top:1px solid var(--border);box-sizing:border-box}
+.sgrid-daycol{position:relative;border-left:1px solid var(--border)}
+.sgrid-daycol.tdy{background:var(--tc)}
+.sgrid-hrline{position:absolute;left:0;right:0;border-top:1px solid var(--border);pointer-events:none}
+.cblock{position:absolute;left:2px;right:2px;border-radius:6px;padding:3px 5px;font-size:.64rem;font-weight:700;color:#fff;display:flex;flex-direction:column;justify-content:center;line-height:1.3;overflow:hidden;box-sizing:border-box;z-index:1}
 .dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
 .dcard{background:var(--card);border:1.5px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 2px 12px var(--sh)}
 .dcard-hdr{padding:13px 16px;border-bottom:1.5px solid var(--border);display:flex;align-items:center;gap:9px}
@@ -2739,8 +2740,9 @@ async function run(){
   }
   function delClass(id){setClasses(p=>p.filter(x=>x.id!==id));}
 
-  const subjects=[...new Set([...classes.map(c=>c.name),...assignments.map(a=>a.subject)])].filter(Boolean).filter(s=>assignments.some(a=>a.subject===s&&a.progress<100));
-  const todayC=classes.filter(c=>c.days.includes(todayAbbr()));
+  const subjects=[...new Set([...[...new Set(classes.map(c=>c.name))],...assignments.map(a=>a.subject)])].filter(Boolean).filter(s=>assignments.some(a=>a.subject===s&&a.progress<100));
+  const _todayRaw=classes.filter(c=>c.days.includes(todayAbbr()));
+  const todayC=[...new Map(_todayRaw.map(c=>[c.name,c])).values()];
   const upcoming=[...assignments].filter(a=>a.progress<100).sort((a,b)=>new Date(a.dueDate)-new Date(b.dueDate));
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // DERIVED VALUES (computed from state on every render — not stored)
@@ -3157,9 +3159,10 @@ async function run(){
           const graded=assignments.filter(a=>a.grade!=null);
 
           // Per-class stats
-          const classStats=classes.map(cls=>{
-            const clsGraded=graded.filter(a=>a.subject===cls.name);
-            const clsAll=assignments.filter(a=>a.subject===cls.name);
+          const uniqueClassNames=[...new Set(classes.map(c=>c.name))];
+          const classStats=uniqueClassNames.map(name=>{const cls=classes.find(c=>c.name===name);
+            const clsGraded=graded.filter(a=>a.subject===name);
+            const clsAll=assignments.filter(a=>a.subject===name);
             if(clsGraded.length===0) return{cls,avg:null,grades:[],total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
             // Weighted average if gradeRaw available, else simple average
             let totalPts=0,totalPoss=0,simpleSum=0;
@@ -3334,7 +3337,7 @@ async function run(){
                 <div>
                   <div className="sec-lbl">Your Classes</div>
                   <div className="sc-classes">
-                    {[...classes].sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(c=>{
+                    {[...new Map(classes.map(c=>[c.name,c])).values()].sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(c=>{
                       const ca=assignments.filter(a=>a.subject===c.name&&a.progress<100);
                       return(
                         <div key={c.id} className="sc-card">
@@ -3357,25 +3360,36 @@ async function run(){
                       <div className="shcell"/>
                       {DAYS.map(d=><div key={d} className={"shcell"+(d===todayAbbr()?" tdy":"")}>{d}</div>)}
                     </div>
-                    {HOURS.map(h=>(
-                      <div key={h} className="srow">
-                        <div className="stime">{fmt12h(h)}</div>
-                        {DAYS.map(d=>{
-                          const ccs=classes.filter(c=>{
-                            if(!c.days.includes(d))return false;
-                            const[sh,sm]=c.startTime.split(":").map(Number);
-                            const[eh,em]=c.endTime.split(":").map(Number);
-                            // use floor of start hour so 7:45 shows in the 7am row
-                            return h>=sh&&h<Math.ceil(eh+em/60);
-                          });
-                          return(
-                            <div key={d} className={"scell"+(d===todayAbbr()?" tdy":"")}>
-                              {ccs.map(c=><div key={c.id} className="cblock" style={{background:c.color}}><span style={{fontWeight:700}}>{c.name}</span>{c.room&&<span style={{opacity:.8,fontSize:".58rem"}}>📍{c.room}</span>}</div>)}
+                    {(()=>{
+                      const PX_PER_HOUR=52;
+                      const START_HOUR=7;
+                      const totalHours=HOURS.length;
+                      const totalH=totalHours*PX_PER_HOUR;
+                      const toY=t=>{const[h,m]=t.split(":").map(Number);return((h-START_HOUR)+(m/60))*PX_PER_HOUR;};
+                      return(
+                        <div className="sgrid-body">
+                          <div className="sgrid-times">
+                            {HOURS.map(h=><div key={h} className="stime-row">{fmt12h(h)}</div>)}
+                          </div>
+                          {DAYS.map(d=>(
+                            <div key={d} className={"sgrid-daycol"+(d===todayAbbr()?" tdy":"")} style={{height:totalH}}>
+                              {HOURS.map((_,i)=><div key={i} className="sgrid-hrline" style={{top:i*PX_PER_HOUR}}/>)}
+                              {classes.filter(c=>c.days.includes(d)).map(c=>{
+                                const top=toY(c.startTime);
+                                const bot=toY(c.endTime);
+                                const h=Math.max(bot-top,18);
+                                return(
+                                  <div key={c.id} className="cblock" style={{background:c.color,top,height:h}}>
+                                    <span style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</span>
+                                    {h>28&&c.room&&<span style={{opacity:.8,fontSize:".55rem"}}>📍{c.room}</span>}
+                                  </div>
+                                );
+                              })}
                             </div>
-                          );
-                        })}
-                      </div>
-                    ))}
+                          ))}
+                        </div>
+                      );
+                    })()}
                   </div>
                 </div>
               </div>
@@ -3743,7 +3757,7 @@ async function run(){
 
       {/* ADD ASSIGNMENT */}
       {addingA&&(()=>{
-        const schSubs=classes.map(c=>c.name);
+        const schSubs=[...new Set(classes.map(c=>c.name))];
         const prevSubs=[...new Set(assignments.map(a=>a.subject).filter(Boolean))].filter(s=>!schSubs.includes(s));
         const allSubs=[...schSubs,...prevSubs];
         return(
@@ -4319,7 +4333,7 @@ async function run(){
                           onChange={e=>{const v=e.target.value;setImportResult(r=>({...r,assignments:r.assignments.map((x,j)=>j===i?{...x,subject:v}:x)}));}}
                           style={{fontSize:".72rem",border:"1.5px solid #EDE9E2",borderRadius:7,padding:"3px 6px",background:"#fafaf8",color:"#1B1F3B",marginLeft:16,fontFamily:"'Plus Jakarta Sans',sans-serif",cursor:"pointer"}}>
                           {a.subject&&!classes.find(c=>c.name===a.subject)&&<option value={a.subject}>{a.subject} (detected)</option>}
-                          {classes.map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
+                          {[...new Map(classes.map(c=>[c.name,c])).values()].map(c=><option key={c.id} value={c.name}>{c.name}</option>)}
                           <option value="">— No class —</option>
                         </select>
                       </div>
