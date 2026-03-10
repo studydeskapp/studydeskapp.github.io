@@ -1,6 +1,6 @@
-// ╔══════════════════════════════════════════════════════════════════════════════╗
+// ╔═════════════════════════════════════════════════════════════════════════════╗
 // ║                        STUDYDESK — App.js                                   ║
-// ║                                                                              ║
+// ║                                                                             ║
 // ║  QUICK NAVIGATION (Ctrl+F the section name):                                ║
 // ║    § FIREBASE CONFIG       — constants, auth, Firestore REST helpers        ║
 // ║    § CANVAS PROXY          — Cloudflare Worker proxy + fetchWithFallback    ║
@@ -12,14 +12,14 @@
 // ║    § SMALL COMPONENTS      — CopyBtn, FetcherCopyBox, BuddyCreature         ║
 // ║    § AUTH SCREEN           — login / signup / Google SSO UI                 ║
 // ║    § ADMIN PANEL           — stats dashboard, user management               ║
-// ║    § MAIN COMPONENT        — StudyDesk() — all state lives here            ║
+// ║    § MAIN COMPONENT        — StudyDesk() — all state lives here             ║
 // ║      ├─ STATE              — useState declarations (grouped by feature)     ║
 // ║      ├─ REFS               — useRef declarations                            ║
 // ║      ├─ EFFECTS            — useEffect hooks (load, save, sync, etc.)       ║
 // ║      ├─ CANVAS SYNC        — syncCanvas(), importFromCanvasAPI()            ║
 // ║      ├─ IMPORT LOGIC       — parseHomeworkFromText(), importFromDoc()       ║
 // ║      ├─ GAME LOGIC         — handleComplete(), spawnFloat()                 ║
-// ║      ├─ TIMER LOGIC        — startTimer(), resetTimer(), fmtTimer()        ║
+// ║      ├─ TIMER LOGIC        — startTimer(), resetTimer(), fmtTimer()         ║
 // ║      ├─ LEADERBOARD        — fetchLeaderboard()                             ║
 // ║      └─ RENDER             — JSX (tabs, modals, bottom nav)                 ║
 // ║           ├─ MOBILE HEADER                                                  ║
@@ -35,7 +35,7 @@
 // ║           ├─ PWA BANNER                                                     ║
 // ║           ├─ LEADERBOARD MODAL                                              ║
 // ║           └─ MOBILE BOTTOM NAV                                              ║
-// ╚══════════════════════════════════════════════════════════════════════════════╝
+// ╚═════════════════════════════════════════════════════════════════════════════╝
 
 import { useState, useEffect, useRef } from "react";
 
