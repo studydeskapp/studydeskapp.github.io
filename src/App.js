@@ -1488,7 +1488,7 @@ export default function StudyDesk() {
   }
   // /admin route detection
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const isAdminRoute = window.location.pathname==="/admin";
+  const isAdminRoute = new URLSearchParams(window.location.search).get("admin")==="1";
   // Force clear any existing session on admin route so non-admins can't auto-login
 
   const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
@@ -1575,7 +1575,7 @@ export default function StudyDesk() {
 
   // Restore session on mount — always force fresh login on /admin route
   useEffect(()=>{
-    const onAdminRoute = window.location.pathname==="/admin";
+    const onAdminRoute = new URLSearchParams(window.location.search).get("admin")==="1";
     if(onAdminRoute){
       // Clear any existing session so admin must always sign in fresh
       fbClearSession();
