@@ -1489,6 +1489,11 @@ export default function StudyDesk() {
   // /admin route detection
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
   const isAdminRoute = window.location.pathname==="/admin" || window.location.pathname.endsWith("/admin");
+  // Force clear any existing session on admin route so non-admins can't auto-login
+  if(isAdminRoute && typeof window !== "undefined"){
+    const stored = localStorage.getItem("sd-session");
+    if(stored){try{const s=JSON.parse(stored);if(s.email!==ADMIN_EMAIL){localStorage.removeItem("sd-session");}}catch(e){}}
+  }
   const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
 
   const [authLoading, setAuthLoading] = useState(true);
