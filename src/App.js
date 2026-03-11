@@ -1421,11 +1421,6 @@ function AdminPanel({user, onClose, inline=false}){
 // ║  This is the entire app in one component. All state lives here.             ║
 // ║  Scroll down for STATE → EFFECTS → LOGIC → RENDER                          ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
-// Mark admin route in sessionStorage before any redirects can clear it
-if(typeof window!=="undefined" && (window.location.pathname==="/admin"||window.location.href.includes("/admin"))){
-  sessionStorage.setItem("sd-admin-route","1");
-}
-
 export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Core data (persisted to Firestore)
@@ -1493,12 +1488,9 @@ export default function StudyDesk() {
   }
   // /admin route detection
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const isAdminRoute = window.location.pathname==="/admin" || window.location.pathname.endsWith("/admin") || window.location.href.includes("/admin") || sessionStorage.getItem("sd-admin-route")==="1";
+  const isAdminRoute = window.location.hash==="#/admin";
   // Force clear any existing session on admin route so non-admins can't auto-login
-  if(isAdminRoute && typeof window !== "undefined"){
-    const stored = localStorage.getItem("sd-session");
-    if(stored){try{const s=JSON.parse(stored);if(s.email!==ADMIN_EMAIL){localStorage.removeItem("sd-session");}}catch(e){}}
-  }
+
   const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
 
   const [authLoading, setAuthLoading] = useState(true);
@@ -1583,7 +1575,7 @@ export default function StudyDesk() {
 
   // Restore session on mount — always force fresh login on /admin route
   useEffect(()=>{
-    const onAdminRoute = window.location.hash==="#/admin" || window.location.pathname==="/admin" || window.location.pathname.endsWith("/admin");
+    const onAdminRoute = window.location.hash==="#/admin";
     if(onAdminRoute){
       // Clear any existing session so admin must always sign in fresh
       fbClearSession();
@@ -2857,7 +2849,7 @@ async function run(){
         <div style={{padding:"14px 24px",borderBottom:"1px solid #262B3C",display:"flex",alignItems:"center",gap:12,background:"#161921",position:"sticky",top:0,zIndex:10}}>
           <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.15rem",fontWeight:700,color:"#DDE2F5"}}>📊 StudyDesk Admin</div>
           <div style={{marginLeft:"auto",fontSize:".74rem",color:"#5C6480"}}>{user.email}</div>
-          <button onClick={()=>{fbClearSession();setUser(null);sessionStorage.removeItem("sd-admin-route");window.location.href="/";}}
+          <button onClick={()=>{fbClearSession();setUser(null);window.location.hash="";}}
             style={{padding:"6px 14px",borderRadius:9,border:"1.5px solid #262B3C",background:"transparent",color:"#5C6480",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".78rem",cursor:"pointer"}}>
             ↩ Exit
           </button>
