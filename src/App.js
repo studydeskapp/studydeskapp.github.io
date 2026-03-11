@@ -1488,7 +1488,7 @@ export default function StudyDesk() {
   }
   // /admin route detection
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const isAdminRoute = window.location.hash==="#/admin";
+  const isAdminRoute = window.location.pathname==="/admin";
   // Force clear any existing session on admin route so non-admins can't auto-login
 
   const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
@@ -1575,7 +1575,7 @@ export default function StudyDesk() {
 
   // Restore session on mount — always force fresh login on /admin route
   useEffect(()=>{
-    const onAdminRoute = window.location.hash==="#/admin";
+    const onAdminRoute = window.location.pathname==="/admin";
     if(onAdminRoute){
       // Clear any existing session so admin must always sign in fresh
       fbClearSession();
@@ -2849,7 +2849,7 @@ async function run(){
         <div style={{padding:"14px 24px",borderBottom:"1px solid #262B3C",display:"flex",alignItems:"center",gap:12,background:"#161921",position:"sticky",top:0,zIndex:10}}>
           <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.15rem",fontWeight:700,color:"#DDE2F5"}}>📊 StudyDesk Admin</div>
           <div style={{marginLeft:"auto",fontSize:".74rem",color:"#5C6480"}}>{user.email}</div>
-          <button onClick={()=>{fbClearSession();setUser(null);window.location.hash="";}}
+          <button onClick={()=>{fbClearSession();setUser(null);window.location.href="/";}}
             style={{padding:"6px 14px",borderRadius:9,border:"1.5px solid #262B3C",background:"transparent",color:"#5C6480",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".78rem",cursor:"pointer"}}>
             ↩ Exit
           </button>
