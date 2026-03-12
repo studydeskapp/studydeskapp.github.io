@@ -2120,15 +2120,6 @@ function PhoneUploadPage({uploadId}){
 export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Core data (persisted to Firestore)
-  
-  // Handle redirect from 404.html
-  useEffect(()=>{
-    const redirectPath = sessionStorage.getItem('redirectPath');
-    if(redirectPath){
-      sessionStorage.removeItem('redirectPath');
-      window.history.replaceState(null, '', redirectPath);
-    }
-  },[]);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
