@@ -278,7 +278,7 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
     reader.readAsDataURL(file);
   };
 
-  // ── NEW: Check if answer image is relevant to homework ───────────────────────
+  // ── Check if answer image is relevant to homework ──────────────────────────────
   const checkAnswerRelevance = async (answerImageData, homeworkImageData) => {
     try {
       const b64Answer = answerImageData.replace(/^data:image\/\w+;base64,/, '');
@@ -297,41 +297,47 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: 'Here is the HOMEWORK ASSIGNMENT (Image A):' },
+                { text: 'This is the homework assignment the student needs to complete:' },
                 { inline_data: { mime_type: mimeTypeH, data: b64Homework } },
-                { text: 'Here is what the student uploaded as their completed work (Image B):' },
+                { text: 'This is what the student submitted as their answer:' },
                 { inline_data: { mime_type: mimeTypeA, data: b64Answer } },
-                { text: 'Describe Image A in one sentence. Describe Image B in one sentence. Then answer: is Image B a student attempt to complete the homework in Image A, or is it something completely unrelated (different subject, app screenshot, diagram from another topic, etc)? STRICT RULE: if the subjects differ at all (e.g. math vs chemistry, probability vs pH scale, worksheet vs app logo), return related false. Respond ONLY with JSON: {"imageA":"...","imageB":"...","related":true,"reason":"..."} or {"imageA":"...","imageB":"...","related":false,"reason":"..."}' }
+                { text: `You are checking if the student accidentally uploaded the wrong image.
+
+The answer image should be REJECTED (related: false) ONLY if it is clearly and obviously something completely different — for example:
+- The homework is math but the answer is a chemistry diagram, biology chart, or science lab
+- The answer is a completely unrelated app screenshot, logo, meme, or photo with no academic work
+- The answer is from a totally different academic subject (e.g. homework is English essay, answer is a math graph)
+
+The answer image should be ACCEPTED (related: true) in all other cases, including:
+- Handwritten work on paper (even if messy or partially done) for the same subject
+- A printed or typed version of similar problems
+- Work that attempts the same type of problems even if on a different sheet
+- The same worksheet with answers filled in
+- Any math/probability/statistics work when the homework is also math/probability/statistics
+
+When in doubt, return related: true. Only reject if it is OBVIOUSLY the wrong subject entirely.
+
+Respond ONLY with JSON: {"related": true, "reason": "brief reason"} or {"related": false, "reason": "brief reason describing what the wrong image actually shows"}` }
               ]
             }],
-            generationConfig: { maxOutputTokens: 400 }
+            generationConfig: { maxOutputTokens: 300 }
           })
         }
       );
 
-      if (!res.ok) {
-        console.error('Relevance check HTTP error:', res.status);
-        return { related: false, reason: 'Could not verify your image. Please upload your actual completed homework.' };
-      }
+      if (!res.ok) return { related: true };
 
       const data = await res.json();
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      console.log('Relevance check raw response:', rawText);
+      console.log('Relevance check response:', rawText);
 
-      // Robustly extract JSON from anywhere in the response
-      const jsonMatch = rawText.match(/\{[\s\S]*?"related"\s*:\s*(true|false)[\s\S]*?\}/);
-      if (!jsonMatch) {
-        console.error('No JSON found in relevance response:', rawText);
-        return { related: false, reason: "Couldn't verify your image matches the homework. Please upload your actual completed work." };
-      }
+      const jsonMatch = rawText.match(/\{[^{}]*"related"\s*:\s*(true|false)[^{}]*\}/);
+      if (!jsonMatch) return { related: true };
 
-      const parsed = JSON.parse(jsonMatch[0]);
-      console.log('Relevance result:', parsed);
-      return parsed;
-
+      return JSON.parse(jsonMatch[0]);
     } catch (err) {
       console.error('Relevance check error:', err);
-      return { related: false, reason: "Couldn't verify your image. Please try uploading again." };
+      return { related: true };
     }
   };
 
