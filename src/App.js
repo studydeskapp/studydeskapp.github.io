@@ -237,7 +237,7 @@ function fbClearSession() {
 }
 
 const ADMIN_PASS = "studydesk2026";
-const GEMINI_KEY = "AIzaSyBojLUYk7dfDoqjf_1juL54Ul41SB-dLBY";
+const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY;
 async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[]){
   const contents = [
     ...history.map(m=>({role:m.role==="ai"?"model":"user", parts:[{text:m.text}]})),
