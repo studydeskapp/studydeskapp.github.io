@@ -2107,8 +2107,9 @@ function PhoneUploadPage({uploadId}){
       
       try{
         // Save to Firestore so the PC can pick it up
-        await fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`, {
-          method:"PATCH",
+        // Use PUT to create the document (PATCH requires it to exist)
+        const response = await fetch(`${FB_FS}/uploads?documentId=${uploadId}&key=${FB_KEY}`, {
+          method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({
             fields: {
@@ -2118,12 +2119,16 @@ function PhoneUploadPage({uploadId}){
           })
         });
         
+        if(!response.ok){
+          throw new Error(`Upload failed: ${response.status}`);
+        }
+        
         setUploading(false);
         setUploaded(true);
       }catch(err){
         console.error("Upload error:", err);
         setUploading(false);
-        alert("Upload failed. Please try again.");
+        alert("Upload failed: " + err.message + ". Make sure Firestore rules allow uploads.");
       }
     };
     reader.readAsDataURL(file);
