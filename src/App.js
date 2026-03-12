@@ -2358,7 +2358,13 @@ export default function StudyDesk() {
   }
   // /admin route detection - check pathname directly like upload route
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const isAdminRoute = window.location.pathname === "/admin" || window.location.hash === "#admin" || new URLSearchParams(window.location.search).get("admin")==="1";
+  const pathname = window.location.pathname;
+  const isAdminRoute = pathname === "/admin" || pathname === "/admin/" || window.location.hash === "#admin" || new URLSearchParams(window.location.search).get("admin")==="1";
+  
+  // Debug logging
+  if(pathname.includes("admin")){
+    console.log("Admin route check:", {pathname, isAdminRoute, user: !!user});
+  }
   
   // /upload/:id route detection for phone uploads
   const uploadMatch = window.location.pathname.match(/^\/upload\/([a-zA-Z0-9]+)$/);
