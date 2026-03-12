@@ -1712,7 +1712,7 @@ function AITab({assignments, classes}){
   }
 
   function startPollingForUpload(id){
-    // Poll localStorage every 2 seconds for the upload
+    // Poll Firestore every 2 seconds for the upload
     uploadPollInterval.current = setInterval(()=>{
       checkForUpload(id);
     }, 2000);
@@ -1728,25 +1728,27 @@ function AITab({assignments, classes}){
   async function checkForUpload(id){
     setCheckingUpload(true);
     try{
-      // Check localStorage for the uploaded image
-      const uploadKey = `hw-upload-${id}`;
-      const uploadData = localStorage.getItem(uploadKey);
+      // Check Firestore for the uploaded image
+      const response = await fetch(`${FB_FS}/uploads/${id}?key=${FB_KEY}`);
       
-      if(uploadData){
-        // Found an upload!
-        const data = JSON.parse(uploadData);
+      if(response.ok){
+        const data = await response.json();
+        const imageData = data.fields?.image?.stringValue;
         
-        // Convert base64 back to blob
-        const response = await fetch(data.image);
-        const blob = await response.blob();
-        
-        setHwImage(blob);
-        setHwImagePreview(data.image);
-        setHwUploadMode("file");
-        
-        // Clean up
-        localStorage.removeItem(uploadKey);
-        stopPollingForUpload();
+        if(imageData){
+          // Found an upload!
+          // Convert base64 back to blob
+          const fetchResponse = await fetch(imageData);
+          const blob = await fetchResponse.blob();
+          
+          setHwImage(blob);
+          setHwImagePreview(imageData);
+          setHwUploadMode("file");
+          
+          // Clean up - delete the upload from Firestore
+          await fetch(`${FB_FS}/uploads/${id}?key=${FB_KEY}`, {method:"DELETE"});
+          stopPollingForUpload();
+        }
       }
     }catch(e){
       console.error("Error checking upload:", e);
@@ -2099,21 +2101,30 @@ function PhoneUploadPage({uploadId}){
     
     setUploading(true);
     const reader = new FileReader();
-    reader.onload = (ev) => {
+    reader.onload = async (ev) => {
       const imageData = ev.target.result;
       setPreview(imageData);
       
-      // Save to localStorage so the PC can pick it up
-      const uploadKey = `hw-upload-${uploadId}`;
-      localStorage.setItem(uploadKey, JSON.stringify({
-        image: imageData,
-        timestamp: Date.now()
-      }));
-      
-      setTimeout(()=>{
+      try{
+        // Save to Firestore so the PC can pick it up
+        await fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`, {
+          method:"PATCH",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({
+            fields: {
+              image: {stringValue: imageData},
+              timestamp: {integerValue: String(Date.now())}
+            }
+          })
+        });
+        
         setUploading(false);
         setUploaded(true);
-      }, 1000);
+      }catch(err){
+        console.error("Upload error:", err);
+        setUploading(false);
+        alert("Upload failed. Please try again.");
+      }
     };
     reader.readAsDataURL(file);
   }
