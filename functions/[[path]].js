@@ -9,6 +9,15 @@ export async function onRequest(context) {
     return context.next();
   }
   
+  // Special handling for /admin - don't redirect to /admin/
+  if (url.pathname === '/admin') {
+    const response = await context.env.ASSETS.fetch(new URL('/index.html', url.origin));
+    return new Response(response.body, {
+      status: 200,
+      headers: response.headers
+    });
+  }
+  
   // For all other routes, serve index.html
   const response = await context.env.ASSETS.fetch(new URL('/index.html', url.origin));
   
