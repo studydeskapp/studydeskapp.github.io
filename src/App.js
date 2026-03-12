@@ -38,7 +38,7 @@
 // ║           └─ MOBILE BOTTOM NAV                                              ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-import { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef } from "react";
 
 
 // ┌──────────────────────────────────────────────────────────────────────────────┐
@@ -237,6 +237,66 @@ function fbClearSession() {
 }
 
 const ADMIN_PASS = "studydesk2026";
+const GEMINI_KEY = "AIzaSyBojLUYk7dfDoqjf_1juL54Ul41SB-dLBY";
+async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[]){
+  const contents = [
+    ...history.map(m=>({role:m.role==="ai"?"model":"user", parts:[{text:m.text}]})),
+    {role:"user", parts:[{text:prompt}]}
+  ];
+  const model = "gemini-2.5-flash";
+  try{
+    const controller = new AbortController();
+    const timeout = setTimeout(()=>controller.abort(), 30000);
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,{
+      method:"POST",
+      signal:controller.signal,
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        system_instruction:{parts:[{text:systemPrompt}]},
+        contents,
+        generationConfig:{maxOutputTokens:2048,temperature:0.7}
+      })
+    });
+    clearTimeout(timeout);
+    if(!res.ok){
+      const e = await res.json();
+      const msg = e.error?.message||"";
+      if(res.status===429){
+        const numMatch = msg.match(/(\d+)\.\d+s/);
+        const secs = numMatch ? Math.ceil(parseInt(numMatch[1])) + 2 : 60;
+        return `⏳ Rate limited — you've hit the 20 requests/min limit. Please wait about ${secs} seconds and try again.`;
+      }
+      return "Error: "+msg;
+    }
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let full = "";
+    let buffer = "";
+    while(true){
+      const {done,value} = await reader.read();
+      if(done) break;
+      buffer += decoder.decode(value,{stream:true});
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+      for(const line of lines){
+        if(!line.startsWith("data: ")) continue;
+        const json = line.slice(6).trim();
+        try{
+          const parsed = JSON.parse(json);
+          const delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+          if(delta){ full+=delta; onChunk(full); await new Promise(r=>setTimeout(r,18)); }
+        }catch(e){}
+      }
+    }
+    return full || "Sorry, I couldn't get a response.";
+  }catch(e){
+    if(e.name==="AbortError") return "Request timed out. Please try again.";
+    return "Network error: "+e.message;
+  }
+}
+async function callGemini(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly."){
+  return callGeminiStream(prompt, systemPrompt, ()=>{});
+}
 
 async function fbIncrementStat(field, amount, idToken) {
   if(!amount) amount=1;
@@ -303,8 +363,28 @@ async function fbGetAdminStats(idToken) {
 // │  MONTHS       — month name → number mapping for import parser               │
 // └──────────────────────────────────────────────────────────────────────────────┘
 const STORAGE_KEY = "hw-tracker-v1";
-const APP_VERSION = "1.3.2";
+const APP_VERSION = "1.4.0";
 const RELEASES = [
+  {
+    version: "1.4.0",
+    date: "11 March 2026",
+    title: "UI Refresh & Productivity Boost",
+    changes: [
+      "🎨 Vibrant new accent color — blue gradient replaces the dark theme for a more modern look",
+      "📏 Wider sidebar (260px) — more breathing room for navigation on desktop",
+      "✨ Enhanced stat cards — subtle gradients, larger icons (25% opacity), and smoother animations",
+      "📝 Bigger assignment titles — improved readability with larger font and better spacing",
+      "📊 Prominent progress bars — 8px height with clearer percentage labels, now visible on mobile",
+      "🚨 Attention-grabbing overdue styling — red border with glow effect so you never miss a deadline",
+      "⚡ Snappier interactions — reduced animation times from 180ms to 120ms throughout",
+      "🎯 Floating action button — quick-add assignments from anywhere with the + button",
+      "⌨️ Keyboard shortcuts — press N to add, J/K to navigate tabs (shown in header)",
+      "🐣 Animated buddy — subtle glow effect makes your study companion feel more alive",
+      "📱 Better mobile layout — progress bars full-width, improved card spacing, compact header",
+      "🌊 Horizontal scroll fade — visual indicator when tabs overflow on mobile",
+      "�️ Improved desktop spacing — header has proper margins from sidebar",
+    ]
+  },
   {
     version: "1.3.2",
     date: "10 March 2026",
@@ -442,14 +522,69 @@ function extractId(url){const m=url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/)
 const css = `
 @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#F4F1EB;--bg2:#FFFFFF;--bg3:#EDEAE3;--bg4:#E5E1D8;--border:#DDD9D1;--border2:#C4BFB5;--text:#18192B;--text2:#52556E;--text3:#8F93A8;--text4:#C2C5D4;--accent:#18192B;--accent2:#2B2E50;--card:#FFFFFF;--card2:#F9F7F3;--sh:rgba(24,25,43,.06);--sh2:rgba(24,25,43,.13);--mbg:#F4F1EB;--ibg:#FFFFFF;--sg:linear-gradient(160deg,#FFFFFF,#F5F3EE);--hb:#18192B;--tb:#E8E4DC;--tc:#F5F3ED;--schdr:#18192B;--radius:16px}
-.dark{--bg:#0D0F18;--bg2:#13151F;--bg3:#181B27;--bg4:#1E2130;--border:#232638;--border2:#2E3248;--text:#E0E4F8;--text2:#8A90B8;--text3:#525875;--text4:#303550;--accent:#7C85FF;--accent2:#9199FF;--card:#13151F;--card2:#171A26;--sh:rgba(0,0,0,.35);--sh2:rgba(0,0,0,.55);--mbg:#13151F;--ibg:#181B27;--sg:linear-gradient(160deg,#181B27,#13151F);--hb:#232638;--tb:#171A26;--tc:#161822;--schdr:#13151F;--radius:16px}
+:root{--bg:#F4F1EB;--bg2:#FFFFFF;--bg3:#EDEAE3;--bg4:#E5E1D8;--border:#DDD9D1;--border2:#C4BFB5;--text:#18192B;--text2:#52556E;--text3:#8F93A8;--text4:#C2C5D4;--accent:#5B8DEE;--accent2:#4A7DD9;--card:#FFFFFF;--card2:#F9F7F3;--sh:rgba(24,25,43,.06);--sh2:rgba(24,25,43,.13);--mbg:#F4F1EB;--ibg:#FFFFFF;--sg:linear-gradient(160deg,#FFFFFF,#F5F3EE);--hb:#18192B;--tb:#E8E4DC;--tc:#F5F3ED;--schdr:#5B8DEE;--radius:16px;--sb-bg:#DDE1E8;--sb-text:#1a1a2e;--sb-text2:rgba(26,26,46,.75);--sb-border:rgba(0,0,0,.08);--sb-hover:rgba(0,0,0,.06);--sb-on:rgba(0,0,0,.12);--sb-bottom-border:rgba(0,0,0,.06)}
+.dark{--bg:#0D0F18;--bg2:#13151F;--bg3:#181B27;--bg4:#1E2130;--border:#232638;--border2:#2E3248;--text:#E0E4F8;--text2:#8A90B8;--text3:#525875;--text4:#303550;--accent:#7C85FF;--accent2:#9199FF;--card:#13151F;--card2:#171A26;--sh:rgba(0,0,0,.35);--sh2:rgba(0,0,0,.55);--mbg:#13151F;--ibg:#181B27;--sg:linear-gradient(160deg,#181B27,#13151F);--hb:#232638;--tb:#171A26;--tc:#161822;--schdr:#7C85FF;--radius:16px;--sb-bg:#1A2B3C;--sb-text:#fff;--sb-text2:rgba(255,255,255,.75);--sb-border:rgba(255,255,255,.08);--sb-hover:rgba(255,255,255,.08);--sb-on:rgba(255,255,255,.14);--sb-bottom-border:rgba(255,255,255,.06)}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:100vh;color:var(--text);transition:background .25s,color .25s}
 .dk{background:var(--bg);min-height:100vh;transition:background .25s}
 .app{max-width:1080px;margin:0 auto;padding:0 20px 120px}
-.hdr{padding:20px 0 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid var(--border);margin-bottom:24px;gap:12px;flex-wrap:wrap}
+/* ── SIDEBAR LAYOUT (desktop): fixed full-height, main content scrolls only ── */
+@media(min-width:769px){
+  .app.has-sidebar{max-width:none;padding:0}
+  .sidebar{position:fixed;left:0;top:0;bottom:0;width:260px;height:100vh;height:100dvh;display:flex;flex-direction:column;background:var(--sb-bg);border-right:1px solid var(--sb-border);box-shadow:2px 0 12px rgba(0,0,0,.08);padding-top:max(env(safe-area-inset-top),12px);z-index:100;transition:background .25s,border-color .25s,color .25s}
+  .sidebar-logo{display:flex;align-items:center;gap:10px;padding:16px 18px 20px;border-bottom:1px solid var(--sb-bottom-border)}
+  .sidebar-logo-img{width:40px;height:40px;border-radius:10px;flex-shrink:0;object-fit:contain;display:block}
+  .sidebar-logo-text{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:700;color:var(--sb-text);letter-spacing:-.3px}
+  .sidebar-nav{flex:1;padding:14px 10px;overflow-y:auto;min-height:0}
+  .sidebar-item{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border-radius:10px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--sb-text2);transition:all .18s;text-align:left;margin-bottom:2px}
+  .sidebar-item:hover{background:var(--sb-hover);color:var(--sb-text)}
+  .sidebar-item.on{background:var(--sb-on);color:var(--sb-text)}
+  .sidebar-item svg{flex-shrink:0;opacity:.9}
+  .sidebar-item.on svg{opacity:1}
+  .sidebar-item-wrap{position:relative}
+  .sidebar-more-dropdown{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sb-bg);border:1px solid var(--sb-border);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:50}
+  .sidebar-more-dropdown button,.sidebar-more-dropdown a{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:var(--sb-text);text-align:left;transition:background .15s;text-decoration:none}
+  .sidebar-more-dropdown button:hover,.sidebar-more-dropdown a:hover{background:var(--sb-hover)}
+  .sidebar-more-dropdown button:not(:last-child),.sidebar-more-dropdown a:not(:last-child){border-bottom:1px solid var(--sb-bottom-border)}
+  .sidebar-bottom{border-top:1px solid var(--sb-bottom-border);padding:14px 10px}
+  .sidebar-profile{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:10px;border:none;background:var(--sb-on);cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;text-align:left;margin-bottom:10px;transition:all .18s}
+  .sidebar-profile:hover{background:var(--sb-hover)}
+  .sidebar-profile-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#5B8DEE,#7C85FF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0;overflow:hidden}
+  .sidebar-profile-avatar img{width:100%;height:100%;object-fit:cover}
+  .sidebar-profile-info{flex:1;min-width:0}
+  .sidebar-profile-name{font-size:.82rem;font-weight:700;color:var(--sb-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .sidebar-profile-email{font-size:.68rem;color:var(--sb-text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
+  .sidebar-dm{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--sb-text2);width:100%;text-align:left;margin-bottom:6px;transition:all .18s}
+  .sidebar-dm:hover{background:var(--sb-hover);color:var(--sb-text)}
+  .sidebar-dm-toggle{width:42px;height:24px;border-radius:12px;background:var(--sb-on);margin-left:auto;position:relative;transition:background .2s;flex-shrink:0}
+  .sidebar-dm-toggle.on{background:#5B8DEE}
+  .sidebar-dm-knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.25)}
+  .sidebar-dm-toggle.on .sidebar-dm-knob{transform:translateX(18px)}
+  .sidebar-logout{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border-radius:10px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--sb-text);background:var(--sb-on);text-align:left;transition:all .18s;margin-top:4px}
+  .sidebar-logout:hover{background:var(--sb-hover)}
+  .sidebar-user-menu{background:var(--sb-bg);border:1px solid var(--sb-border);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.2);margin-bottom:10px}
+  .sidebar-user-menu .sidebar-profile-email{color:var(--sb-text2);padding:8px 14px;font-size:.7rem;border-bottom:1px solid var(--sb-bottom-border)}
+  .sidebar-user-menu .sidebar-signout{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:#f87171;text-align:left;transition:background .15s}
+  .sidebar-user-menu .sidebar-signout:hover{background:rgba(248,113,113,.15)}
+  .main-wrap{margin-left:260px;min-height:100vh;height:100vh;height:100dvh;overflow-y:auto;display:flex;flex-direction:column}
+  .main-inner{max-width:1080px;margin:0 auto;width:100%;padding:0 32px 32px;flex:1;padding-top:max(env(safe-area-inset-top),20px);padding-left:max(env(safe-area-inset-left),32px);padding-right:max(env(safe-area-inset-right),32px)}
+  .app.has-sidebar .tabs{display:none}
+  .app.has-sidebar .hdr{padding:max(env(safe-area-inset-top),20px) 0 16px;margin-bottom:20px;gap:8px}
+  .app.has-sidebar .hdr-title{font-size:1.5rem}
+  .app.has-sidebar .hdr-sub{font-size:.7rem;margin-top:2px}
+  .app.has-sidebar .hdr-r{gap:6px;flex-shrink:0}
+  .app.has-sidebar .hdr .streak-pill,.app.has-sidebar .hdr .pts-pill{font-size:.72rem;padding:4px 10px}
+  .app.has-sidebar .btn-sm{padding:4px 10px;font-size:.72rem}
+  .app.has-sidebar .hdr-icon-btn{width:32px;height:32px;font-size:.8rem}
+}
+@media(max-width:768px){
+  .sidebar{display:none!important}
+  .main-inner{padding:0}
+}
+.hdr{padding:max(env(safe-area-inset-top),16px) 0 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid var(--border);margin-bottom:24px;gap:12px;flex-wrap:wrap}
 .hdr-title{font-family:'Fraunces',serif;font-size:1.85rem;font-weight:700;color:var(--text);letter-spacing:-.5px;line-height:1}
 .hdr-sub{font-size:.75rem;color:var(--text3);margin-top:3px;font-weight:500}
+.hdr-hint{font-size:.68rem;color:var(--text4);margin-top:4px;font-weight:500;opacity:.7}
+.hdr-hint kbd{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:.7em;margin:0 2px}
 .hdr-r{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .hdr-icon-btn{width:34px;height:34px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.85rem;color:var(--text2);transition:all .15s;position:relative;flex-shrink:0}
 .hdr-icon-btn:hover{background:var(--bg3);border-color:var(--border2);color:var(--text)}
@@ -457,37 +592,39 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .dm-btn{width:44px;height:26px;border-radius:13px;border:1.5px solid var(--border2);background:var(--bg3);cursor:pointer;position:relative;transition:all .2s;flex-shrink:0;padding:0}
 .dm-knob{width:20px;height:20px;border-radius:50%;background:var(--text2);position:absolute;top:2px;left:2px;transition:transform .2s;display:flex;align-items:center;justify-content:center;font-size:.65rem;line-height:1}
 .dark .dm-knob{transform:translateX(18px)}
-.tabs{display:flex;gap:2px;margin-bottom:22px;background:var(--tb);padding:3px;border-radius:14px;width:fit-content;overflow-x:auto;max-width:100%;scrollbar-width:none}
+.tabs{display:flex;gap:2px;margin-bottom:22px;background:var(--tb);padding:3px;border-radius:14px;width:fit-content;overflow-x:auto;max-width:100%;scrollbar-width:none;position:relative}
 .tabs::-webkit-scrollbar{display:none}
-.tab{padding:7px 15px;border-radius:11px;border:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .18s;white-space:nowrap;letter-spacing:.01em}
+.tabs::after{content:'';position:absolute;right:0;top:0;bottom:0;width:40px;background:linear-gradient(90deg,transparent,var(--tb));pointer-events:none;border-radius:0 14px 14px 0}
+@media(max-width:768px){.tabs::after{display:block}}
+.tab{padding:7px 15px;border-radius:11px;border:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .12s;white-space:nowrap;letter-spacing:.01em}
 .tab:hover:not(.on){background:var(--bg4);color:var(--text2)}
 .tab.on{background:var(--card);color:var(--text);box-shadow:0 1px 6px var(--sh2),0 0 0 1px var(--border)}
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px}
-.stat{background:var(--card);border-radius:18px;padding:16px 16px 13px;border:1.5px solid var(--border);position:relative;overflow:hidden;transition:transform .18s,box-shadow .18s;cursor:default}
+.stat{background:linear-gradient(135deg,var(--card),var(--card2));border-radius:18px;padding:18px 18px 15px;border:1.5px solid var(--border);position:relative;overflow:hidden;transition:transform .12s,box-shadow .12s;cursor:default}
 .stat:hover{transform:translateY(-2px);box-shadow:0 8px 24px var(--sh2)}
-.sacc{position:absolute;top:0;left:0;right:0;height:3px;border-radius:18px 18px 0 0}
+.sacc{position:absolute;top:0;left:0;right:0;height:4px;border-radius:18px 18px 0 0;background:linear-gradient(90deg,var(--accent),var(--accent2))}
 .stat-n{font-family:'Fraunces',serif;font-size:1.9rem;font-weight:700;color:var(--text);line-height:1;margin-top:4px}
 .stat-l{font-size:.68rem;color:var(--text3);margin-top:5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
-.stat-ico{position:absolute;right:12px;top:12px;font-size:1.2rem;opacity:.12}
+.stat-ico{position:absolute;right:12px;top:12px;font-size:1.4rem;opacity:.25}
 .sec-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
 .sec-t{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:600;color:var(--text)}
 .sec-lbl{font-size:.67rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
 .alist{display:flex;flex-direction:column;gap:8px}
-.acard{background:var(--card);border-radius:14px;padding:13px 15px;border:1.5px solid var(--border);display:flex;align-items:center;gap:11px;transition:all .18s}
+.acard{background:var(--card);border-radius:14px;padding:15px 17px;border:1.5px solid var(--border);display:flex;align-items:center;gap:12px;transition:all .12s;flex-wrap:wrap}
 .acard:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--sh);border-color:var(--border2)}
-.acard.ov{border-color:#fca5a5;background:#fff8f8}
-.dark .acard.ov{border-color:#7f1d1d;background:#170808}
+.acard.ov{border-color:#ef4444;background:#fef2f2;border-width:2px;box-shadow:0 0 0 3px rgba(239,68,68,.15)}
+.dark .acard.ov{border-color:#dc2626;background:#1c0000;box-shadow:0 0 0 3px rgba(220,38,38,.2)}
 .stripe{width:5px;border-radius:5px;align-self:stretch;min-height:40px;flex-shrink:0}
 .amain{flex:1;min-width:0}
-.atitle{font-weight:700;color:var(--text);font-size:.91rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:3px}
+.atitle{font-weight:700;color:var(--text);font-size:1.02rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;line-height:1.3}
 .ameta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
 .mtag{font-size:.72rem;font-weight:700}
 .ppill{font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:20px}
 .dbadge{font-size:.71rem;font-weight:700}
-.pbar-wrap{width:88px;flex-shrink:0}
-.pbar-track{height:6px;background:var(--bg3);border-radius:5px;overflow:hidden}
+.pbar-wrap{width:100px;flex-shrink:0}
+.pbar-track{height:8px;background:var(--bg3);border-radius:5px;overflow:hidden}
 .pbar-fill{height:100%;border-radius:5px;transition:width .4s ease}
-.plabel{font-size:.66rem;color:var(--text3);text-align:right;margin-top:2px;font-weight:700}
+.plabel{font-size:.7rem;color:var(--text2);text-align:right;margin-top:3px;font-weight:700}
 .qbtns{display:flex;gap:3px;margin-top:7px}
 .qbtn{font-size:.65rem;padding:3px 7px;border-radius:6px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;color:var(--text3);font-weight:700;transition:all .12s;font-family:'Plus Jakarta Sans',sans-serif}
 .qbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
@@ -498,7 +635,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .sfilt{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .sfbtn{padding:5px 13px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.75rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .12s;font-family:'Plus Jakarta Sans',sans-serif}
 .sfbtn:hover{background:var(--bg3);color:var(--text)}
-.btn{padding:8px 15px;border-radius:10px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:.81rem;transition:all .16s;display:inline-flex;align-items:center;gap:5px;letter-spacing:.01em}
+.btn{padding:8px 15px;border-radius:10px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:.81rem;transition:all .12s;display:inline-flex;align-items:center;gap:5px;letter-spacing:.01em}
 .btn-p{background:var(--accent);color:#fff;box-shadow:0 1px 4px var(--sh)}
 .btn-p:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 14px var(--sh2)}
 .btn-g{background:var(--card);color:var(--text2);border:1.5px solid var(--border)}
@@ -576,7 +713,9 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .buddy-wrap{display:flex;justify-content:center;margin:0 auto 4px;width:180px;height:200px}
 .buddy-bounce{animation:bBounce 2.8s ease-in-out infinite}
 @keyframes bBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-.buddy-shell{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:20px;margin-bottom:16px;text-align:center}
+.buddy-shell{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:20px;margin-bottom:16px;text-align:center;position:relative;overflow:hidden}
+.buddy-shell::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(91,141,238,.08) 0%,transparent 70%);animation:buddyGlow 4s ease-in-out infinite;pointer-events:none}
+@keyframes buddyGlow{0%,100%{transform:translate(0,0) scale(1);opacity:.6}50%{transform:translate(10px,-10px) scale(1.1);opacity:.9}}
 .buddy-stage-name{font-family:'Fraunces',serif;font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:3px}
 .buddy-stage-desc{font-size:.76rem;color:var(--text3);margin-bottom:14px}
 .bpbar{height:8px;background:var(--bg3);border-radius:6px;overflow:hidden;margin:10px 0 5px}
@@ -653,6 +792,11 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 @keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
 .cv-spin{animation:spin .8s linear infinite;display:inline-block}
 @keyframes spin{to{transform:rotate(360deg)}}
+/* Loading skeletons */
+.skeleton{background:linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skeleton-card{height:80px;margin-bottom:8px}
+.skeleton-stat{height:100px;border-radius:18px}
 .err-box{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#dc2626;margin-top:8px;line-height:1.5}
 .dark .err-box{background:#1c0000;border-color:#7f1d1d;color:#ff8080}
 .success-box{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#16a34a;margin-top:6px;font-weight:600}
@@ -673,22 +817,28 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .clstag{display:flex;align-items:center;gap:5px;padding:4px 10px;background:var(--card);border-radius:9px;border:1.5px solid var(--border)}
 .prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.6);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
 .prompt-modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:420px;border:1.5px solid var(--border);box-shadow:0 20px 50px var(--sh2)}
-@media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.pbar-wrap{display:none}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
+@media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
 /* ── MOBILE BOTTOM NAV ── */
 .mob-content{padding:0}
 .bnav{display:none}
 .mob-hdr{display:none}.mob-status{display:none}
 .mob-icon-btn{width:36px;height:36px;border-radius:50%;border:none;background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);transition:all .15s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
 .mob-icon-btn:active{background:var(--bg4);transform:scale(.93)}
+/* ── FLOATING ACTION BUTTON ── */
+.fab{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 4px 20px rgba(91,141,238,.4),0 8px 40px rgba(91,141,238,.2);z-index:150;transition:all .15s;-webkit-tap-highlight-color:transparent}
+.fab:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 6px 28px rgba(91,141,238,.5),0 12px 48px rgba(91,141,238,.25)}
+.fab:active{transform:scale(.92)}
+@media(min-width:769px){.fab{display:flex;bottom:32px;right:32px}}
+@media(max-width:768px){.fab{display:flex}}
 @media(max-width:768px){
   .app{padding:0 0 88px}
   .tabs{display:none}
   /* Show mobile header, hide desktop */
   .hdr{display:none}
   .mob-status{display:flex;}
-  .mob-hdr{display:flex;align-items:center;justify-content:space-between;padding:12px 18px 10px;position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--border)}
-  .mob-hdr-title{font-family:'Fraunces',serif;font-size:1.35rem;font-weight:700;color:var(--text);letter-spacing:-.3px}
-  .mob-hdr-date{font-size:.67rem;color:var(--text3);margin-top:2px;font-weight:500}
+  .mob-hdr{display:flex;align-items:center;justify-content:space-between;padding:max(env(safe-area-inset-top),10px) 18px 8px;position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--border)}
+  .mob-hdr-title{font-family:'Fraunces',serif;font-size:1.25rem;font-weight:700;color:var(--text);letter-spacing:-.3px}
+  .mob-hdr-date{font-size:.65rem;color:var(--text3);margin-top:1px;font-weight:500}
   .mob-hdr-r{display:flex;align-items:center;gap:8px}
   .mob-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.8rem;overflow:hidden;flex-shrink:0;cursor:pointer;border:2px solid var(--bg3)}
   /* Status strip */
@@ -720,7 +870,10 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .modal::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--border2);margin:12px auto 16px;flex-shrink:0}
   .overlay{align-items:flex-end;padding:0}
   /* Cards */
-  .acard{padding:13px 14px;border-radius:14px}
+  .acard{padding:14px 15px;border-radius:14px;gap:10px;align-items:flex-start}
+  .acard .amain{flex:1 1 100%;min-width:0}
+  .atitle{font-size:.95rem}
+  .pbar-wrap{width:100%;order:10;flex-basis:100%}
   .stat{padding:14px 14px 11px;border-radius:16px}
   .stats{grid-template-columns:repeat(3,1fr);gap:8px}
   .stat-n{font-size:1.5rem}
@@ -765,7 +918,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 @keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
 @keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.tab-content{animation:fadeIn .2s ease}
+.tab-content{animation:fadeIn .2s ease;padding-top:2px}
 .acard{animation:fadeIn .15s ease}
 .auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px}
 .auth-card{background:var(--card);border:1.5px solid var(--border);border-radius:24px;padding:36px 32px;width:100%;max-width:420px;box-shadow:0 24px 60px var(--sh2)}
@@ -1421,6 +1574,219 @@ function AdminPanel({user, onClose, inline=false}){
 // ║  This is the entire app in one component. All state lives here.             ║
 // ║  Scroll down for STATE → EFFECTS → LOGIC → RENDER                          ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
+
+function renderMarkdown(text) {
+  // Protect math blocks before escaping HTML
+  const mathBlocks = [];
+  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => { mathBlocks.push({display:true,m}); return "%%MATH"+(mathBlocks.length-1)+"%%"; });
+  text = text.replace(/\$([^\$\n]+?)\$/g, (_, m) => { mathBlocks.push({display:false,m}); return "%%MATH"+(mathBlocks.length-1)+"%%"; });
+  // Escape HTML
+  text = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+  // Markdown formatting
+  text = text.replace(/^### (.+)/gm,"<strong style='font-size:.9rem;display:block;margin:10px 0 4px'>$1</strong>");
+  text = text.replace(/^## (.+)/gm,"<strong style='font-size:.95rem;display:block;margin:12px 0 5px'>$1</strong>");
+  text = text.replace(/^# (.+)/gm,"<strong style='font-size:1rem;display:block;margin:14px 0 6px'>$1</strong>");
+  text = text.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");
+  text = text.replace(/\*(.+?)\*/g,"<em>$1</em>");
+  text = text.replace(/`([^`]+)`/g,"<code style='background:var(--bg2);padding:1px 5px;border-radius:4px;font-size:.8rem;font-family:monospace'>$1</code>");
+  text = text.replace(/^---$/gm,"<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>");
+  text = text.replace(/^\* (.+)/gm,"<div style='padding-left:12px;margin:2px 0'>• $1</div>");
+  text = text.replace(/^- (.+)/gm,"<div style='padding-left:12px;margin:2px 0'>• $1</div>");
+  text = text.replace(/^\d+\. (.+)/gm,"<div style='padding-left:12px;margin:2px 0'>$&</div>");
+  text = text.replace(/\n/g,"<br>");
+  // Restore math with KaTeX if available
+  text = text.replace(/%%MATH(\d+)%%/g, (_, i) => {
+    const {display, m} = mathBlocks[parseInt(i)];
+    if (typeof window !== "undefined" && window.katex) {
+      try { return window.katex.renderToString(m, {displayMode:display, throwOnError:false}); }
+      catch(e) {}
+    }
+    return display ? "$$"+m+"$$" : "$"+m+"$";
+  });
+  return text;
+}
+
+function AITab({assignments, classes}){
+  const [aiMode, setAiMode] = useState("chat");
+  const [chatMsgs, setChatMsgs] = useState([{role:"ai",text:"Hi! I'm your AI study assistant. Ask me anything — homework help, study tips, essay feedback, or just to explain a concept. 🎓"}]);
+  const [chatInput, setChatInput] = useState("");
+  const [chatLoading, setChatLoading] = useState(false);
+  const [flashInput, setFlashInput] = useState("");
+  const [flashCards, setFlashCards] = useState([]);
+  const [flashLoading, setFlashLoading] = useState(false);
+  const [flashFlipped, setFlashFlipped] = useState({});
+  const [writingInput, setWritingInput] = useState("");
+  const [writingFeedback, setWritingFeedback] = useState("");
+  const [writingLoading, setWritingLoading] = useState(false);
+  const [gradeInsight, setGradeInsight] = useState("");
+  const [gradeLoading, setGradeLoading] = useState(false);
+  const chatEndRef = useRef(null);
+
+  const chatScrollRef = useRef(null);
+  useEffect(()=>{ if(chatScrollRef.current){ chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }},[chatMsgs]);
+
+  async function sendChat(){
+    if(!chatInput.trim()||chatLoading) return;
+    const msg = chatInput.trim();
+    setChatInput("");
+    setChatMsgs(prev=>[...prev,{role:"user",text:msg}]);
+    setChatLoading(true);
+    const context = `Student has ${assignments.filter(a=>a.progress<100).length} pending assignments. Classes: ${[...new Set(classes.map(c=>c.name))].join(", ")}. Upcoming: ${assignments.filter(a=>a.progress<100).slice(0,5).map(a=>`${a.title} (${a.subject}) due ${a.dueDate}`).join(", ")}.`;
+    const historySnapshot = chatMsgs.filter(m=>m.text.trim());
+    setChatMsgs(prev=>[...prev,{role:"ai",text:""}]);
+    await callGeminiStream(msg, `You are a friendly, helpful AI study assistant for a high school student. Context: ${context} Keep responses clear and encouraging. Remember the full conversation. Use emojis occasionally.`, (partial)=>{
+      setChatMsgs(prev=>[...prev.slice(0,-1),{role:"ai",text:partial}]);
+    }, historySnapshot);
+    setChatLoading(false);
+  }
+
+  async function genFlashcards(){
+    if(!flashInput.trim()||flashLoading) return;
+    setFlashLoading(true);
+    setFlashCards([]);
+    setFlashFlipped({});
+    const reply = await callGemini(`A high school student wants flashcards to study. Based on the input below, generate 10 flashcards covering actual content they would be tested on — key terms, formulas, theorems, concepts, historical events, vocabulary, etc. If the input is just a subject name (e.g. "Honors Algebra 2", "AP US History"), generate cards covering the most important testable content from that subject. Never ask what the class is about — just generate real study cards. Respond ONLY with a JSON array: [{"q":"question","a":"answer"},...]
+
+Input: ${flashInput}`, "You are a high school study tool. Generate specific, exam-ready flashcards on real subject content. If given only a class name, cover the most commonly tested concepts in that class. Return ONLY valid JSON array, no markdown, no explanation.");
+    try {
+      const clean = reply.replace(/```json|```/g,"").trim();
+      setFlashCards(JSON.parse(clean));
+    } catch(e){ setFlashCards([{q:"Error parsing cards",a:"Try again with clearer notes"}]); }
+    setFlashLoading(false);
+  }
+
+  async function getWritingFeedback(){
+    if(!writingInput.trim()||writingLoading) return;
+    setWritingLoading(true);
+    setWritingFeedback("");
+    const reply = await callGemini(`Give detailed writing feedback on this text. Cover: clarity, structure, grammar, and suggestions for improvement.
+
+Text:
+${writingInput}`, "You are an expert writing coach for high school students. Be encouraging but honest. Use clear sections.");
+    setWritingFeedback(reply);
+    setWritingLoading(false);
+  }
+
+  async function getGradeInsights(){
+    setGradeLoading(true);
+    setGradeInsight("");
+    const graded = assignments.filter(a=>a.grade!=null);
+    const byClass = {};
+    graded.forEach(a=>{ if(!byClass[a.subject]) byClass[a.subject]=[]; byClass[a.subject].push(a.grade); });
+    const summary = Object.entries(byClass).map(([cls,grades])=>`${cls}: avg ${(grades.reduce((s,g)=>s+g,0)/grades.length).toFixed(1)}% (${grades.length} grades)`).join(", ");
+    const reply = await callGemini(`Analyze these grades and give personalized study advice.
+
+Grade summary: ${summary||"No grades yet"}
+Pending assignments: ${assignments.filter(a=>a.progress<100).length}
+
+Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study tips 4) Encouragement`, "You are a supportive academic advisor. Be specific, actionable, and encouraging.");
+    setGradeInsight(reply);
+    setGradeLoading(false);
+  }
+
+  const modes = [["chat","💬 Chat"],["flashcards","🃏 Flashcards"],["writing","✍️ Writing"],["grades","📊 Insights"]];
+
+  return(
+    <div>
+      <div className="sec-hd"><div className="sec-t">✨ AI Study Assistant</div></div>
+      <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
+        {modes.map(([m,l])=>(
+          <button key={m} className="sfbtn" onClick={()=>setAiMode(m)}
+            style={aiMode===m?{background:"var(--accent)",borderColor:"var(--accent)",color:"#fff"}:{}}>
+            {l}
+          </button>
+        ))}
+      </div>
+
+      {aiMode==="chat"&&(
+        <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",overflow:"hidden",display:"flex",flexDirection:"column",height:500,minHeight:300}}>
+          <div ref={chatScrollRef} style={{flex:1,overflowY:"auto",padding:"16px 16px 8px"}}>
+            {chatMsgs.map((m,i)=>(
+              <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:12}}>
+                <div style={{maxWidth:m.role==="user"?"75%":"90%",background:m.role==="user"?"var(--accent)":"var(--bg3)",color:m.role==="user"?"#fff":"var(--text)",borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",padding:"10px 14px",fontSize:".82rem",lineHeight:1.6}}>
+                  {m.role==="ai"?<span dangerouslySetInnerHTML={{__html:renderMarkdown(m.text)}}/>:<span>{m.text}</span>}
+                </div>
+              </div>
+            ))}
+            {chatLoading&&<div style={{display:"flex",justifyContent:"flex-start",marginBottom:12}}><div style={{background:"var(--bg3)",borderRadius:"18px 18px 18px 4px",padding:"10px 14px",fontSize:".82rem",color:"var(--text3)"}}>✨ Thinking...</div></div>}
+          </div>
+          <div style={{borderTop:"1px solid var(--border)",padding:"10px 12px",display:"flex",gap:8,flexShrink:0}}>
+            <input className="finp" style={{flex:1,margin:0}} placeholder="Ask anything..." value={chatInput}
+              onChange={e=>setChatInput(e.target.value)}
+              onKeyDown={e=>e.key==="Enter"&&sendChat()}/>
+            <button className="btn btn-p" onClick={sendChat} disabled={chatLoading} style={{padding:"8px 16px"}}>Send</button>
+          </div>
+        </div>
+      )}
+
+      {aiMode==="flashcards"&&(
+        <div>
+          <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16,marginBottom:16}}>
+            <div className="flbl" style={{marginBottom:8}}>Paste your notes</div>
+            <textarea className="finp" rows={6} style={{resize:"vertical",fontFamily:"inherit"}} placeholder="Paste notes, textbook content, or any material you want to study..." value={flashInput} onChange={e=>setFlashInput(e.target.value)}/>
+            <button className="btn btn-p" style={{marginTop:10,width:"100%"}} onClick={genFlashcards} disabled={flashLoading}>
+              {flashLoading?"✨ Generating...":"🃏 Generate Flashcards"}
+            </button>
+          </div>
+          {flashCards.length>0&&(
+            <div>
+              <div className="sec-lbl">{flashCards.length} cards — tap to flip</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
+                {flashCards.map((c,i)=>(
+                  <div key={i} onClick={()=>setFlashFlipped(f=>({...f,[i]:!f[i]}))}
+                    style={{background:flashFlipped[i]?"var(--accent)":"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"20px 16px",minHeight:120,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all .2s",textAlign:"center"}}>
+                    <div style={{fontSize:".82rem",fontWeight:600,color:flashFlipped[i]?"#fff":"var(--text)",lineHeight:1.5}}>
+                      {flashFlipped[i]?c.a:c.q}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {aiMode==="writing"&&(
+        <div>
+          <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16,marginBottom:16}}>
+            <div className="flbl" style={{marginBottom:8}}>Paste your writing</div>
+            <textarea className="finp" rows={8} style={{resize:"vertical",fontFamily:"inherit"}} placeholder="Paste your essay, paragraph, or any writing for feedback..." value={writingInput} onChange={e=>setWritingInput(e.target.value)}/>
+            <button className="btn btn-p" style={{marginTop:10,width:"100%"}} onClick={getWritingFeedback} disabled={writingLoading}>
+              {writingLoading?"✨ Analyzing...":"✍️ Get Feedback"}
+            </button>
+          </div>
+          {writingFeedback&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16}}>
+              <div className="sec-lbl" style={{marginBottom:10}}>AI Feedback</div>
+              <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(writingFeedback)}}/>
+            </div>
+          )}
+        </div>
+      )}
+
+      {aiMode==="grades"&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
+            <button className="btn btn-p" style={{flex:1}} onClick={getGradeInsights} disabled={gradeLoading}>
+              {gradeLoading?"✨ Analyzing...":"📊 Analyze My Performance"}
+            </button>
+          </div>
+          {!gradeInsight&&!gradeLoading&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:"16px 20px",color:"var(--text3)",fontSize:".85rem"}}>
+              Click above to get AI-powered insights on your grades and study habits.
+            </div>
+          )}
+          {gradeInsight&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16}}>
+              <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(gradeInsight)}}/>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Core data (persisted to Firestore)
@@ -1480,6 +1846,7 @@ export default function StudyDesk() {
     fetch(CF_PROXY,{mode:"no-cors",signal:AbortSignal.timeout(5000)})
       .catch(()=>setProxyBlocked(true));
   },[]);
+  
   function handleLogoClick(){
     logoClicks.current+=1;
     clearTimeout(logoTimer.current);
@@ -1558,6 +1925,8 @@ export default function StudyDesk() {
   const [tokenDraft, setTokenDraft] = useState("");
   const [expandedGradeClass, setExpandedGradeClass] = useState(null);
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showMoreDropdown, setShowMoreDropdown] = useState(false);
+  const [showSidebarUserMenu, setShowSidebarUserMenu] = useState(false);
   const canvasSyncRef = useRef(false);
   const [fetchStatus, setFetchStatus] = useState("");
 
@@ -1613,6 +1982,35 @@ export default function StudyDesk() {
   useEffect(()=>{try{localStorage.setItem("sd-dark",darkMode?"1":"0");}catch{}},[darkMode]);
   useEffect(()=>{try{if(canvasToken)localStorage.setItem("sd-canvas-token",canvasToken);else localStorage.removeItem("sd-canvas-token");}catch{}},[canvasToken]);
   useEffect(()=>{try{localStorage.setItem("sd-canvas-url",canvasBaseUrl);}catch{}},[canvasBaseUrl]);
+
+  // Keyboard shortcuts
+  useEffect(()=>{
+    function handleKeyPress(e){
+      // Ignore if typing in input/textarea
+      if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
+      // Ignore if modal is open
+      if(addingA||addingC||importOpen||showCanvasSetup||showAbout||showReleases||showLeaderboard) return;
+      
+      if(e.key==="n"||e.key==="N"){
+        e.preventDefault();
+        setAddingA(true);
+      }
+      if(e.key==="j"||e.key==="J"){
+        e.preventDefault();
+        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai"];
+        const idx=tabs.indexOf(tab);
+        if(idx<tabs.length-1) setTab(tabs[idx+1]);
+      }
+      if(e.key==="k"||e.key==="K"){
+        e.preventDefault();
+        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai"];
+        const idx=tabs.indexOf(tab);
+        if(idx>0) setTab(tabs[idx-1]);
+      }
+    }
+    window.addEventListener("keydown",handleKeyPress);
+    return()=>window.removeEventListener("keydown",handleKeyPress);
+  },[tab,addingA,addingC,importOpen,showCanvasSetup,showAbout,showReleases,showLeaderboard]);
 
   // Presence heartbeat — updates every 60s while logged in
   useEffect(()=>{
@@ -2893,14 +3291,102 @@ async function run(){
 
   if(!user) return <AuthScreen onAuth={u=>{setUser(u);fbLoadData(u.uid,u.idToken).then(d=>{if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}saveReady.current=true;setLoaded(true);const sv=localStorage.getItem("studydesk-seen-version");if(sv!==APP_VERSION)setShowReleases(true);});}}/>;
 
+  const sidebarNav = [
+    ["dashboard","Dashboard",<svg key="d" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>],
+    ["assignments","Assignments",<svg key="a" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>],
+    ["grades","Grades",<svg key="g" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>],
+    ["schedule","Schedule",<svg key="s" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>],
+    ["timer","Timer",<svg key="t" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 1h6M12 1v3"/></svg>],
+    ["buddy","Buddy",<svg key="b" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>],
+    ["shop","Shop",<svg key="sh" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>],
+    ["ai","AI",<svg key="ai" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg>],
+  ];
+
   return(
     <>
       <style>{css}</style>
       <div className={"dk"+(darkMode?" dark":"")}>
-      <div className="app">
+      <div className={"app"+(!isMobile?" has-sidebar":"")}>
 
+        {/* ── DESKTOP SIDEBAR ────────────────────────────────────── */}
+        {!isMobile&&(
+          <aside className="sidebar">
+            <div className="sidebar-logo" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}}>
+              <img src={process.env.PUBLIC_URL+"/logo.svg"} alt="Study Desk" className="sidebar-logo-img"/>
+              <span className="sidebar-logo-text">Study Desk</span>
+            </div>
+            <nav className="sidebar-nav">
+              {sidebarNav.map(([t,lbl,icon])=>(
+                <button key={t} type="button" className={"sidebar-item"+(tab===t?" on":"")} onClick={()=>{setTab(t);setShowMoreDropdown(false);}}>
+                  {icon}
+                  <span>{lbl}</span>
+                </button>
+              ))}
+              <div className="sidebar-item-wrap">
+                <button type="button" className={"sidebar-item"+(showMoreDropdown?" on":"")} onClick={()=>setShowMoreDropdown(m=>!m)}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                  <span>More</span>
+                </button>
+                {showMoreDropdown&&(
+                  <>
+                    <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowMoreDropdown(false)} aria-hidden="true"/>
+                    <div className="sidebar-more-dropdown">
+                      <button type="button" onClick={()=>{setShowReleases(true);setShowMoreDropdown(false);}}>
+                        <span>🚀</span> Releases
+                      </button>
+                      <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" onClick={()=>setShowMoreDropdown(false)}>
+                        <span>💡</span> Suggestions
+                      </a>
+                      <button type="button" onClick={()=>{setShowAbout(true);setShowMoreDropdown(false);}}>
+                        <span>ℹ️</span> Info
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </nav>
+            <div className="sidebar-bottom">
+              {user&&(
+                <>
+                  <button type="button" className="sidebar-profile" onClick={()=>{setShowSidebarUserMenu(m=>!m);setShowMoreDropdown(false);}} title={user.email}>
+                    <div className="sidebar-profile-avatar">
+                      {user.photoURL?<img src={user.photoURL} alt=""/>:(user.displayName||user.email||"?")[0].toUpperCase()}
+                    </div>
+                    <div className="sidebar-profile-info">
+                      <div className="sidebar-profile-name">{user.displayName||user.email.split("@")[0]}</div>
+                      <div className="sidebar-profile-email">{user.email}</div>
+                    </div>
+                  </button>
+                  {showSidebarUserMenu&&(
+                    <>
+                      <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowSidebarUserMenu(false)} aria-hidden="true"/>
+                      <div className="sidebar-user-menu" style={{position:"relative",zIndex:41}}>
+                        <div className="sidebar-profile-email" style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>{user.email}</div>
+                        <button type="button" className="sidebar-signout" onClick={()=>{setShowSidebarUserMenu(false);fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;}}>
+                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                          Sign out
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </>
+              )}
+              <button type="button" className="sidebar-dm" onClick={()=>setDarkMode(d=>!d)}>
+                {darkMode?<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>:<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>}
+                <span>{darkMode?"Dark":"Light"} mode</span>
+                <span className={"sidebar-dm-toggle"+(darkMode?" on":"")}><span className="sidebar-dm-knob"/></span>
+              </button>
+              {user&&(
+                <button type="button" className="sidebar-logout" onClick={()=>{fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;}}>
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  <span>Logout</span>
+                </button>
+              )}
+            </div>
+          </aside>
+        )}
 
-
+        <div className="main-wrap">
         {/* ── MOBILE HEADER + STATUS ────────────────────────────── */}
         {isMobile&&(<>
           <div className="mob-hdr">
@@ -2946,11 +3432,12 @@ async function run(){
           </div>
         </>)}
 
-        {/* ── DESKTOP HEADER ────────────────────────────────────── */}
+        {/* ── DESKTOP HEADER (Releases, Suggestions, Info, profile live in sidebar) ── */}
         {!isMobile&&<div className="hdr">
-          <div>
+          <div style={{minWidth:0,flex:"1 1 auto"}}>
             <div className="hdr-title" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}}>Study Desk</div>
             <div className="hdr-sub">{dateStr}</div>
+            <div className="hdr-hint">Press <kbd>N</kbd> to add • <kbd>J</kbd>/<kbd>K</kbd> to navigate</div>
           </div>
           <div className="hdr-r">
             {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
@@ -2965,52 +3452,20 @@ async function run(){
                 <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
                   {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.newSubmissions>0?"✅":"🎓"}
                 </span>
-                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error — tap to dismiss":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} submitted!`:canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:canvasToken?"Canvas connected":""}
+                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} in!`:canvasSync.lastSync?"Synced":canvasToken?"Canvas":""}
               </div>
             )}
             {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
             <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</button>
             <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} title="Search assignments">🔍</button>
-            <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"}>{darkMode?"🌙":"☀️"}</button>
-            <button className="hdr-icon-btn" title="What's new" onClick={()=>setShowReleases(true)}>
-              🚀{localStorage.getItem("studydesk-seen-version")!==APP_VERSION&&<span className="notif-dot"/>}
-            </button>
-            <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" className="hdr-icon-btn" style={{textDecoration:"none"}} title="Suggest a feature">💡</a>
-            <button className="hdr-icon-btn" onClick={()=>setShowAbout(true)} title="About">ℹ️</button>
-            {user&&(
-              <div style={{position:"relative"}}>
-                <div className="auth-user-pill" onClick={()=>setShowUserMenu(m=>!m)}
-                  style={{cursor:"pointer",userSelect:"none",paddingRight:12}}>
-                  <div className="auth-avatar">
-                    {user.photoURL?<img src={user.photoURL} width="22" height="22" style={{borderRadius:"50%"}}/>:(user.displayName||user.email||"?")[0].toUpperCase()}
-                  </div>
-                  <span style={{maxWidth:90,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{user.displayName||user.email.split("@")[0]}</span>
-                  <span style={{fontSize:".6rem",opacity:.5,marginLeft:2}}>{showUserMenu?"▲":"▼"}</span>
-                </div>
-                {showUserMenu&&(
-                  <>
-                    <div style={{position:"fixed",inset:0,zIndex:99}} onClick={()=>setShowUserMenu(false)}/>
-                    <div style={{position:"absolute",right:0,top:"calc(100% + 6px)",background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:12,boxShadow:"0 8px 24px var(--sh)",zIndex:100,minWidth:160,overflow:"hidden"}}>
-                      <div style={{padding:"10px 14px",borderBottom:"1px solid var(--border))"}}>
-                        <div style={{fontWeight:700,fontSize:".82rem",color:"var(--text)"}}>{user.displayName||user.email.split("@")[0]}</div>
-                        <div style={{fontSize:".7rem",color:"var(--text4)",marginTop:1}}>{user.email}</div>
-                      </div>
-                      <button onClick={()=>{setShowUserMenu(false);fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;}}
-                        style={{width:"100%",padding:"10px 14px",background:"transparent",border:"none",textAlign:"left",cursor:"pointer",fontSize:".82rem",fontWeight:600,color:"#dc2626",fontFamily:"'Plus Jakarta Sans',sans-serif",display:"flex",alignItems:"center",gap:8}}>
-                        ↩ Sign out
-                      </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
           </div>
         </div>}
 
 
-        {/* TABS */}
+        <div className="main-inner">
+        {/* TABS (desktop: hidden when sidebar shown) */}
         <div className="tabs">
-          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["timer","⏱ Timer"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"]].map(([t,l])=>(
+          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["timer","⏱ Timer"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"],["ai","✨ AI"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
@@ -3401,7 +3856,9 @@ async function run(){
         )}
 
         {/* ═══ BUDDY ════════════════════════════════════════════════ */}
-        {tab==="buddy"&&(()=>{
+        {tab==="ai"&&<AITab assignments={assignments} classes={classes}/>}
+
+                {tab==="buddy"&&(()=>{
           const st=getBuddyStage(game.streak);
           const info=BUDDY_STAGES[st];
           const pct=info.next?Math.min(100,Math.round(((game.streak-info.min)/(info.next-info.min))*100)):100;
@@ -4542,6 +4999,8 @@ async function run(){
 
         </div>{/* end mob-content */}
 
+        </div>{/* end main-inner */}
+
       {/* PWA INSTALL BANNER — mobile only */}
       {pwaPrompt&&isMobile&&(
         <div className="pwa-banner">
@@ -4591,6 +5050,8 @@ async function run(){
         </div>
       )}
 
+        </div>{/* end main-wrap */}
+
       {/* MOBILE BOTTOM NAV */}
       <nav className="bnav">
         {([
@@ -4599,6 +5060,7 @@ async function run(){
           ["grades","Grades",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>],
           ["timer","Timer",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 1h6M12 1v3"/></svg>],
           ["schedule","Plan",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>],
+          ["ai","AI",<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg>],
         ]).map(([t,lbl,icon])=>(
           <button key={t} className={"bnav-btn"+(tab===t?" on":"")} onClick={()=>setTab(t)}>
             <span className="bnav-ico">{icon}</span>
@@ -4606,6 +5068,14 @@ async function run(){
           </button>
         ))}
       </nav>
+
+      {/* FLOATING ACTION BUTTON */}
+      <button className="fab" onClick={()=>setAddingA(true)} title="Add Assignment">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+          <line x1="12" y1="5" x2="12" y2="19"/>
+          <line x1="5" y1="12" x2="19" y2="12"/>
+        </svg>
+      </button>
 
     </>
   );
