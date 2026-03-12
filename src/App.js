@@ -509,7 +509,7 @@ export default function StudyDesk() {
   }
 
   // Import handlers
-  const handleConfirmImport = () => confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, () => resetImport(setImportUrl, setPasteText, setCanvasPaste, setImportResult, setImportStep, setCanvasStatus, setAgendaUrl, setFetchStatus, setAgendaStep, setAgendaDocText, setAgendaSlideLinks, setAgendaSlideTexts), setTab, fbIncrementStat);
+  const handleConfirmImport = () => confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, () => resetImport(setImportUrl, setPasteText, setCanvasPaste, setImportResult, setImportStep, setCanvasStatus, setAgendaUrl, setFetchStatus, setAgendaStep, setAgendaDocText, setAgendaSlideLinks, setAgendaSlideTexts));
   const handleImportFromCanvasPaste = () => importFromCanvasPaste(canvasPaste, setImporting, setImportResult);
   const handleImportFromCanvasAPI = () => importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult);
   const handleImportFromSlides = () => importFromSlides(pasteText, setImporting, setImportResult);
@@ -2092,7 +2092,7 @@ async function run(){
                     </div>
                     <div className="mactions">
                       <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Cancel</button>
-                      <button className="btn btn-p" style={{background:"#4338ca",minWidth:160}} onClick={importFromCanvasAPI}>
+                      <button className="btn btn-p" style={{background:"#4338ca",minWidth:160}} onClick={handleImportFromCanvasAPI}>
                         🎓 Import All Assignments
                       </button>
                     </div>
@@ -2119,7 +2119,7 @@ async function run(){
                     </div>
                     <div className="mactions">
                       <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Cancel</button>
-                      <button className="btn btn-p" style={{background:"#4338ca"}} onClick={importFromCanvasPaste} disabled={!canvasPaste.trim()}>Import</button>
+                      <button className="btn btn-p" style={{background:"#4338ca"}} onClick={handleImportFromCanvasPaste} disabled={!canvasPaste.trim()}>Import</button>
                     </div>
                   </>
                 )}
@@ -2307,7 +2307,7 @@ async function run(){
                 </div>
                 <div className="mactions">
                   <button className="btn btn-g" onClick={()=>{setImportResult(null);setFetchStatus("");setCanvasStatus("");setImporting(false);}}>← Redo</button>
-                  <button className="btn btn-p" onClick={confirmImport} disabled={!importResult.assignments.length}>Add {importResult.assignments.length} to Tracker →</button>
+                  <button className="btn btn-p" onClick={handleConfirmImport} disabled={!importResult.assignments.length}>Add {importResult.assignments.length} to Tracker →</button>
                 </div>
               </>
             )}
