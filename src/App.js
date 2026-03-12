@@ -1771,32 +1771,52 @@ function AITab({assignments, classes}){
       // Convert image to base64
       const reader = new FileReader();
       reader.onload = async (e) => {
-        const base64 = e.target.result.split(',')[1];
-        
-        // Call Gemini Vision API
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,{
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body:JSON.stringify({
-            contents:[{
-              parts:[
-                {text:"You are a helpful homework tutor. Analyze this homework problem and provide a clear, step-by-step solution. Explain the concepts involved and show your work. Be encouraging and educational."},
-                {inline_data:{mime_type:"image/jpeg",data:base64}}
-              ]
-            }]
-          })
-        });
-        
-        const data = await response.json();
-        const solution = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't analyze this image. Please try again.";
-        setHwSolution(solution);
+        try{
+          const base64 = e.target.result.split(',')[1];
+          
+          console.log("Calling Gemini Vision API...");
+          console.log("API Key present:", !!GEMINI_KEY);
+          
+          // Call Gemini Vision API
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              contents:[{
+                parts:[
+                  {text:"You are a helpful homework tutor. Analyze this homework problem and provide a clear, step-by-step solution. Explain the concepts involved and show your work. Be encouraging and educational."},
+                  {inline_data:{mime_type:"image/jpeg",data:base64}}
+                ]
+              }]
+            })
+          });
+          
+          console.log("Gemini response status:", response.status);
+          
+          if(!response.ok){
+            const errorData = await response.json();
+            console.error("Gemini API error:", errorData);
+            throw new Error(`API error: ${errorData.error?.message || response.status}`);
+          }
+          
+          const data = await response.json();
+          console.log("Gemini response:", data);
+          
+          const solution = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't analyze this image. Please try again.";
+          setHwSolution(solution);
+          setHwLoading(false);
+        }catch(err){
+          console.error("Analysis error:", err);
+          setHwSolution("Error analyzing image: " + err.message);
+          setHwLoading(false);
+        }
       };
       reader.readAsDataURL(hwImage);
     }catch(e){
-      setHwSolution("Error analyzing image: " + e.message);
+      console.error("Reader error:", e);
+      setHwSolution("Error reading image: " + e.message);
+      setHwLoading(false);
     }
-    
-    setHwLoading(false);
   }
 
   function resetHomework(){
