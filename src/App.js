@@ -524,6 +524,13 @@ const css = `
 *{box-sizing:border-box;margin:0;padding:0}
 :root{--bg:#F4F1EB;--bg2:#FFFFFF;--bg3:#EDEAE3;--bg4:#E5E1D8;--border:#DDD9D1;--border2:#C4BFB5;--text:#18192B;--text2:#52556E;--text3:#8F93A8;--text4:#C2C5D4;--accent:#5B8DEE;--accent2:#4A7DD9;--card:#FFFFFF;--card2:#F9F7F3;--sh:rgba(24,25,43,.06);--sh2:rgba(24,25,43,.13);--mbg:#F4F1EB;--ibg:#FFFFFF;--sg:linear-gradient(160deg,#FFFFFF,#F5F3EE);--hb:#18192B;--tb:#E8E4DC;--tc:#F5F3ED;--schdr:#5B8DEE;--radius:16px;--sb-bg:#DDE1E8;--sb-text:#1a1a2e;--sb-text2:rgba(26,26,46,.75);--sb-border:rgba(0,0,0,.08);--sb-hover:rgba(0,0,0,.06);--sb-on:rgba(0,0,0,.12);--sb-bottom-border:rgba(0,0,0,.06)}
 .dark{--bg:#0D0F18;--bg2:#13151F;--bg3:#181B27;--bg4:#1E2130;--border:#232638;--border2:#2E3248;--text:#E0E4F8;--text2:#8A90B8;--text3:#525875;--text4:#303550;--accent:#7C85FF;--accent2:#9199FF;--card:#13151F;--card2:#171A26;--sh:rgba(0,0,0,.35);--sh2:rgba(0,0,0,.55);--mbg:#13151F;--ibg:#181B27;--sg:linear-gradient(160deg,#181B27,#13151F);--hb:#232638;--tb:#171A26;--tc:#161822;--schdr:#7C85FF;--radius:16px;--sb-bg:#1A2B3C;--sb-text:#fff;--sb-text2:rgba(255,255,255,.75);--sb-border:rgba(255,255,255,.08);--sb-hover:rgba(255,255,255,.08);--sb-on:rgba(255,255,255,.14);--sb-bottom-border:rgba(255,255,255,.06)}
+/* Custom Scrollbars */
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-track{background:var(--bg3);border-radius:10px}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px;border:2px solid var(--bg3)}
+::-webkit-scrollbar-thumb:hover{background:var(--text4)}
+/* Firefox */
+*{scrollbar-width:thin;scrollbar-color:var(--border2) var(--bg3)}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:100vh;color:var(--text);transition:background .25s,color .25s}
 .dk{background:var(--bg);min-height:100vh;transition:background .25s}
 .app{max-width:1080px;margin:0 auto;padding:0 20px 120px}
