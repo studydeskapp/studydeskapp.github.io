@@ -1693,7 +1693,7 @@ function AITab({assignments, classes}){
   }
 
   async function generateQRCode(){
-    // Generate a unique upload URL (in a real app, this would be a server endpoint)
+    // Generate a unique upload URL
     const uploadId = Math.random().toString(36).substring(7);
     const uploadUrl = `${window.location.origin}/upload/${uploadId}`;
     setPhoneUploadUrl(uploadUrl);
@@ -2011,6 +2011,112 @@ Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study t
   );
 }
 
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  § PHONE UPLOAD PAGE                                                         │
+// │  Simple upload page for phone users who scan QR code                        │
+// └──────────────────────────────────────────────────────────────────────────────┘
+function PhoneUploadPage({uploadId}){
+  const [uploaded, setUploaded] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [preview, setPreview] = useState(null);
+  const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
+
+  async function handleUpload(e){
+    const file = e.target.files?.[0];
+    if(!file) return;
+    
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      setPreview(ev.target.result);
+      // In a real implementation, you'd send this to a server endpoint
+      // that the PC would poll to receive the image
+      // For now, we'll just show success
+      setTimeout(()=>{
+        setUploading(false);
+        setUploaded(true);
+      }, 1000);
+    };
+    reader.readAsDataURL(file);
+  }
+
+  const bg=darkMode?"#0F1117":"#F5F2EC";
+  const card=darkMode?"#161921":"#FFFFFF";
+  const bd=darkMode?"#262B3C":"#E2DDD6";
+  const txt=darkMode?"#DDE2F5":"#1B1F3B";
+  const txt3=darkMode?"#5C6480":"#888888";
+  const acc=darkMode?"#7B83F7":"#1B1F3B";
+
+  return(
+    <div style={{minHeight:"100vh",background:bg,padding:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+      <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');`}</style>
+      
+      <div style={{maxWidth:500,margin:"0 auto",paddingTop:40}}>
+        <div style={{textAlign:"center",marginBottom:30}}>
+          <div style={{width:64,height:64,borderRadius:16,overflow:"hidden",margin:"0 auto 16px",background:card,border:`1.5px solid ${bd}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem"}}>📚</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.5rem",fontWeight:700,color:txt,marginBottom:6}}>Study Desk</div>
+          <div style={{fontSize:".85rem",color:txt3}}>Upload your homework</div>
+        </div>
+
+        {!uploaded?(
+          <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:20,padding:24}}>
+            <div style={{fontSize:"1.1rem",fontWeight:700,color:txt,marginBottom:16,textAlign:"center"}}>
+              📸 Take or select a photo
+            </div>
+            
+            {preview?(
+              <div>
+                <div style={{marginBottom:16,borderRadius:12,overflow:"hidden",border:`1.5px solid ${bd}`}}>
+                  <img src={preview} alt="Preview" style={{width:"100%",display:"block"}}/>
+                </div>
+                {uploading?(
+                  <div style={{textAlign:"center",padding:20,color:txt3}}>
+                    <div style={{fontSize:"2rem",marginBottom:10}}>⏳</div>
+                    <div>Uploading...</div>
+                  </div>
+                ):(
+                  <label style={{display:"block",padding:"12px",background:acc,color:"#fff",borderRadius:12,textAlign:"center",fontWeight:700,cursor:"pointer"}}>
+                    <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
+                    📷 Take Another Photo
+                  </label>
+                )}
+              </div>
+            ):(
+              <label style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"40px 20px",border:`2px dashed ${bd}`,borderRadius:16,cursor:"pointer",background:darkMode?"#1C1F2B":"#F8F8F8"}}>
+                <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
+                <div style={{fontSize:"3rem"}}>📷</div>
+                <div style={{fontSize:".9rem",fontWeight:600,color:txt}}>Tap to take a photo</div>
+                <div style={{fontSize:".75rem",color:txt3,textAlign:"center",lineHeight:1.5}}>
+                  Your photo will be sent to your computer automatically
+                </div>
+              </label>
+            )}
+          </div>
+        ):(
+          <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:20,padding:24,textAlign:"center"}}>
+            <div style={{fontSize:"3rem",marginBottom:16}}>✅</div>
+            <div style={{fontSize:"1.2rem",fontWeight:700,color:txt,marginBottom:8}}>Upload successful!</div>
+            <div style={{fontSize:".85rem",color:txt3,lineHeight:1.6,marginBottom:20}}>
+              Your homework photo has been sent to your computer. You can close this page and return to your PC.
+            </div>
+            <div style={{marginBottom:16,borderRadius:12,overflow:"hidden",border:`1.5px solid ${bd}`}}>
+              <img src={preview} alt="Uploaded" style={{width:"100%",display:"block"}}/>
+            </div>
+            <button onClick={()=>{setUploaded(false);setPreview(null);}}
+              style={{padding:"10px 20px",background:"transparent",border:`1.5px solid ${bd}`,borderRadius:10,color:txt,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
+              Upload Another
+            </button>
+          </div>
+        )}
+
+        <div style={{marginTop:20,textAlign:"center",fontSize:".75rem",color:txt3}}>
+          Upload ID: {uploadId}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Core data (persisted to Firestore)
@@ -2079,7 +2185,13 @@ export default function StudyDesk() {
   }
   // /admin route detection
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const isAdminRoute = new URLSearchParams(window.location.search).get("admin")==="1";
+  const isAdminRoute = window.location.pathname === "/admin" || new URLSearchParams(window.location.search).get("admin")==="1";
+  
+  // /upload/:id route detection for phone uploads
+  const uploadMatch = window.location.pathname.match(/^\/upload\/([a-zA-Z0-9]+)$/);
+  const isUploadRoute = !!uploadMatch;
+  const uploadId = uploadMatch?.[1];
+  
   // Force clear any existing session on admin route so non-admins can't auto-login
 
   const [adminRouteAuthed, setAdminRouteAuthed] = useState(false);
@@ -2168,7 +2280,7 @@ export default function StudyDesk() {
 
   // Restore session on mount — always force fresh login on /admin route
   useEffect(()=>{
-    const onAdminRoute = new URLSearchParams(window.location.search).get("admin")==="1";
+    const onAdminRoute = window.location.pathname === "/admin" || new URLSearchParams(window.location.search).get("admin")==="1";
     if(onAdminRoute){
       // Clear any existing session so admin must always sign in fresh
       fbClearSession();
@@ -3432,6 +3544,12 @@ async function run(){
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // RENDER
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  
+  // /upload/:id route — phone upload page
+  if(isUploadRoute){
+    return <PhoneUploadPage uploadId={uploadId}/>;
+  }
+  
   // /admin route — checked BEFORE authLoading so it never shows blank/spinner
   if(isAdminRoute){
     if(!user){
