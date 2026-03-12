@@ -1621,9 +1621,138 @@ function AITab({assignments, classes}){
   const [gradeInsight, setGradeInsight] = useState("");
   const [gradeLoading, setGradeLoading] = useState(false);
   const chatEndRef = useRef(null);
+  
+  // Homework help state
+  const [hwUploadMode, setHwUploadMode] = useState(null); // null, "file", "camera", "phone"
+  const [hwImage, setHwImage] = useState(null);
+  const [hwImagePreview, setHwImagePreview] = useState(null);
+  const [hwSolution, setHwSolution] = useState("");
+  const [hwLoading, setHwLoading] = useState(false);
+  const [qrCode, setQrCode] = useState(null);
+  const [phoneUploadUrl, setPhoneUploadUrl] = useState(null);
+  const videoRef = useRef(null);
+  const canvasRef = useRef(null);
 
   const chatScrollRef = useRef(null);
   useEffect(()=>{ if(chatScrollRef.current){ chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }},[chatMsgs]);
+
+  // Cleanup camera on unmount or mode change
+  useEffect(()=>{
+    return ()=>stopCamera();
+  },[]);
+
+  useEffect(()=>{
+    if(aiMode!=="homework") stopCamera();
+  },[aiMode]);
+
+  // Homework help functions
+  function handleFileUploadHw(e){
+    const file = e.target.files?.[0];
+    if(!file) return;
+    setHwImage(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setHwImagePreview(ev.target.result);
+    reader.readAsDataURL(file);
+    setHwUploadMode("file");
+  }
+
+  async function startCamera(){
+    try{
+      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
+      if(videoRef.current){
+        videoRef.current.srcObject = stream;
+        videoRef.current.play();
+      }
+      setHwUploadMode("camera");
+    }catch(e){
+      alert("Camera access denied or not available");
+    }
+  }
+
+  function capturePhoto(){
+    if(!videoRef.current||!canvasRef.current) return;
+    const video = videoRef.current;
+    const canvas = canvasRef.current;
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext("2d");
+    ctx.drawImage(video,0,0);
+    canvas.toBlob(blob=>{
+      setHwImage(blob);
+      setHwImagePreview(canvas.toDataURL());
+      stopCamera();
+      setHwUploadMode("file");
+    },"image/jpeg",0.9);
+  }
+
+  function stopCamera(){
+    if(videoRef.current?.srcObject){
+      videoRef.current.srcObject.getTracks().forEach(t=>t.stop());
+      videoRef.current.srcObject = null;
+    }
+  }
+
+  async function generateQRCode(){
+    // Generate a unique upload URL (in a real app, this would be a server endpoint)
+    const uploadId = Math.random().toString(36).substring(7);
+    const uploadUrl = `${window.location.origin}/upload/${uploadId}`;
+    setPhoneUploadUrl(uploadUrl);
+    
+    // Generate QR code using a simple QR code API
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uploadUrl)}`;
+    setQrCode(qrUrl);
+    setHwUploadMode("phone");
+    
+    // In a real implementation, you'd poll a server endpoint to check for uploads
+    // For now, we'll just show the QR code
+  }
+
+  async function analyzeHomework(){
+    if(!hwImage||hwLoading) return;
+    setHwLoading(true);
+    setHwSolution("");
+    
+    try{
+      // Convert image to base64
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        const base64 = e.target.result.split(',')[1];
+        
+        // Call Gemini Vision API
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,{
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            contents:[{
+              parts:[
+                {text:"You are a helpful homework tutor. Analyze this homework problem and provide a clear, step-by-step solution. Explain the concepts involved and show your work. Be encouraging and educational."},
+                {inline_data:{mime_type:"image/jpeg",data:base64}}
+              ]
+            }]
+          })
+        });
+        
+        const data = await response.json();
+        const solution = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't analyze this image. Please try again.";
+        setHwSolution(solution);
+      };
+      reader.readAsDataURL(hwImage);
+    }catch(e){
+      setHwSolution("Error analyzing image: " + e.message);
+    }
+    
+    setHwLoading(false);
+  }
+
+  function resetHomework(){
+    setHwUploadMode(null);
+    setHwImage(null);
+    setHwImagePreview(null);
+    setHwSolution("");
+    setQrCode(null);
+    setPhoneUploadUrl(null);
+    stopCamera();
+  }
 
   async function sendChat(){
     if(!chatInput.trim()||chatLoading) return;
@@ -1684,7 +1813,7 @@ Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study t
     setGradeLoading(false);
   }
 
-  const modes = [["chat","💬 Chat"],["flashcards","🃏 Flashcards"],["writing","✍️ Writing"],["grades","📊 Insights"]];
+  const modes = [["chat","💬 Chat"],["homework","📸 Homework Help"],["flashcards","🃏 Flashcards"],["writing","✍️ Writing"],["grades","📊 Insights"]];
 
   return(
     <div>
@@ -1716,6 +1845,101 @@ Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study t
               onKeyDown={e=>e.key==="Enter"&&sendChat()}/>
             <button className="btn btn-p" onClick={sendChat} disabled={chatLoading} style={{padding:"8px 16px"}}>Send</button>
           </div>
+        </div>
+      )}
+
+      {aiMode==="homework"&&(
+        <div>
+          {!hwUploadMode&&!hwImage&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
+              <div className="sec-lbl" style={{marginBottom:16}}>How would you like to submit your homework?</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
+                <label style={{background:"var(--bg3)",border:"2px dashed var(--border)",borderRadius:14,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+                  <input type="file" accept="image/*" style={{display:"none"}} onChange={handleFileUploadHw}/>
+                  <div style={{fontSize:"2.5rem"}}>📁</div>
+                  <div style={{fontWeight:700,fontSize:".88rem",color:"var(--text)"}}>Upload File</div>
+                  <div style={{fontSize:".75rem",color:"var(--text3)",lineHeight:1.4}}>Choose a photo or document from your device</div>
+                </label>
+                
+                <button onClick={startCamera} style={{background:"var(--bg3)",border:"2px dashed var(--border)",borderRadius:14,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+                  <div style={{fontSize:"2.5rem"}}>📷</div>
+                  <div style={{fontWeight:700,fontSize:".88rem",color:"var(--text)"}}>Use Camera</div>
+                  <div style={{fontSize:".75rem",color:"var(--text3)",lineHeight:1.4}}>Take a photo with your device camera</div>
+                </button>
+                
+                <button onClick={generateQRCode} style={{background:"var(--bg3)",border:"2px dashed var(--border)",borderRadius:14,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
+                  <div style={{fontSize:"2.5rem"}}>📱</div>
+                  <div style={{fontWeight:700,fontSize:".88rem",color:"var(--text)"}}>Use Phone</div>
+                  <div style={{fontSize:".75rem",color:"var(--text3)",lineHeight:1.4}}>Scan QR code to upload from your phone</div>
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hwUploadMode==="camera"&&!hwImage&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
+              <div className="sec-lbl" style={{marginBottom:12}}>Position your homework in the frame</div>
+              <div style={{position:"relative",background:"#000",borderRadius:12,overflow:"hidden",marginBottom:12}}>
+                <video ref={videoRef} style={{width:"100%",display:"block"}} autoPlay playsInline/>
+                <canvas ref={canvasRef} style={{display:"none"}}/>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn btn-g" onClick={()=>{stopCamera();setHwUploadMode(null);}} style={{flex:1}}>Cancel</button>
+                <button className="btn btn-p" onClick={capturePhoto} style={{flex:2}}>📸 Capture Photo</button>
+              </div>
+            </div>
+          )}
+
+          {hwUploadMode==="phone"&&!hwImage&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,textAlign:"center"}}>
+              <div className="sec-lbl" style={{marginBottom:16}}>Scan this QR code with your phone</div>
+              {qrCode&&(
+                <div style={{marginBottom:16}}>
+                  <img src={qrCode} alt="QR Code" style={{maxWidth:200,margin:"0 auto",display:"block",border:"4px solid var(--border)",borderRadius:12}}/>
+                </div>
+              )}
+              <div style={{fontSize:".85rem",color:"var(--text3)",marginBottom:16,lineHeight:1.6}}>
+                Open your phone's camera app and point it at the QR code above. Tap the notification to open the upload page, then take or select a photo of your homework.
+              </div>
+              <div style={{background:"var(--bg3)",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
+                <div style={{fontSize:".75rem",fontWeight:700,color:"var(--text2)",marginBottom:6}}>📱 Waiting for upload...</div>
+                <div style={{fontSize:".72rem",color:"var(--text3)"}}>Once you upload from your phone, the image will appear here automatically</div>
+              </div>
+              <button className="btn btn-g" onClick={resetHomework}>Cancel</button>
+            </div>
+          )}
+
+          {hwImage&&hwImagePreview&&!hwSolution&&(
+            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
+              <div className="sec-lbl" style={{marginBottom:12}}>Preview your homework</div>
+              <div style={{marginBottom:16,borderRadius:12,overflow:"hidden",border:"1.5px solid var(--border)"}}>
+                <img src={hwImagePreview} alt="Homework" style={{width:"100%",display:"block"}}/>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn btn-g" onClick={resetHomework} style={{flex:1}}>Start Over</button>
+                <button className="btn btn-p" onClick={analyzeHomework} disabled={hwLoading} style={{flex:2}}>
+                  {hwLoading?"✨ Analyzing...":"🤖 Get Help with This"}
+                </button>
+              </div>
+            </div>
+          )}
+
+          {hwSolution&&(
+            <div>
+              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,marginBottom:16}}>
+                <div className="sec-lbl" style={{marginBottom:12}}>Your homework</div>
+                <div style={{borderRadius:12,overflow:"hidden",border:"1.5px solid var(--border)",marginBottom:12}}>
+                  <img src={hwImagePreview} alt="Homework" style={{width:"100%",maxHeight:300,objectFit:"contain",display:"block"}}/>
+                </div>
+                <button className="btn btn-g" onClick={resetHomework} style={{width:"100%"}}>Submit Another Problem</button>
+              </div>
+              
+              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
+                <div className="sec-lbl" style={{marginBottom:12}}>📚 Solution & Explanation</div>
+                <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwSolution)}}/>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
