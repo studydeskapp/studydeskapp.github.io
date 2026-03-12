@@ -2356,23 +2356,9 @@ export default function StudyDesk() {
     logoTimer.current=setTimeout(()=>{logoClicks.current=0;},1800);
     // 5-click logo trick disabled — use /admin route instead
   }
-  // /admin route detection - support both /admin and /#admin
+  // /admin route detection - check pathname directly like upload route
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const [currentPath, setCurrentPath] = useState(window.location.pathname);
-  const [currentHash, setCurrentHash] = useState(window.location.hash);
-  
-  // Re-check pathname and hash after mount
-  useEffect(()=>{
-    setCurrentPath(window.location.pathname);
-    setCurrentHash(window.location.hash);
-    
-    // Log for debugging
-    console.log("Current pathname:", window.location.pathname);
-    console.log("Current hash:", window.location.hash);
-    console.log("Full URL:", window.location.href);
-  },[]);
-  
-  const isAdminRoute = currentPath === "/admin" || currentHash === "#admin" || new URLSearchParams(window.location.search).get("admin")==="1";
+  const isAdminRoute = window.location.pathname === "/admin" || window.location.hash === "#admin" || new URLSearchParams(window.location.search).get("admin")==="1";
   
   // /upload/:id route detection for phone uploads
   const uploadMatch = window.location.pathname.match(/^\/upload\/([a-zA-Z0-9]+)$/);
