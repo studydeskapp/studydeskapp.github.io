@@ -42,13 +42,13 @@ Return only the JSON array, no other text.`;
 
   try {
     const response = await callGemini(prompt);
-    const parsed = JSON.parse(response);
+    const clean = response.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+    const parsed = JSON.parse(clean);
     return Array.isArray(parsed) ? parsed : [];
   } catch (e) {
     // Fallback to simple regex parsing
     const lines = text.split('\n').filter(line => line.trim());
     const assignments = [];
-    
     for (const line of lines) {
       if (line.toLowerCase().includes('due') || line.toLowerCase().includes('assignment')) {
         assignments.push({
@@ -60,7 +60,6 @@ Return only the JSON array, no other text.`;
         });
       }
     }
-    
     return assignments;
   }
 }
@@ -78,7 +77,6 @@ export async function importFromCanvasPaste(canvasPaste, setImporting, setImport
     const parsed = JSON.parse(clean.slice(s, e + 1));
     if (!Array.isArray(parsed) || parsed.length === 0) throw new Error("No assignments found. Make sure you're logged into Canvas first.");
 
-    // Parse Canvas planner format
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const assignments = parsed
       .filter(item => item.plannable_type === "assignment" || item.plannable_type === "quiz" || item.plannable_type === "discussion_topic")
@@ -119,7 +117,6 @@ export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhos
   try {
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const startDate = today.toISOString().split("T")[0];
-    // Fetch ALL pages of upcoming assignments
     let allItems = [];
     let currentPath = `/api/v1/planner/items?per_page=100&start_date=${startDate}`;
     let pageCount = 0;
@@ -143,7 +140,6 @@ export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhos
 
     if (allItems.length === 0) throw new Error("No upcoming assignments found on Canvas.");
 
-    // Parse into assignment objects
     const parsed = allItems
       .filter(item => ["assignment", "quiz", "discussion_topic", "wiki_page"].includes(item.plannable_type))
       .map(item => {
@@ -210,39 +206,70 @@ export async function fetchViaProxy(url) {
 }
 
 // ── Import Confirmation Logic ──────────────────────────────────────────────────
-export function confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, resetImportFn, setTab, fbIncrementStat) {
-  const incoming = importResult?.assignments || [];
+export function confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, resetImportFn) {
+  const incoming = importResult?.assignments;
+
+  // Guard: nothing to import
+  if (!incoming || !Array.isArray(incoming) || incoming.length === 0) {
+    console.warn('confirmImport: no assignments to import', importResult);
+    return;
+  }
+
   setAssignments(prev => {
-    let updated = [...prev];
+    const existing = Array.isArray(prev) ? prev : [];
     const toAdd = [];
+    let updated = [...existing];
+
     for (const a of incoming) {
-      // Try to find existing match by canvasId or title+subject
+      // Match by canvasId first, then by title+subject
       const match = updated.find(ex =>
-        (a.canvasId && ex.canvasId === a.canvasId) ||
-        (ex.title.toLowerCase().trim() === a.title.toLowerCase().trim() &&
-          (!a.subject || !ex.subject || ex.subject.toLowerCase() === a.subject.toLowerCase()))
+        (a.canvasId && ex.canvasId && ex.canvasId === a.canvasId) ||
+        (
+          ex.title?.toLowerCase().trim() === a.title?.toLowerCase().trim() &&
+          (!a.subject || !ex.subject || ex.subject.toLowerCase() === a.subject.toLowerCase())
+        )
       );
+
       if (match) {
-        // Update with Canvas data
+        // Merge Canvas data into existing assignment
         updated = updated.map(ex => ex.id === match.id ? {
           ...ex,
           ...(a.canvasId ? { canvasId: a.canvasId } : {}),
           subject: a.subject || ex.subject,
           dueDate: a.dueDate || ex.dueDate,
           priority: a.priority || ex.priority,
-          progress: Math.max(ex.progress, a.progress),
+          progress: Math.max(ex.progress ?? 0, a.progress ?? 0),
           ...(a.grade != null ? { grade: a.grade, gradeRaw: a.gradeRaw } : {}),
-          ...(a.pointsPossible ? { pointsPossible: a.pointsPossible } : {}),
+          ...(a.pointsPossible != null ? { pointsPossible: a.pointsPossible } : {}),
         } : ex);
       } else {
-        toAdd.push({ ...a, id: Date.now().toString() + Math.random().toString(36).slice(2) });
+        // New assignment — give it a stable unique id
+        toAdd.push({
+          progress: 0,
+          priority: 'medium',
+          subject: '',
+          notes: '',
+          dueDate: '',
+          ...a,
+          id: `${Date.now()}_${Math.random().toString(36).slice(2)}_${toAdd.length}`,
+        });
       }
     }
-    if (toAdd.length && user) fbIncrementStat("totalAssignments", toAdd.length, user.idToken);
-    checkUnknown(toAdd, classes, setSchedPrompt);
+
+    // Fire-and-forget stat increment for new assignments
+    if (toAdd.length > 0 && user?.idToken) {
+      fbIncrementStat("totalAssignments", toAdd.length, user.idToken);
+    }
+
+    // Prompt for schedule if any new assignments have unknown subjects
+    if (toAdd.length > 0) {
+      checkUnknown(toAdd, classes, setSchedPrompt);
+    }
+
+    console.log(`confirmImport: added ${toAdd.length} new, updated ${incoming.length - toAdd.length} existing`);
     return [...updated, ...toAdd];
   });
+
   setImportOpen(false);
   resetImportFn();
-  setTab("assignments");
 }
