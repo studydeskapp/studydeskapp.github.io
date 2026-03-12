@@ -600,7 +600,7 @@ RULES:
       ];
 
       const res = await fetch(
-        \`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=\${GEMINI_KEY}\`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -612,7 +612,7 @@ RULES:
         }
       );
 
-      if (!res.ok) throw new Error(\`Gemini error: \${res.status}\`);
+      if (!res.ok) throw new Error(`Gemini error: ${res.status}`);
 
       const reader = res.body.getReader();
       const decoder = new TextDecoder();
