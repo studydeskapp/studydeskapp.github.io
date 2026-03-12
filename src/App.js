@@ -2106,8 +2106,10 @@ function PhoneUploadPage({uploadId}){
       setPreview(imageData);
       
       try{
+        console.log("Uploading to Firestore with ID:", uploadId);
+        
         // Save to Firestore so the PC can pick it up
-        // Use PUT to create the document (PATCH requires it to exist)
+        // Use POST to create the document
         const response = await fetch(`${FB_FS}/uploads?documentId=${uploadId}&key=${FB_KEY}`, {
           method:"POST",
           headers:{"Content-Type":"application/json"},
@@ -2119,16 +2121,21 @@ function PhoneUploadPage({uploadId}){
           })
         });
         
+        console.log("Upload response status:", response.status);
+        
         if(!response.ok){
-          throw new Error(`Upload failed: ${response.status}`);
+          const errorText = await response.text();
+          console.error("Upload error response:", errorText);
+          throw new Error(`Upload failed: ${response.status} - ${errorText}`);
         }
         
+        console.log("Upload successful!");
         setUploading(false);
         setUploaded(true);
       }catch(err){
         console.error("Upload error:", err);
         setUploading(false);
-        alert("Upload failed: " + err.message + ". Make sure Firestore rules allow uploads.");
+        alert("Upload failed: " + err.message + "\n\nMake sure you're connected to the internet and Firestore rules allow uploads.");
       }
     };
     reader.readAsDataURL(file);
