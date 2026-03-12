@@ -105,7 +105,7 @@ function AITab({ assignments, classes }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: b64 } }] }],
-          generationConfig: { maxOutputTokens: 4096 }
+          generationConfig: { maxOutputTokens: 8192 }
         })
       }
     );
@@ -279,8 +279,134 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
   };
 
   // ── Check if answer image is relevant to homework ──────────────────────────────
+  // ── OCR: Extract key text/numbers from homework image ──────────────────────────
+  const ocrHomeworkImage = async (homeworkImageData) => {
+    const b64 = homeworkImageData.replace(/^data:image\/\w+;base64,/, '');
+    const mimeMatch = homeworkImageData.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { text: 'Read this homework image and extract the key identifying information. List: (1) the subject/topic, (2) any specific numbers, percentages, or values mentioned in the problems (e.g. "59%", "10 users", "0.70", "13 times"), (3) any key nouns or names used (e.g. "tomato", "Ralph", "Kevin", "Internet users"). Return ONLY a JSON object: {"subject": "...", "numbers": ["59%","10","0.70",...], "keywords": ["tomato","Ralph",...]}. No other text.' },
+            { inline_data: { mime_type: mimeType, data: b64 } }
+          ]}],
+          generationConfig: { maxOutputTokens: 400 }
+        })
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try { return JSON.parse(match[0]); } catch { return null; }
+  };
+
+  // ── OCR: Extract visible text/numbers from answer image ─────────────────────
+  const ocrAnswerImage = async (answerImageData) => {
+    const b64 = answerImageData.replace(/^data:image\/\w+;base64,/, '');
+    const mimeMatch = answerImageData.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { text: 'Read all visible text and numbers from this image. Return ONLY a JSON object: {"text": "full extracted text here", "numbers": ["list","of","all","numbers","you","see"], "keywords": ["notable","words","or","names"]}. No other text.' },
+            { inline_data: { mime_type: mimeType, data: b64 } }
+          ]}],
+          generationConfig: { maxOutputTokens: 600 }
+        })
+      }
+    );
+    if (!res.ok) return null;
+    const data = await res.json();
+    const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const match = raw.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    try { return JSON.parse(match[0]); } catch { return null; }
+  };
+
+  // ── OCR homework text then verify answer matches ────────────────────────────
+  const ocrImage = async (base64Image) => {
+    const b64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [
+            { text: 'Extract all text from this image exactly as written. Include numbers, symbols, and math expressions. Output plain text only, no commentary.' },
+            { inline_data: { mime_type: mimeType, data: b64 } }
+          ]}],
+          generationConfig: { maxOutputTokens: 1000 }
+        })
+      }
+    );
+    if (!res.ok) return '';
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  };
+
   const checkAnswerRelevance = async (answerImageData, homeworkImageData) => {
     try {
+      // Step 1: OCR both images in parallel
+      const [homeworkText, answerText] = await Promise.all([
+        ocrImage(homeworkImageData),
+        ocrImage(answerImageData)
+      ]);
+
+      console.log('Homework OCR:', homeworkText.slice(0, 200));
+      console.log('Answer OCR:', answerText.slice(0, 200));
+
+      if (!homeworkText || !answerText) return { related: true };
+
+      // Step 2: Extract key identifying tokens from the homework text
+      // Pull numbers, key nouns, and short phrases (3+ chars, not stopwords)
+      const stopwords = new Set(['the','and','for','are','this','that','with','from','have','what','your','you','its','was','but','not','they','all','can','her','his','our','out','one','had','him','has','how','did','been','who','more','will','said','each','she','him','when','them','then','some','than','into','also','over','such','even','most','made','after','back','use','two','way','may','per','any','based','info','show','say','find','get','change','does','about','shown','survey','sample','users','change']);
+
+      // Extract meaningful tokens from homework
+      const hwTokens = homeworkText
+        .toLowerCase()
+        .replace(/[^a-z0-9.%]/g, ' ')
+        .split(/\s+/)
+        .filter(t => t.length >= 3 && !stopwords.has(t) && !/^0+$/.test(t));
+
+      // Extract tokens from answer
+      const answerTokens = new Set(
+        answerText
+          .toLowerCase()
+          .replace(/[^a-z0-9.%]/g, ' ')
+          .split(/\s+/)
+          .filter(t => t.length >= 3)
+      );
+
+      // Count how many homework tokens appear in the answer
+      const uniqueHwTokens = [...new Set(hwTokens)];
+      const matchCount = uniqueHwTokens.filter(t => answerTokens.has(t)).length;
+      const matchRatio = uniqueHwTokens.length > 0 ? matchCount / uniqueHwTokens.length : 0;
+
+      console.log(`Token match: ${matchCount}/${uniqueHwTokens.length} = ${(matchRatio*100).toFixed(1)}%`);
+      console.log('Sample hw tokens:', uniqueHwTokens.slice(0, 20));
+
+      // If good token overlap, accept immediately without calling Gemini again
+      if (matchRatio >= 0.15 || matchCount >= 8) {
+        return { related: true, reason: `Answer matches homework content (${matchCount} shared terms)` };
+      }
+
+      // Step 3: Low token overlap — do a final Gemini subject-match check
+      // (catches cases like same-subject but totally different worksheet)
       const b64Answer = answerImageData.replace(/^data:image\/\w+;base64,/, '');
       const mimeMatchA = answerImageData.match(/^data:(image\/\w+);base64,/);
       const mimeTypeA = mimeMatchA ? mimeMatchA[1] : 'image/jpeg';
@@ -297,44 +423,32 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: 'This is the homework assignment the student needs to complete:' },
+                { text: 'Homework assignment:' },
                 { inline_data: { mime_type: mimeTypeH, data: b64Homework } },
-                { text: 'This is what the student submitted as their answer:' },
+                { text: 'Student submitted answer:' },
                 { inline_data: { mime_type: mimeTypeA, data: b64Answer } },
-                { text: `You are checking if the student accidentally uploaded the wrong image.
+                { text: `The homework OCR text is: "${homeworkText.slice(0, 400)}"
+The answer OCR text is: "${answerText.slice(0, 400)}"
 
-The answer image should be REJECTED (related: false) ONLY if it is clearly and obviously something completely different — for example:
-- The homework is math but the answer is a chemistry diagram, biology chart, or science lab
-- The answer is a completely unrelated app screenshot, logo, meme, or photo with no academic work
-- The answer is from a totally different academic subject (e.g. homework is English essay, answer is a math graph)
+Are these the same academic subject? Only return related: false if the answer is CLEARLY a completely different subject (e.g. homework is math, answer is a biology diagram or app screenshot). If they are the same subject or you are unsure, return related: true.
 
-The answer image should be ACCEPTED (related: true) in all other cases, including:
-- Handwritten work on paper (even if messy or partially done) for the same subject
-- A printed or typed version of similar problems
-- Work that attempts the same type of problems even if on a different sheet
-- The same worksheet with answers filled in
-- Any math/probability/statistics work when the homework is also math/probability/statistics
-
-When in doubt, return related: true. Only reject if it is OBVIOUSLY the wrong subject entirely.
-
-Respond ONLY with JSON: {"related": true, "reason": "brief reason"} or {"related": false, "reason": "brief reason describing what the wrong image actually shows"}` }
+Respond ONLY with JSON: {"related": true, "reason": "..."} or {"related": false, "reason": "what the wrong image actually shows"}` }
               ]
             }],
-            generationConfig: { maxOutputTokens: 300 }
+            generationConfig: { maxOutputTokens: 200 }
           })
         }
       );
 
       if (!res.ok) return { related: true };
-
       const data = await res.json();
       const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      console.log('Relevance check response:', rawText);
+      console.log('Subject check response:', rawText);
 
       const jsonMatch = rawText.match(/\{[^{}]*"related"\s*:\s*(true|false)[^{}]*\}/);
       if (!jsonMatch) return { related: true };
-
       return JSON.parse(jsonMatch[0]);
+
     } catch (err) {
       console.error('Relevance check error:', err);
       return { related: true };
@@ -854,8 +968,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                   )}
                 </div>
                 <div className="hw-explanation-scroll"
-                  style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif",
-                    maxHeight:500, overflowY:'auto' }}>
+                  style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif" }}>
                   <div dangerouslySetInnerHTML={{ __html: renderMarkdown(homeworkExplanation) }} />
                   {!homeworkExplanation && (
                     <div style={{ color:'var(--text3)', fontStyle:'italic' }}>Reading your homework image...</div>
@@ -901,19 +1014,18 @@ Provide insights on study patterns, subject performance, areas to improve, and n
 
               {/* Checking answer spinner */}
               {homeworkStep === 'checking' && (
-                <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:24, textAlign:'center' }}>
-                  {answerImage && (
-                    <img src={answerImage} alt="Your answer"
-                      style={{ width:'100%', maxWidth:400, borderRadius:8, border:'1px solid var(--border)', marginBottom:16 }} />
-                  )}
-                  <div style={{ fontSize:'1.5rem', marginBottom:8 }}>🔎</div>
-                  <div style={{ fontWeight:600, color:'var(--text)', marginBottom:4 }}>Reviewing your work...</div>
-                  <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Checking your answers against what's expected.</div>
+                <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, display:'flex', alignItems:'center', gap:14 }}>
+                  <div style={{ width:40, height:40, border:'3px solid #6366f1', borderTopColor:'transparent',
+                    borderRadius:'50%', animation:'spin 0.8s linear infinite', flexShrink:0 }} />
+                  <div>
+                    <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem', marginBottom:2 }}>Reviewing your work...</div>
+                    <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Checking your answers — this takes a few seconds.</div>
+                  </div>
                 </div>
               )}
 
               {/* Answer feedback */}
-              {homeworkStep === 'done' && answerFeedback && (
+              {homeworkStep === 'done' && (
                 <>
                   <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:16 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
@@ -947,8 +1059,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                       )}
                     </div>
                     <div className="hw-feedback-scroll"
-                      style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif",
-                        maxHeight:500, overflowY:'auto' }}>
+                      style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif" }}>
                       <div dangerouslySetInnerHTML={{ __html: renderMarkdown(answerFeedback) }} />
                       {!answerFeedback && (
                         <div style={{ color:'var(--text3)', fontStyle:'italic' }}>Checking your answers...</div>
