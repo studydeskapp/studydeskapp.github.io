@@ -11,7 +11,8 @@ function Header({
   showSearch,
   setShowSearch,
   searchQuery,
-  setSearchQuery
+  setSearchQuery,
+  game
 }) {
   const tabs = [
     {id:"dashboard", label:"Dashboard", mobile:"📊"},
@@ -33,6 +34,8 @@ function Header({
             <div className="app-name">Study Desk</div>
           </div>
           <div className="header-actions">
+            {game?.streak > 0 && <div className="streak-pill">🔥 {game.streak}d</div>}
+            <div className="pts-pill">⭐ {game?.points || 0}</div>
             <button className="icon-btn" onClick={() => setShowSearch(!showSearch)}>🔍</button>
             <button className="icon-btn" onClick={() => setDarkMode(!darkMode)}>
               {darkMode ? '☀️' : '🌙'}
@@ -89,6 +92,9 @@ function Header({
       </div>
       
       <div className="header-right">
+        {game?.streak > 0 && <div className="streak-pill">🔥 {game.streak}d</div>}
+        <div className="pts-pill">⭐ {game?.points || 0}</div>
+        
         <div className="search-box">
           <input
             type="text"

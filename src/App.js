@@ -1506,8 +1506,8 @@ async function run(){
             <div className="hdr-hint">Press <kbd>N</kbd> to add • <kbd>J</kbd>/<kbd>K</kbd> to navigate</div>
           </div>
           <div className="hdr-r">
-            {game.streak>0&&<div className="streak-pill">{game.streak}d</div>}
-            <div className="pts-pill">{game.points}</div>
+            {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
+            <div className="pts-pill">⭐ {game.points}</div>
             {canvasToken&&(
               <div onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else handleSyncCanvas(canvasToken,canvasBaseUrl);}} title={canvasSync.error?"Click to dismiss":"Click to sync Canvas now"}
                 style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:20,border:"1.5px solid",
@@ -1561,7 +1561,7 @@ async function run(){
           );
         })()}
 
-        {/* ═══ DASHBOARD ═══════════════════════════════════════════════ */}
+        {/* ═══ TAB CONTENT ═══════════════════════════════════════════ */}
         {tab==="dashboard"&&(
           <DashboardTab 
             assignments={assignments}
@@ -1577,7 +1577,6 @@ async function run(){
           />
         )}
 
-        {/* ═══ ASSIGNMENTS ════════════════════════════════════════════ */}
         {tab==="assignments"&&(
           <AssignmentsTab
             sortedA={sortedA}
@@ -1591,27 +1590,26 @@ async function run(){
           />
         )}
 
-        {/* ═══ GRADES ════════════════════════════════════════════════ */}
         {tab==="grades"&&(
           <GradesTab
             assignments={assignments}
             classes={classes}
+            expandedGradeClass={expandedGradeClass}
+            setExpandedGradeClass={setExpandedGradeClass}
           />
         )}
 
-        {/* ═══ SCHEDULE ══════════════════════════════════════════════ */}
         {tab==="schedule"&&(
           <ScheduleTab
             classes={classes}
             setSchoolWiz={setSchoolWiz}
             setAddingC={setAddingC}
+            delClass={delClass}
           />
         )}
 
-        {/* ═══ AI ════════════════════════════════════════════════════ */}
         {tab==="ai"&&<AITab assignments={assignments} classes={classes}/>}
 
-        {/* ═══ BUDDY ════════════════════════════════════════════════ */}
         {tab==="buddy"&&(
           <BuddyTab
             game={game}
@@ -1619,632 +1617,57 @@ async function run(){
           />
         )}
 
-        {/* ═══ TIMER ════════════════════════════════════════════════ */}
         {tab==="timer"&&(
           <TimerTab
             timerMode={timerMode}
             setTimerMode={setTimerMode}
             timerSeconds={timerSeconds}
             timerRunning={timerRunning}
-            startTimer={startTimer}
-            resetTimer={resetTimer}
-            fmtTimer={fmtTimer}
+            timerSessions={timerSessions}
+            timerDone={timerDone}
+            setTimerDone={setTimerDone}
+            startTimer={handleStartTimer}
+            resetTimer={handleResetTimer}
+            fmtTimer={handleFmtTimer}
             customFocus={customFocus}
+            setCustomFocus={setCustomFocus}
             customShort={customShort}
+            setCustomShort={setCustomShort}
             customLong={customLong}
+            setCustomLong={setCustomLong}
+            customRounds={customRounds}
+            setCustomRounds={setCustomRounds}
+            autoStartBreaks={autoStartBreaks}
+            setAutoStartBreaks={setAutoStartBreaks}
+            sessionCount={sessionCount}
             showCustomTimer={showCustomTimer}
             setShowCustomTimer={setShowCustomTimer}
           />
         )}
 
-        {/* ═══ SHOP ═════════════════════════════════════════════════ */}
         {tab==="shop"&&(
           <ShopTab
             game={game}
             shopCat={shopCat}
             setShopCat={setShopCat}
-            equipItem={equipItem}
-            buyItem={buyItem}
+            equipItem={handleEquipItem}
+            buyItem={handleBuyItem}
           />
         )}
 
-        {/* ═══ ASSIGNMENTS ════════════════════════════════════════════ */}
-        {tab==="assignments"&&(()=>{
-          const pending=sortedA.filter(a=>a.progress<100);
-          const done=sortedA.filter(a=>a.progress>=100);
-          return(
-          <div>
-            <div className="sec-hd">
-              <div className="sec-t">Assignments</div>
-              <div style={{display:"flex",gap:7,alignItems:"center"}}>
-                <span style={{fontSize:".75rem",color:"var(--text3)",fontWeight:600}}>{pending.length} pending · {done.length} done</span>
-                <button className="btn btn-p btn-sm" onClick={()=>{setSubjMode("select");setAddingA(true);}}>＋ Add</button>
-              </div>
-            </div>
-            {subjects.length>0&&<div className="sfilt">
-              {["all",...subjects].map(s=>(
-                <button key={s} className="sfbtn" onClick={()=>setFilter(s)}
-                  style={filter===s?{background:s==="all"?"var(--accent)":subjectColor(s,classes),borderColor:s==="all"?"var(--accent)":subjectColor(s,classes),color:"#fff"}:{}}>
-                  {s==="all"?"✦ All":s}
-                </button>
-              ))}
-            </div>}
-            {pending.length>0&&(
-              <div style={{marginBottom:22}}>
-                <div className="sec-lbl">Pending — {pending.length}</div>
-                <div className="alist">{pending.map(a=><ACard key={a.id} a={a}/>)}</div>
-              </div>
-            )}
-            {done.length>0&&(
-              <div>
-                <div className="sec-lbl">Completed — {done.length}</div>
-                <div className="alist" style={{opacity:.55}}>{done.map(a=><ACard key={a.id} a={a}/>)}</div>
-              </div>
-            )}
-            {pending.length===0&&done.length===0&&(
-              <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
-                <div className="empty-i">📝</div>
-                <div className="empty-t">No assignments yet</div>
-                <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Add assignments manually or import from Canvas or Google Slides</div>
-                <button className="btn btn-p" onClick={()=>{setSubjMode("select");setAddingA(true);}}>＋ Add First Assignment</button>
-              </div>
-            )}
-          </div>
-          );
-        })()}
 
-        {/* ═══ GRADES ════════════════════════════════════════════════ */}
-        {tab==="grades"&&(()=>{
-          // Build per-class grade data from assignments that have a grade
-          const graded=assignments.filter(a=>a.grade!=null);
 
-          // Per-class stats
-          const uniqueClassNames=[...new Set(classes.map(c=>c.name))];
-          const classStats=uniqueClassNames.map(name=>{const cls=classes.find(c=>c.name===name);
-            const clsGraded=graded.filter(a=>a.subject===name);
-            const clsAll=assignments.filter(a=>a.subject===name);
-            if(clsGraded.length===0) return{cls,avg:null,grades:[],total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
-            // Weighted average if gradeRaw available, else simple average
-            let totalPts=0,totalPoss=0,simpleSum=0;
-            for(const a of clsGraded){
-              if(a.gradeRaw){
-                const m=a.gradeRaw.match(/^([\d.]+)\/([\d.]+)$/);
-                if(m){totalPts+=parseFloat(m[1]);totalPoss+=parseFloat(m[2]);}
-                else simpleSum+=a.grade;
-              } else simpleSum+=a.grade;
-            }
-            const avg=totalPoss>0?Math.round((totalPts/totalPoss)*100):Math.round(simpleSum/clsGraded.length);
-            return{cls,avg,grades:clsGraded,total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
-          });
 
-          // Include subjects from assignments not in schedule
-          const schedSubjects=new Set(classes.map(c=>c.name));
-          const extraSubjects=[...new Set(graded.map(a=>a.subject).filter(s=>s&&!schedSubjects.has(s)))];
-          const extraStats=extraSubjects.map(subj=>{
-            const clsGraded=graded.filter(a=>a.subject===subj);
-            const clsAll=assignments.filter(a=>a.subject===subj);
-            let totalPts=0,totalPoss=0,simpleSum=0;
-            for(const a of clsGraded){
-              if(a.gradeRaw){const m=a.gradeRaw.match(/^([\d.]+)\/([\d.]+)$/);if(m){totalPts+=parseFloat(m[1]);totalPoss+=parseFloat(m[2]);}else simpleSum+=a.grade;}
-              else simpleSum+=a.grade;
-            }
-            const avg=totalPoss>0?Math.round((totalPts/totalPoss)*100):Math.round(simpleSum/clsGraded.length);
-            return{cls:{name:subj,color:subjectColor(subj,classes)},avg,grades:clsGraded,total:clsAll.length,pending:clsAll.filter(a=>a.progress<100).length};
-          });
 
-          const allStats=[...classStats,...extraStats].filter(s=>s.total>0||s.grades.length>0);
-          const withGrades=allStats.filter(s=>s.avg!==null);
 
-          // Overall GPA (simple average of class averages)
-          const overallAvg=withGrades.length>0?Math.round(withGrades.reduce((s,c)=>s+c.avg,0)/withGrades.length):null;
 
-          function letterGrade(g){if(!g)return"—";if(g>=97)return"A+";if(g>=93)return"A";if(g>=90)return"A−";if(g>=87)return"B+";if(g>=83)return"B";if(g>=80)return"B−";if(g>=77)return"C+";if(g>=73)return"C";if(g>=70)return"C−";if(g>=67)return"D+";if(g>=63)return"D";if(g>=60)return"D−";return"F";}
-          function gradeColor(g){if(!g)return"var(--text4)";if(g>=90)return"#16a34a";if(g>=80)return"#2563eb";if(g>=70)return"#d97706";return"#dc2626";}
-          function gradeBg(g){if(!g)return"var(--bg3)";if(g>=90)return darkMode?"#001a0a":"#f0fdf4";if(g>=80)return darkMode?"#00102a":"#eff6ff";if(g>=70)return darkMode?"#1a1000":"#fffbeb";return darkMode?"#1a0000":"#fef2f2";}
 
-          const [expandedClass, setExpandedClass] = [expandedGradeClass, setExpandedGradeClass];
 
-          return(
-            <div>
-              {/* Overall GPA banner */}
-              {overallAvg!==null&&(
-                <div style={{background:`linear-gradient(135deg,${darkMode?"#1a1d2e":"#f8f6ff"},${darkMode?"#0f1117":"#fff"})`,border:`1.5px solid ${darkMode?"#2d2f4a":"#e0d7ff"}`,borderRadius:20,padding:"20px 24px",marginBottom:22,display:"flex",alignItems:"center",gap:20}}>
-                  <div style={{textAlign:"center",minWidth:80}}>
-                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"3rem",fontWeight:700,color:gradeColor(overallAvg),lineHeight:1}}>{overallAvg}%</div>
-                    <div style={{fontSize:"1.1rem",fontWeight:800,color:gradeColor(overallAvg)}}>{letterGrade(overallAvg)}</div>
-                  </div>
-                  <div style={{flex:1}}>
-                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.1rem",fontWeight:700,color:"var(--text)",marginBottom:4}}>Overall Average</div>
-                    <div style={{fontSize:".78rem",color:"var(--text3)",marginBottom:10}}>{withGrades.length} class{withGrades.length!==1?"es":""} with grades · {graded.length} graded assignment{graded.length!==1?"s":""}</div>
-                    {/* Mini bar showing grade distribution */}
-                    <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
-                      {withGrades.sort((a,b)=>b.avg-a.avg).map((s,i)=>(
-                        <div key={i} style={{display:"flex",alignItems:"center",gap:4,padding:"2px 8px",borderRadius:20,background:gradeBg(s.avg),border:`1px solid ${gradeColor(s.avg)}33`}}>
-                          <div style={{width:6,height:6,borderRadius:"50%",background:s.cls.color||"var(--accent)"}}/>
-                          <span style={{fontSize:".68rem",fontWeight:700,color:gradeColor(s.avg)}}>{s.cls.name.length>12?s.cls.name.slice(0,12)+"…":s.cls.name} {s.avg}%</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca",whiteSpace:"nowrap",flexShrink:0}}>🎓 Auto-sync grades</button>}
-                </div>
-              )}
 
-              {/* No grades yet */}
-              {graded.length===0&&(
-                <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px",marginBottom:20}}>
-                  <div className="empty-i">📈</div>
-                  <div className="empty-t">No grades yet</div>
-                  <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Connect Canvas to auto-sync grades, or add them manually on each assignment</div>
-                  {!canvasToken&&<button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>🎓 Connect Canvas</button>}
-                </div>
-              )}
 
-              {/* Per-class cards */}
-              {allStats.length>0&&(
-                <div style={{display:"flex",flexDirection:"column",gap:12}}>
-                  <div className="sec-lbl">{withGrades.length>0?"Classes":"All Classes"}</div>
-                  {allStats.map((s,si)=>{
-                    const isExpanded=expandedClass===s.cls.name;
-                    const color=s.cls.color||subjectColor(s.cls.name,classes);
-                    return(
-                      <div key={si} style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:18,overflow:"hidden",boxShadow:"0 2px 12px var(--sh)",transition:"box-shadow .15s"}}>
-                        {/* Class header row */}
-                        <div onClick={()=>setExpandedClass(isExpanded?null:s.cls.name)}
-                          style={{display:"flex",alignItems:"center",gap:14,padding:"16px 18px",cursor:"pointer",userSelect:"none"}}>
-                          <div style={{width:44,height:44,borderRadius:12,background:color,display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:800,fontSize:"1rem",flexShrink:0}}>
-                            {s.cls.name[0]}
-                          </div>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div style={{fontWeight:700,color:"var(--text)",fontSize:".95rem",marginBottom:2}}>{s.cls.name}</div>
-                            <div style={{fontSize:".72rem",color:"var(--text3)"}}>{s.grades.length} graded · {s.pending} pending · {s.total} total</div>
-                          </div>
-                          {s.avg!==null?(
-                            <div style={{textAlign:"right",flexShrink:0}}>
-                              <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.7rem",fontWeight:700,color:gradeColor(s.avg),lineHeight:1}}>{s.avg}%</div>
-                              <div style={{fontSize:".8rem",fontWeight:800,color:gradeColor(s.avg)}}>{letterGrade(s.avg)}</div>
-                            </div>
-                          ):(
-                            <div style={{fontSize:".76rem",color:"var(--text4)",fontWeight:600}}>No grades yet</div>
-                          )}
-                          <div style={{color:"var(--text4)",fontSize:".9rem",marginLeft:4}}>{isExpanded?"▲":"▼"}</div>
-                        </div>
 
-                        {/* Grade bar */}
-                        {s.avg!==null&&(
-                          <div style={{height:4,background:"var(--bg3)",margin:"0 18px 0"}}>
-                            <div style={{width:s.avg+"%",height:"100%",background:gradeColor(s.avg),borderRadius:99,transition:"width .6s ease"}}/>
-                          </div>
-                        )}
 
-                        {/* Expanded: assignment list */}
-                        {isExpanded&&s.grades.length>0&&(
-                          <div style={{padding:"12px 18px 16px",borderTop:"1.5px solid var(--border)",marginTop:8}}>
-                            <div style={{fontSize:".68rem",fontWeight:800,color:"var(--text3)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>Graded Assignments</div>
-                            <div style={{display:"flex",flexDirection:"column",gap:7}}>
-                              {[...s.grades].sort((a,b)=>new Date(b.dueDate||0)-new Date(a.dueDate||0)).map((a,ai)=>(
-                                <div key={ai} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"var(--bg3)",borderRadius:10}}>
-                                  <div style={{flex:1,minWidth:0}}>
-                                    <div style={{fontWeight:600,color:"var(--text)",fontSize:".84rem",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{a.title}</div>
-                                    {a.dueDate&&<div style={{fontSize:".69rem",color:"var(--text4)",marginTop:1}}>{fmtDate(a.dueDate)}</div>}
-                                  </div>
-                                  <div style={{textAlign:"right",flexShrink:0}}>
-                                    <div style={{fontWeight:800,color:gradeColor(a.grade),fontSize:".9rem"}}>{a.grade}%</div>
-                                    {a.gradeRaw&&<div style={{fontSize:".65rem",color:"var(--text4)"}}>{a.gradeRaw}</div>}
-                                    <div style={{fontSize:".7rem",fontWeight:700,color:gradeColor(a.grade)}}>{letterGrade(a.grade)}</div>
-                                  </div>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-                        {isExpanded&&s.grades.length===0&&(
-                          <div style={{padding:"12px 18px 16px",borderTop:"1.5px solid var(--border)",marginTop:8,fontSize:".8rem",color:"var(--text4)",textAlign:"center"}}>
-                            No graded assignments yet for this class.
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
 
-              {/* Manual grade add tip */}
-              {graded.length>0&&!canvasToken&&(
-                <div style={{marginTop:16,padding:"12px 16px",background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,fontSize:".78rem",color:"var(--text3)",display:"flex",alignItems:"center",gap:10}}>
-                  <span>💡</span>
-                  <span>Connect Canvas to auto-sync grades, or set progress to 100% on an assignment and manually enter a grade by editing it.</span>
-                  <button className="btn btn-g btn-sm" style={{marginLeft:"auto",flexShrink:0,borderColor:"#c7d2fe",color:"#4338ca"}} onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>🎓 Connect</button>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* ═══ SCHEDULE ══════════════════════════════════════════════ */}
-        {tab==="schedule"&&(
-          <div>
-            <div className="sec-hd"><div className="sec-t">Class Schedule</div><div style={{display:"flex",gap:8}}><button className="btn btn-g btn-sm" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>Import from School</button><button className="btn btn-p btn-sm" onClick={()=>setAddingC(true)}>＋ Add Class</button></div></div>
-            {classes.length===0?(
-              <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
-                <div className="empty-i">📅</div>
-                <div className="empty-t">No classes yet</div>
-                <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Add your weekly classes to see them on the timetable</div>
-                <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}><button className="btn btn-g" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>Import from School</button><button className="btn btn-p" onClick={()=>setAddingC(true)}>＋ Add Manually</button></div>
-              </div>
-            ):(
-              <div className="sched-layout">
-                <div>
-                  <div className="sec-lbl">Your Classes</div>
-                  <div className="sc-classes">
-                    {[...new Map(classes.map(c=>[c.name,c])).values()].sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(c=>{
-                      const ca=assignments.filter(a=>a.subject===c.name&&a.progress<100);
-                      return(
-                        <div key={c.id} className="sc-card">
-                          <div className="sc-dot" style={{background:c.color}}/>
-                          <div style={{flex:1,minWidth:0}}>
-                            <div className="sc-name">{c.name}</div>
-                            <div className="sc-meta">{c.days.join(", ")} · {fmt12(c.startTime)}–{fmt12(c.endTime)}{c.room&&" · 📍"+c.room}</div>
-                            {ca.length>0&&<div className="sc-badge" style={{color:c.color}}>{ca.length} pending</div>}
-                          </div>
-                          <button className="ibtn" onClick={()=>delClass(c.id)}>✕</button>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-                <div>
-                  <div className="sec-lbl">Weekly Timetable</div>
-                  <div className="sgrid">
-                    <div className="shdr">
-                      <div className="shcell"/>
-                      {DAYS.map(d=><div key={d} className={"shcell"+(d===todayAbbr()?" tdy":"")}>{d}</div>)}
-                    </div>
-                    {(()=>{
-                      const PX_PER_HOUR=52;
-                      const START_HOUR=7;
-                      const totalHours=HOURS.length;
-                      const totalH=totalHours*PX_PER_HOUR;
-                      const toY=t=>{const[h,m]=t.split(":").map(Number);return((h-START_HOUR)+(m/60))*PX_PER_HOUR;};
-                      return(
-                        <div className="sgrid-body">
-                          <div className="sgrid-times">
-                            {HOURS.map(h=><div key={h} className="stime-row">{fmt12h(h)}</div>)}
-                          </div>
-                          {DAYS.map(d=>(
-                            <div key={d} className={"sgrid-daycol"+(d===todayAbbr()?" tdy":"")} style={{height:totalH}}>
-                              {HOURS.map((_,i)=><div key={i} className="sgrid-hrline" style={{top:i*PX_PER_HOUR}}/>)}
-                              {classes.filter(c=>c.days.includes(d)).map(c=>{
-                                const top=toY(c.startTime);
-                                const bot=toY(c.endTime);
-                                const h=Math.max(bot-top,18);
-                                return(
-                                  <div key={c.id} className="cblock" style={{background:c.color,top,height:h}}>
-                                    <span style={{fontWeight:700,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{c.name}</span>
-                                    {h>28&&c.room&&<span style={{opacity:.8,fontSize:".55rem"}}>📍{c.room}</span>}
-                                  </div>
-                                );
-                              })}
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* ═══ BUDDY ════════════════════════════════════════════════ */}
-        {tab==="ai"&&<AITab assignments={assignments} classes={classes}/>}
-
-                {tab==="buddy"&&(()=>{
-          const st=getBuddyStage(game.streak);
-          const info=BUDDY_STAGES[st];
-          const pct=info.next?Math.min(100,Math.round(((game.streak-info.min)/(info.next-info.min))*100)):100;
-          const eq=game.equipped||{};
-          const eqItems=Object.values(eq).filter(Boolean).map(id=>SHOP_ITEMS.find(i=>i.id===id)).filter(Boolean);
-          return(
-            <div>
-              <div className="buddy-shell">
-                <div className="buddy-stage-name">{info.name}</div>
-                <div className="buddy-stage-desc">{info.desc}</div>
-                <div className="buddy-wrap"><div className="buddy-bounce" style={{width:"100%",height:"100%"}}><BuddyCreature stage={st} eq={eq}/></div></div>
-                {eqItems.length>0&&<div className="eq-row">{eqItems.map(it=><span key={it.id} className="eq-chip">{it.emoji} {it.name}</span>)}</div>}
-                {info.next&&<div style={{marginTop:14}}><div className="bplbl"><span>Next: {BUDDY_STAGES[st+1].name}</span><span>{game.streak}/{info.next} days</span></div><div className="bpbar"><div className="bpfill" style={{width:pct+"%"}}/></div></div>}
-                {!info.next&&<div style={{textAlign:"center",marginTop:12,fontSize:".8rem",color:"#F59E0B",fontWeight:700}}>🌟 Legendary status achieved!</div>}
-              </div>
-              <div className="bstat-row">
-                <div className="stat"><div className="sacc" style={{background:"#f59e0b"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>{game.points}</div><div className="stat-l">Points</div></div>
-                <div className="stat"><div className="sacc" style={{background:"#ea580c"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>{game.streak}</div><div className="stat-l">Streak</div></div>
-                <div className="stat"><div className="sacc" style={{background:"#8b5cf6"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>{st}/5</div><div className="stat-l">Stage</div></div>
-              </div>
-              <div className="quest-card">
-                <div className="quest-title">📋 Daily Quest</div>
-                <div className="quest-text">Complete 3 assignments today to {game.streak>0?"extend your "+game.streak+"-day streak!":"start your streak!"}</div>
-                <div className="quest-pips">
-                  {[0,1,2].map(n=><div key={n} className={"quest-pip"+(todayCnt>n?" lit":"")}>{todayCnt>n?"✓":"○"}</div>)}
-                  <div style={{marginLeft:10,fontSize:".78rem",color:"var(--text2)",fontWeight:600}}>{todayCnt>=3?<span style={{color:"#F59E0B"}}>+{Math.round(10+game.streak*4)} pts earned!</span>:<span>{3-todayCnt} more</span>}</div>
-                </div>
-              </div>
-              <div className="pts-how">
-                <div style={{fontSize:".68rem",fontWeight:800,color:"var(--text3)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>How Points Work</div>
-                <div className="pts-how-row"><span>Complete an assignment</span><span className="pts-how-amt">+15 pts</span></div>
-                <div style={{height:1,background:"var(--border)",margin:"6px 0"}}/>
-                <div className="pts-how-row"><span>Daily streak bonus (3 per day)</span><span className="pts-how-amt">+{Math.round(10+game.streak*4)} pts</span></div>
-                <div style={{height:1,background:"var(--border)",margin:"6px 0"}}/>
-                <div style={{fontSize:".72rem",color:"var(--text4)",lineHeight:1.5}}>Higher streaks = bigger bonuses!</div>
-              </div>
-            </div>
-          );
-        })()}
-
-        {/* ═══ TIMER ════════════════════════════════════════════════ */}
-        {tab==="timer"&&(()=>{
-          const MODES=[
-            {id:"pomodoro", label:"🍅 Focus",       secs:customFocus*60},
-            {id:"short",    label:"☕ Short Break",  secs:customShort*60},
-            {id:"long",     label:"🛋 Long Break",   secs:customLong*60},
-            {id:"custom",   label:"⚙️ Custom",       secs:null},
-          ];
-          const currentMode = MODES.find(m=>m.id===timerMode)||MODES[0];
-          const activeSecs  = currentMode.secs || customFocus*60;
-          const pct = activeSecs>0 ? timerSeconds/activeSecs : 0;
-          const r=80, circ=2*Math.PI*r;
-
-          // Pick ring color based on mode
-          const ringColor = timerMode==="short"?"#10b981":timerMode==="long"?"#6366f1":timerMode==="custom"?"#f59e0b":"var(--accent)";
-
-          return(
-            <div className="tab-content">
-              <div className="sec-hd">
-                <div className="sec-t">⏱ Study Timer</div>
-                <button className="btn btn-g btn-sm" onClick={()=>{setShowLeaderboard(true);fetchLeaderboard();}}>🏆 Leaderboard</button>
-              </div>
-
-              {/* Session complete banner */}
-              {timerDone&&(
-                <div style={{background:"linear-gradient(135deg,#16a34a,#15803d)",color:"#fff",borderRadius:16,padding:"14px 18px",marginBottom:16,display:"flex",alignItems:"center",gap:12,animation:"slideUp .3s ease",boxShadow:"0 4px 20px rgba(22,163,74,.35)"}}>
-                  <span style={{fontSize:"1.6rem"}}>🎉</span>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:".95rem"}}>Session complete!</div>
-                    <div style={{fontSize:".8rem",opacity:.9}}>+10 points earned. Time for a break.</div>
-                  </div>
-                  <button onClick={()=>setTimerDone(false)} style={{marginLeft:"auto",background:"rgba(255,255,255,.2)",border:"none",borderRadius:8,color:"#fff",width:28,height:28,cursor:"pointer",fontSize:"1rem",display:"flex",alignItems:"center",justifyContent:"center"}}>✕</button>
-                </div>
-              )}
-
-              <div className="timer-card">
-                {/* Mode tabs */}
-                <div className="timer-modes">
-                  {MODES.map(m=>(
-                    <button key={m.id} className={"timer-mode-btn"+(timerMode===m.id?" on":"")}
-                      onClick={()=>{
-                        if(m.id==="custom"){ setShowCustomTimer(true); return; }
-                        setTimerMode(m.id);
-                        resetTimer(m.secs);
-                      }}>
-                      {m.label}
-                    </button>
-                  ))}
-                </div>
-
-                {/* SVG ring */}
-                <div style={{position:"relative",width:200,height:200,margin:"0 auto 8px"}}>
-                  <svg width="200" height="200" style={{transform:"rotate(-90deg)"}}>
-                    <circle cx="100" cy="100" r={r} fill="none" stroke="var(--bg3)" strokeWidth="10"/>
-                    <circle cx="100" cy="100" r={r} fill="none" stroke={ringColor} strokeWidth="10"
-                      strokeDasharray={circ} strokeDashoffset={circ*(1-Math.max(0,Math.min(1,pct)))}
-                      strokeLinecap="round" style={{transition:"stroke-dashoffset .9s linear"}}/>
-                  </svg>
-                  <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-                    <div className="timer-display" style={{fontSize:"3.2rem",margin:0}}>{fmtTimer(timerSeconds)}</div>
-                    <div style={{fontSize:".72rem",color:"var(--text4)",fontWeight:700,textTransform:"uppercase",letterSpacing:".08em",marginTop:4}}>
-                      {timerRunning
-                        ? timerMode==="short"||timerMode==="long" ? "Break time 😌" : "Focus time 🎯"
-                        : timerSeconds===0 ? "Done! ✓" : "Ready"}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Controls */}
-                <div className="timer-btns">
-                  {!timerRunning
-                    ?<button className="btn btn-p" style={{minWidth:110,justifyContent:"center"}} onClick={()=>setTimerRunning(true)}>
-                      {timerSeconds===0?"↺ Again":"▶ Start"}
-                    </button>
-                    :<button className="btn btn-g" style={{minWidth:110,justifyContent:"center"}} onClick={()=>setTimerRunning(false)}>⏸ Pause</button>
-                  }
-                  <button className="btn btn-g" onClick={()=>resetTimer(activeSecs)}>↺ Reset</button>
-                </div>
-
-                {/* Session dots */}
-                {customRounds>1&&(
-                  <div style={{display:"flex",gap:6,justifyContent:"center",marginTop:16}}>
-                    {Array.from({length:customRounds}).map((_,i)=>(
-                      <div key={i} style={{width:8,height:8,borderRadius:"50%",
-                        background:i<(timerSessions%customRounds)?"var(--accent)":"var(--bg3)",
-                        transition:"background .3s"}}/>
-                    ))}
-                  </div>
-                )}
-
-                {timerSessions>0&&(
-                  <div style={{marginTop:12,fontSize:".78rem",color:"var(--text3)",fontWeight:600}}>
-                    🍅 {timerSessions} session{timerSessions!==1?"s":""} completed · +{timerSessions*10} pts earned
-                    {timerSessions>=customRounds&&<span style={{color:"#6366f1",marginLeft:6}}>→ Take a long break!</span>}
-                  </div>
-                )}
-              </div>
-
-              {/* Auto-start toggle */}
-              <div style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                <span style={{fontSize:"1.1rem"}}>▶️</span>
-                <div style={{flex:1}}>
-                  <div style={{fontWeight:700,fontSize:".84rem",color:"var(--text)"}}>Auto-start breaks</div>
-                  <div style={{fontSize:".73rem",color:"var(--text3)"}}>Timer starts automatically after each session</div>
-                </div>
-                <button onClick={()=>setAutoStartBreaks(v=>!v)} style={{
-                  width:44,height:26,borderRadius:13,border:"none",cursor:"pointer",padding:0,position:"relative",
-                  background:autoStartBreaks?"var(--accent)":"var(--bg3)",transition:"background .2s",flexShrink:0}}>
-                  <span style={{position:"absolute",top:3,left:autoStartBreaks?20:3,width:20,height:20,borderRadius:"50%",
-                    background:"#fff",transition:"left .2s",display:"block",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
-                </button>
-              </div>
-
-              {/* Notification permission */}
-              {"Notification" in window && Notification.permission==="default"&&(
-                <div style={{background:"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"12px 16px",display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
-                  <span style={{fontSize:"1.1rem"}}>🔔</span>
-                  <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:".84rem",color:"var(--text)"}}>Enable notifications</div>
-                    <div style={{fontSize:".73rem",color:"var(--text3)"}}>Get alerted when your timer ends</div>
-                  </div>
-                  <button className="btn btn-p btn-sm" onClick={()=>Notification.requestPermission()}>Allow</button>
-                </div>
-              )}
-
-              {/* Due today */}
-              {dueToday.length>0&&(
-                <div>
-                  <div className="sec-lbl">Due today — focus on these</div>
-                  <div className="alist">{dueToday.map(a=><ACard key={a.id} a={a}/>)}</div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
-
-        {/* CUSTOM TIMER MODAL */}
-        {showCustomTimer&&(
-          <div className="overlay" onClick={e=>e.target===e.currentTarget&&setShowCustomTimer(false)}>
-            <div className="modal" style={{display:"flex",flexDirection:"column"}}>
-              <div className="modal-t">⚙️ Custom Timer</div>
-              <div style={{flex:1,overflowY:"auto"}}>
-
-                {/* Focus duration */}
-                <div className="fg">
-                  <label className="flbl">Focus duration — {customFocus} min</label>
-                  <input className="range" type="range" min="1" max="90" step="1"
-                    value={customFocus} onChange={e=>setCustomFocus(+e.target.value)}/>
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:".68rem",color:"var(--text4)",marginTop:3}}>
-                    <span>1 min</span><span>90 min</span>
-                  </div>
-                  {/* Quick presets */}
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                    {[15,20,25,30,45,60].map(v=>(
-                      <button key={v} className={"dtoggle"+(customFocus===v?" on":"")} onClick={()=>setCustomFocus(v)}>{v}m</button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Short break */}
-                <div className="fg">
-                  <label className="flbl">Short break — {customShort} min</label>
-                  <input className="range" type="range" min="1" max="30" step="1"
-                    value={customShort} onChange={e=>setCustomShort(+e.target.value)}/>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                    {[3,5,8,10,15].map(v=>(
-                      <button key={v} className={"dtoggle"+(customShort===v?" on":"")} onClick={()=>setCustomShort(v)}>{v}m</button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Long break */}
-                <div className="fg">
-                  <label className="flbl">Long break — {customLong} min</label>
-                  <input className="range" type="range" min="5" max="60" step="1"
-                    value={customLong} onChange={e=>setCustomLong(+e.target.value)}/>
-                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                    {[10,15,20,25,30].map(v=>(
-                      <button key={v} className={"dtoggle"+(customLong===v?" on":"")} onClick={()=>setCustomLong(v)}>{v}m</button>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Rounds before long break */}
-                <div className="fg">
-                  <label className="flbl">Sessions before long break — {customRounds}</label>
-                  <input className="range" type="range" min="1" max="8" step="1"
-                    value={customRounds} onChange={e=>setCustomRounds(+e.target.value)}/>
-                  <div style={{display:"flex",justifyContent:"space-between",fontSize:".68rem",color:"var(--text4)",marginTop:3}}>
-                    <span>1 session</span><span>8 sessions</span>
-                  </div>
-                </div>
-
-                {/* Auto-start */}
-                <div className="fg">
-                  <label className="flbl">Auto-start breaks</label>
-                  <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
-                    <button onClick={()=>setAutoStartBreaks(v=>!v)} style={{
-                      width:44,height:26,borderRadius:13,border:"none",cursor:"pointer",padding:0,position:"relative",
-                      background:autoStartBreaks?"var(--accent)":"var(--bg3)",transition:"background .2s",flexShrink:0}}>
-                      <span style={{position:"absolute",top:3,left:autoStartBreaks?20:3,width:20,height:20,borderRadius:"50%",
-                        background:"#fff",transition:"left .2s",display:"block",boxShadow:"0 1px 4px rgba(0,0,0,.2)"}}/>
-                    </button>
-                    <span style={{fontSize:".82rem",color:"var(--text2)"}}>Start break automatically when focus ends</span>
-                  </div>
-                </div>
-
-                {/* Preview */}
-                <div style={{background:"var(--bg3)",border:"1.5px solid var(--border)",borderRadius:12,padding:"12px 14px",fontSize:".8rem",color:"var(--text2)",lineHeight:1.7}}>
-                  <div style={{fontWeight:700,color:"var(--text)",marginBottom:4,fontSize:".75rem",textTransform:"uppercase",letterSpacing:".06em"}}>Session preview</div>
-                  {Array.from({length:customRounds}).map((_,i)=>(
-                    <div key={i}>🎯 Focus #{i+1} — <strong style={{color:"var(--text)"}}>{customFocus} min</strong>
-                      {i<customRounds-1&&<> → ☕ Short break — <strong style={{color:"var(--text)"}}>{customShort} min</strong></>}
-                    </div>
-                  ))}
-                  <div style={{marginTop:4}}>🛋 Long break — <strong style={{color:"var(--text)"}}>{customLong} min</strong></div>
-                  <div style={{marginTop:6,color:"var(--text3)"}}>Total focus time: <strong style={{color:"var(--text)"}}>{customFocus*customRounds} min</strong></div>
-                </div>
-              </div>
-
-              <div className="mactions" style={{borderTop:"1.5px solid var(--border)",paddingTop:14,marginTop:6,flexShrink:0}}>
-                <button className="btn btn-g" onClick={()=>setShowCustomTimer(false)}>Cancel</button>
-                <button className="btn btn-p" onClick={()=>{
-                  setTimerMode("pomodoro");
-                  resetTimer(customFocus*60);
-                  setShowCustomTimer(false);
-                }}>Start Focus →</button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ═══ SHOP ═════════════════════════════════════════════════ */}
-        {tab==="shop"&&(
-          <div>
-            <div className="sec-hd"><div className="sec-t">🛍️ Shop</div><div className="pts-pill">⭐ {game.points}</div></div>
-            <div className="shop-filter">
-              {[["all","✦ All"],["hat","🎩 Hats"],["face","👓 Face"],["body","🎀 Body"],["special","✨ Special"]].map(([cat,lbl])=>(
-                <button key={cat} className="sfbtn" onClick={()=>setShopCat(cat)} style={shopCat===cat?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}>{lbl}</button>
-              ))}
-            </div>
-            <div className="shop-grid">
-              {SHOP_ITEMS.filter(i=>shopCat==="all"||i.cat===shopCat).map(item=>{
-                const owned=game.owned.includes(item.id);
-                const equipped=game.equipped[item.cat]===item.id;
-                const ok=game.points>=item.price;
-                return(
-                  <div key={item.id} className={"shop-card"+(owned?" owned":"")+(equipped?" equipped":"")}>
-                    {owned&&<div className="shop-badge" style={{background:equipped?"var(--accent)":"#16a34a"}}>{equipped?"ON":"✓"}</div>}
-                    <span className="shop-icon">{item.emoji}</span>
-                    <div className="shop-name">{item.name}</div>
-                    <div className="shop-cat">{item.cat}</div>
-                    <div className="shop-desc">{item.desc}</div>
-                    {owned?(
-                      <button className={"btn btn-sm"+(equipped?" btn-p":" btn-g")} style={{width:"100%",justifyContent:"center"}} onClick={()=>handleEquipItem(item.id)}>{equipped?"✓ Equipped":"Equip"}</button>
-                    ):(
-                      <button className="btn btn-sm btn-p" style={{width:"100%",justifyContent:"center",background:ok?"var(--accent)":"var(--bg3)",color:ok?"#fff":"var(--text4)",cursor:ok?"pointer":"not-allowed"}} onClick={()=>handleBuyItem(item.id)} disabled={!ok}>{ok?"Buy — "+item.price+" pts":"Need "+item.price+" pts"}</button>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
 
         {adminOpen&&<AdminPanel user={user} onClose={()=>setAdminOpen(false)}/>}
         {floats.map(f=><div key={f.id} className="pts-float" style={{color:f.streak?"#EA580C":"#F59E0B"}}>+{f.pts}{f.streak?"🔥":"⭐"}</div>)}
