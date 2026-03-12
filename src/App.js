@@ -1630,8 +1630,11 @@ function AITab({assignments, classes}){
   const [hwLoading, setHwLoading] = useState(false);
   const [qrCode, setQrCode] = useState(null);
   const [phoneUploadUrl, setPhoneUploadUrl] = useState(null);
+  const [uploadId, setUploadId] = useState(null);
+  const [checkingUpload, setCheckingUpload] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
+  const uploadPollInterval = useRef(null);
 
   const chatScrollRef = useRef(null);
   useEffect(()=>{ if(chatScrollRef.current){ chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }},[chatMsgs]);
@@ -1694,17 +1697,67 @@ function AITab({assignments, classes}){
 
   async function generateQRCode(){
     // Generate a unique upload URL
-    const uploadId = Math.random().toString(36).substring(7);
-    const uploadUrl = `${window.location.origin}/upload/${uploadId}`;
+    const id = Math.random().toString(36).substring(7);
+    const uploadUrl = `${window.location.origin}/upload/${id}`;
     setPhoneUploadUrl(uploadUrl);
+    setUploadId(id);
     
     // Generate QR code using a simple QR code API
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uploadUrl)}`;
     setQrCode(qrUrl);
     setHwUploadMode("phone");
     
-    // In a real implementation, you'd poll a server endpoint to check for uploads
-    // For now, we'll just show the QR code
+    // Start polling for uploads
+    startPollingForUpload(id);
+  }
+
+  function startPollingForUpload(id){
+    // Poll localStorage every 2 seconds for the upload
+    uploadPollInterval.current = setInterval(()=>{
+      checkForUpload(id);
+    }, 2000);
+  }
+
+  function stopPollingForUpload(){
+    if(uploadPollInterval.current){
+      clearInterval(uploadPollInterval.current);
+      uploadPollInterval.current = null;
+    }
+  }
+
+  async function checkForUpload(id){
+    setCheckingUpload(true);
+    try{
+      // Check localStorage for the uploaded image
+      const uploadKey = `hw-upload-${id}`;
+      const uploadData = localStorage.getItem(uploadKey);
+      
+      if(uploadData){
+        // Found an upload!
+        const data = JSON.parse(uploadData);
+        
+        // Convert base64 back to blob
+        const response = await fetch(data.image);
+        const blob = await response.blob();
+        
+        setHwImage(blob);
+        setHwImagePreview(data.image);
+        setHwUploadMode("file");
+        
+        // Clean up
+        localStorage.removeItem(uploadKey);
+        stopPollingForUpload();
+      }
+    }catch(e){
+      console.error("Error checking upload:", e);
+    }
+    setCheckingUpload(false);
+  }
+
+  function manualCheckUpload(){
+    if(uploadId){
+      checkForUpload(uploadId);
+    }
   }
 
   async function analyzeHomework(){
@@ -1751,8 +1804,18 @@ function AITab({assignments, classes}){
     setHwSolution("");
     setQrCode(null);
     setPhoneUploadUrl(null);
+    setUploadId(null);
+    stopPollingForUpload();
     stopCamera();
   }
+
+  // Cleanup polling on unmount
+  useEffect(()=>{
+    return ()=>{
+      stopPollingForUpload();
+      stopCamera();
+    };
+  },[]);
 
   async function sendChat(){
     if(!chatInput.trim()||chatLoading) return;
@@ -1899,13 +1962,22 @@ Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study t
                 </div>
               )}
               <div style={{fontSize:".85rem",color:"var(--text3)",marginBottom:16,lineHeight:1.6}}>
-                Open your phone's camera app and point it at the QR code above. Tap the notification to open the upload page, then take or select a photo of your homework.
+                Open your phone's browser and scan this QR code, then upload a photo. It will appear here automatically.
               </div>
               <div style={{background:"var(--bg3)",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-                <div style={{fontSize:".75rem",fontWeight:700,color:"var(--text2)",marginBottom:6}}>📱 Waiting for upload...</div>
-                <div style={{fontSize:".72rem",color:"var(--text3)"}}>Once you upload from your phone, the image will appear here automatically</div>
+                <div style={{fontSize:".75rem",fontWeight:700,color:"var(--text2)",marginBottom:6}}>
+                  {checkingUpload?"🔄 Checking for upload...":"📱 Waiting for upload..."}
+                </div>
+                <div style={{fontSize:".72rem",color:"var(--text3)"}}>
+                  {checkingUpload?"Checking if you've uploaded from your phone...":"Once you upload from your phone, the image will appear here automatically"}
+                </div>
               </div>
-              <button className="btn btn-g" onClick={resetHomework}>Cancel</button>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn btn-g" onClick={resetHomework} style={{flex:1}}>Cancel</button>
+                <button className="btn btn-p" onClick={manualCheckUpload} disabled={checkingUpload} style={{flex:1}}>
+                  {checkingUpload?"Checking...":"🔄 Check for Upload"}
+                </button>
+              </div>
             </div>
           )}
 
@@ -2028,10 +2100,16 @@ function PhoneUploadPage({uploadId}){
     setUploading(true);
     const reader = new FileReader();
     reader.onload = (ev) => {
-      setPreview(ev.target.result);
-      // In a real implementation, you'd send this to a server endpoint
-      // that the PC would poll to receive the image
-      // For now, we'll just show success
+      const imageData = ev.target.result;
+      setPreview(imageData);
+      
+      // Save to localStorage so the PC can pick it up
+      const uploadKey = `hw-upload-${uploadId}`;
+      localStorage.setItem(uploadKey, JSON.stringify({
+        image: imageData,
+        timestamp: Date.now()
+      }));
+      
       setTimeout(()=>{
         setUploading(false);
         setUploaded(true);
