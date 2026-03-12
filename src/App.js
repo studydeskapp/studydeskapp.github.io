@@ -533,7 +533,7 @@ const css = `
 *{scrollbar-width:thin;scrollbar-color:var(--border2) var(--bg3)}
 body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:100vh;color:var(--text);transition:background .25s,color .25s}
 .dk{background:var(--bg);min-height:100vh;transition:background .25s}
-.app{max-width:1080px;margin:0 auto;padding:0 20px 120px}
+.app{max-width:1080px;margin:0 auto;padding:0 20px 40px}
 /* ── SIDEBAR LAYOUT (desktop): fixed full-height, main content scrolls only ── */
 @media(min-width:769px){
   .app.has-sidebar{max-width:none;padding:0}
