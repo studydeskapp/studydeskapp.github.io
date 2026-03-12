@@ -560,7 +560,7 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
   const getQRCodeUrl = (text) =>
     `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(text)}`;
 
-  // ── Follow-up chat ───────────────────────────────────────────────────────────
+  // ── Follow-up chat (uses full homework context) ─────────────────────────────
   const handleHomeworkSend = async () => {
     if (!homeworkInput.trim() || homeworkLoading) return;
     const userMessage = homeworkInput.trim();
@@ -569,25 +569,80 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
     setHomeworkLoading(true);
     const aiMessageIndex = homeworkMessages.length + 1;
     setHomeworkMessages(prev => [...prev, { role: 'ai', text: '' }]);
+
     try {
-      const context = `You are a homework tutor. The student has already received an explanation of their homework and feedback on their answer. 
-Help them with any remaining questions. Be educational, specific, and encouraging.
-Use markdown formatting.`;
-      const history = homeworkMessages.slice(-6);
-      await callGeminiStream(userMessage, context,
-        (streamedText) => {
-          setHomeworkMessages(prev => {
-            const msgs = [...prev];
-            msgs[aiMessageIndex] = { role: 'ai', text: streamedText };
-            return msgs;
-          });
-          setTimeout(() => {
-            const el = document.querySelector('.hw-followup-chat');
-            if (el) el.scrollTop = el.scrollHeight;
-          }, 50);
-        },
-        history
+      // Build full conversation history for Gemini
+      const recentHistory = homeworkMessages.slice(-8);
+      const historyParts = recentHistory.map(m => ({
+        role: m.role === 'user' ? 'user' : 'model',
+        parts: [{ text: m.text }]
+      }));
+
+      // Build system context from actual homework data
+      const systemContext = `You are a focused homework tutor. You are ONLY helping with the specific homework assignment below.
+
+HOMEWORK EXPLANATION YOU ALREADY PROVIDED TO THE STUDENT:
+${homeworkExplanation ? homeworkExplanation.slice(0, 2000) : 'Not yet generated.'}
+
+${answerFeedback ? `FEEDBACK YOU GAVE ON THE STUDENT'S SUBMITTED WORK:
+${answerFeedback.slice(0, 2000)}` : ''}
+
+RULES:
+- Only answer questions about THIS specific homework assignment and subject.
+- If the student asks about something unrelated, redirect them back to the homework.
+- Be specific — reference the actual problems, numbers, and concepts from the homework above.
+- Never pretend you don't know what subject or problems you were working on.
+- Use markdown formatting.`;
+
+      const messages_payload = [
+        ...historyParts,
+        { role: 'user', parts: [{ text: userMessage }] }
+      ];
+
+      const res = await fetch(
+        \`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=\${GEMINI_KEY}\`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            system_instruction: { parts: [{ text: systemContext }] },
+            contents: messages_payload,
+            generationConfig: { maxOutputTokens: 4096 }
+          })
+        }
       );
+
+      if (!res.ok) throw new Error(\`Gemini error: \${res.status}\`);
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const lines = decoder.decode(value, { stream: true }).split('\n');
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const data = line.slice(6).trim();
+          if (data === '[DONE]') break;
+          try {
+            const piece = JSON.parse(data).candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (piece) {
+              accumulated += piece;
+              setHomeworkMessages(prev => {
+                const msgs = [...prev];
+                msgs[aiMessageIndex] = { role: 'ai', text: accumulated };
+                return msgs;
+              });
+              setTimeout(() => {
+                const el = document.querySelector('.hw-followup-chat');
+                if (el) el.scrollTop = el.scrollHeight;
+              }, 50);
+            }
+          } catch (_) {}
+        }
+      }
     } catch (err) {
       setHomeworkMessages(prev => {
         const msgs = [...prev];
