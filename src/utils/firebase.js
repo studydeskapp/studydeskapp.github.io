@@ -1,0 +1,324 @@
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  FIREBASE UTILITIES                                                          │
+// │  All Firebase project constants and REST API functions.                     │
+// │  No Firebase SDK — pure REST API calls for auth, Firestore, and admin.     │
+// └──────────────────────────────────────────────────────────────────────────────┘
+
+// Firebase Configuration
+export const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
+export const FB_PROJECT = "studydesk-1b251";
+export const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
+export const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+
+// Google OAuth Configuration
+export const GOOGLE_CLIENT_ID = "354710751847-29cuupcg436t4uubpa212ftg341s9t6p.apps.googleusercontent.com";
+
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  AUTHENTICATION FUNCTIONS                                                    │
+// └──────────────────────────────────────────────────────────────────────────────┘
+
+export async function fbRefreshToken(refreshToken) {
+  const r = await fetch(`https://securetoken.googleapis.com/v1/token?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      grant_type: "refresh_token",
+      refresh_token: refreshToken
+    })
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return {
+    idToken: d.id_token,
+    refreshToken: d.refresh_token,
+    expiresIn: parseInt(d.expires_in) * 1000, // Convert to milliseconds
+    uid: d.user_id
+  };
+}
+
+export async function fbSignUp(email, password, displayName) {
+  const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({email, password, returnSecureToken:true})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  if(displayName) {
+    await fetch(`${FB_AUTH}:update?key=${FB_KEY}`, {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({idToken:d.idToken, displayName, returnSecureToken:true})
+    });
+  }
+  return {
+    uid:d.localId, 
+    email:d.email, 
+    displayName, 
+    idToken:d.idToken, 
+    refreshToken:d.refreshToken,
+    tokenExpiry: Date.now() + (parseInt(d.expiresIn) * 1000),
+    photoURL:null
+  };
+}
+
+export async function fbSignIn(email, password) {
+  const r = await fetch(`${FB_AUTH}:signInWithPassword?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({email, password, returnSecureToken:true})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return {
+    uid:d.localId, 
+    email:d.email, 
+    displayName:d.displayName||null, 
+    idToken:d.idToken, 
+    refreshToken:d.refreshToken,
+    tokenExpiry: Date.now() + (parseInt(d.expiresIn) * 1000),
+    photoURL:d.photoUrl||null
+  };
+}
+
+export async function fbResetPassword(email) {
+  const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({requestType:"PASSWORD_RESET", email})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return true;
+}
+
+export async function fbSendVerificationEmail(idToken) {
+  const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      requestType:"VERIFY_EMAIL",
+      idToken,
+      continueUrl:"https://mystudydesk.app"
+    })
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return true;
+}
+
+export async function fbCheckEmailVerified(idToken) {
+  const r = await fetch(`${FB_AUTH}:lookup?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({idToken})
+  });
+  const d = await r.json();
+  if(d.error) throw new Error(d.error.message);
+  return d.users?.[0]?.emailVerified === true;
+}
+
+export async function fbDeleteAccount(idToken) {
+  await fetch(`${FB_AUTH}:delete?key=${FB_KEY}`, {
+    method:"POST", headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({idToken})
+  });
+}
+
+export async function fbAdminDeleteUserData(uid, adminIdToken) {
+  // Delete user's Firestore docs (users + presence)
+  await Promise.allSettled([
+    fetch(`${FB_FS}/users/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
+    fetch(`${FB_FS}/presence/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
+  ]);
+}
+
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  GOOGLE SIGN-IN (Google Identity Services)                                  │
+// └──────────────────────────────────────────────────────────────────────────────┘
+
+function loadGSI() {
+  return new Promise(resolve => {
+    if(window.google?.accounts?.id) { resolve(); return; }
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.onload = resolve;
+    document.head.appendChild(s);
+  });
+}
+
+export async function fbGoogleSignIn() {
+  if(GOOGLE_CLIENT_ID === "REPLACE_WITH_YOUR_WEB_CLIENT_ID") {
+    throw new Error("Google sign-in not configured. See setup instructions.");
+  }
+  await loadGSI();
+  return new Promise((resolve, reject) => {
+    window.google.accounts.id.initialize({
+      client_id: GOOGLE_CLIENT_ID,
+      callback: async (response) => {
+        if(response.credential) {
+          try {
+            // Exchange Google credential for Firebase token
+            const r = await fetch(`${FB_AUTH}:signInWithIdp?key=${FB_KEY}`, {
+              method:"POST", headers:{"Content-Type":"application/json"},
+              body: JSON.stringify({
+                requestUri: window.location.origin,
+                postBody: `id_token=${response.credential}&providerId=google.com`,
+                returnSecureToken: true,
+                returnIdpCredential: true
+              })
+            });
+            const d = await r.json();
+            if(d.error) throw new Error(d.error.message);
+            
+            resolve({
+              uid: d.localId,
+              email: d.email,
+              displayName: d.displayName || d.email.split("@")[0],
+              idToken: d.idToken,
+              refreshToken: d.refreshToken,
+              tokenExpiry: Date.now() + (parseInt(d.expiresIn) * 1000),
+              photoURL: d.photoUrl || null
+            });
+          } catch (error) {
+            reject(error);
+          }
+        } else {
+          reject(new Error("No credential returned"));
+        }
+      },
+      cancel_on_tap_outside: true,
+    });
+    window.google.accounts.id.prompt((notification) => {
+      if(notification.isNotDisplayed() || notification.isSkippedMoment()) {
+        const div = document.createElement("div");
+        div.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99999;";
+        document.body.appendChild(div);
+        window.google.accounts.id.renderButton(div, {
+          type:"standard", theme:"outline", size:"large", text:"signin_with",
+          width: 300,
+        });
+        const btn = div.querySelector("div[role=button]");
+        if(btn) btn.click();
+        setTimeout(() => { try { document.body.removeChild(div); } catch{} }, 5000);
+      }
+    });
+  });
+}
+
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  DATA MANAGEMENT (Firestore)                                                │
+// └──────────────────────────────────────────────────────────────────────────────┘
+
+export async function fbLoadData(uid, idToken) {
+  const r = await fetch(`${FB_FS}/users/${uid}`, {
+    headers:{"Authorization":`Bearer ${idToken}`}
+  });
+  if(r.status===404) return null;
+  const d = await r.json();
+  if(d.error) return null;
+  const raw = d.fields?.data?.stringValue;
+  return raw ? JSON.parse(raw) : null;
+}
+
+export async function fbEnsureValidToken(user) {
+  // Check if token expires within the next 5 minutes
+  const fiveMinutes = 5 * 60 * 1000;
+  if (!user.tokenExpiry || !user.refreshToken || Date.now() < (user.tokenExpiry - fiveMinutes)) {
+    return user; // Token is still valid
+  }
+  
+  try {
+    const refreshed = await fbRefreshToken(user.refreshToken);
+    const updatedUser = {
+      ...user,
+      idToken: refreshed.idToken,
+      refreshToken: refreshed.refreshToken,
+      tokenExpiry: Date.now() + refreshed.expiresIn
+    };
+    
+    // Update stored session
+    fbSetSession(updatedUser);
+    return updatedUser;
+  } catch (error) {
+    console.warn("Token refresh failed:", error);
+    // If refresh fails, clear session and force re-login
+    fbClearSession();
+    throw new Error("Session expired. Please log in again.");
+  }
+}
+
+export async function fbSaveData(uid, idToken, data) {
+  try {
+    await fetch(`${FB_FS}/users/${uid}?updateMask.fieldPaths=data`, {
+      method:"PATCH", headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
+      body: JSON.stringify({fields:{data:{stringValue:JSON.stringify(data)}}})
+    });
+  } catch(e) { console.warn("Save error", e); }
+}
+
+export function fbGetSession() {
+  try { const s=localStorage.getItem("sd-session"); return s?JSON.parse(s):null; } catch{return null;}
+}
+
+export function fbIsTokenExpiringSoon(user) {
+  if (!user || !user.tokenExpiry) return true; // Assume expired if no expiry info
+  const fiveMinutes = 5 * 60 * 1000;
+  return Date.now() >= (user.tokenExpiry - fiveMinutes);
+}
+
+export function fbSetSession(user) {
+  try { localStorage.setItem("sd-session", user?JSON.stringify(user):""); } catch{}
+}
+
+export function fbClearSession() {
+  try { localStorage.removeItem("sd-session"); } catch{}
+}
+
+export async function fbIncrementStat(field, amount, idToken) {
+  if(!amount) amount=1;
+  try{
+    await fetch(`https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents:commit?key=${FB_KEY}`,{
+      method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
+      body:JSON.stringify({writes:[{transform:{document:`projects/${FB_PROJECT}/databases/(default)/documents/analytics/global`,fieldTransforms:[{fieldPath:field,increment:{integerValue:amount}}]}}]})
+    });
+  }catch(e){console.warn("Stat error",e);}
+}
+
+export async function fbUpdatePresence(user, extra={}) {
+  try{
+    const extraFields = {};
+    if(extra.points!=null) extraFields.points = {integerValue: String(extra.points)};
+    if(extra.streak!=null) extraFields.streak = {integerValue: String(extra.streak)};
+    const fieldPaths = ["lastSeen","email","displayName","photoURL",...Object.keys(extraFields)].map(f=>`updateMask.fieldPaths=${f}`).join("&");
+    await fetch(`${FB_FS}/presence/${user.uid}?key=${FB_KEY}&${fieldPaths}`,{
+      method:"PATCH",headers:{"Content-Type":"application/json","Authorization":`Bearer ${user.idToken}`},
+      body:JSON.stringify({fields:{lastSeen:{timestampValue:new Date().toISOString()},email:{stringValue:user.email},displayName:{stringValue:user.displayName||user.email.split("@")[0]},photoURL:{stringValue:user.photoURL||""},...extraFields}})
+    });
+  }catch(e){console.warn("Presence error",e);}
+}
+
+export async function fbGetAdminStats(idToken) {
+  try{
+    const [gSnap,pSnap,uSnap]=await Promise.all([
+      fetch(`${FB_FS}/analytics/global?key=${FB_KEY}`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
+      fetch(`${FB_FS}/presence?key=${FB_KEY}&pageSize=200`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
+      fetch(`${FB_FS}/users?key=${FB_KEY}&pageSize=200`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
+    ]);
+    const g=gSnap.fields||{};
+    const gi=f=>parseInt(f?.integerValue||f?.doubleValue||0);
+    const twoMin=new Date(Date.now()-2*60*1000);
+    const allP=(pSnap.documents||[]);
+    const online=allP.filter(p=>{const ls=p.fields?.lastSeen?.timestampValue;return ls&&new Date(ls)>twoMin;})
+      .map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||"",lastSeen:p.fields?.lastSeen?.timestampValue}));
+    const allUsers=(uSnap.documents||[]).map(u=>({uid:u.name.split("/").pop(),email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
+    const totalUsersReal = Math.max(gi(g.totalUsers), allUsers.length, allP.length);
+    const today = new Date().toISOString().split("T")[0];
+    const newToday = allP.filter(p=>{
+      const ls=p.fields?.lastSeen?.timestampValue;
+      return ls&&ls.startsWith(today);
+    }).length;
+    return{
+      totalUsers:totalUsersReal,
+      onlineNow:online.length,onlineUsers:online,
+      totalAssignments:gi(g.totalAssignments),totalSubmitted:gi(g.totalSubmitted),
+      totalClasses:gi(g.totalClasses),totalPoints:gi(g.totalPoints),
+      newUsersToday:newToday,
+      allUsers: allUsers.length > 0 ? allUsers :
+        allP.map(p=>({uid:p.name.split("/").pop(),email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||""})),
+    };
+  }catch(e){console.warn("Admin error",e);return null;}
+}

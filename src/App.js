@@ -40,2410 +40,61 @@
 
 import React, { useState, useEffect, useRef } from "react";
 
+// ── Extracted Modules ────────────────────────────────────────────────────────────
+import { css } from './styles/styles';
+import { 
+  FB_KEY, FB_PROJECT, FB_AUTH, FB_FS, GOOGLE_CLIENT_ID,
+  fbSignUp, fbSignIn, fbResetPassword, fbSendVerificationEmail, 
+  fbCheckEmailVerified, fbDeleteAccount, fbAdminDeleteUserData,
+  fbGoogleSignIn, fbLoadData, fbSaveData, fbGetSession, 
+  fbSetSession, fbClearSession, fbIncrementStat, fbUpdatePresence, 
+  fbGetAdminStats, fbEnsureValidToken
+} from './utils/firebase';
+import { callGemini, callGeminiStream } from './utils/gemini';
+import { 
+  CF_PROXY, fetchWithFallback, getBuddyStage, daysUntil, 
+  fmtDate, fmt12, fmt12h, todayAbbr, subjectColor, extractId 
+} from './utils/helpers';
+import { 
+  RELEASES, PRIORITY, SHOP_ITEMS, BUDDY_STAGES, 
+  DAYS, HOURS, SUBJECT_COLORS 
+} from './constants';
+import AuthScreen from './components/auth/AuthScreen';
+import AdminPanel from './components/admin/AdminPanel';
+import BuddyCreature from './components/shared/BuddyCreature';
+import PhoneUploadPage from './components/shared/PhoneUploadPage';
+import Header from './components/shared/Header';
+import { CopyBtn, FetcherCopyBox } from './components/shared/UtilityComponents';
 
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § FIREBASE CONFIG                                                           │
-// │  All Firebase project constants. No Firebase SDK — pure REST API calls.     │
-// └──────────────────────────────────────────────────────────────────────────────┘
-const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
-const FB_PROJECT = "studydesk-1b251";
-const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
-const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
+// ── Tab Components ───────────────────────────────────────────────────────────────
+import DashboardTab from './components/tabs/DashboardTab';
+import AssignmentsTab from './components/tabs/AssignmentsTab';
+import GradesTab from './components/tabs/GradesTab';
+import ScheduleTab from './components/tabs/ScheduleTab';
+import TimerTab from './components/tabs/TimerTab';
+import BuddyTab from './components/tabs/BuddyTab';
+import ShopTab from './components/tabs/ShopTab';
+import AITab from './components/tabs/AITab';
 
+// ── Service Modules ──────────────────────────────────────────────────────────────
+import { handleComplete, buyItem, equipItem, addFloat, launchConfetti, checkUnknown } from './services/gameLogic';
+import { startTimer, resetTimer, fmtTimer, playDoneSound, onTimerComplete } from './services/timerLogic';
+import { syncCanvas } from './services/canvasSync';
+import { 
+  resetImport, parseHomeworkFromText, importFromCanvasPaste, importFromCanvasAPI, 
+  importFromSlides, extractDocId, fetchViaProxy, confirmImport 
+} from './services/importLogic';
+import { fetchLeaderboard } from './services/leaderboardLogic';
+
+// ── Local Constants (not extracted) ─────────────────────────────────────────────
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-// Cloudflare Worker proxy — free, always on, no cold starts, handles CORS + auth properly
-const CF_PROXY = "https://studydesk-proxy.goyalamars18.workers.dev";
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § CANVAS PROXY                                                              │
-// │  Routes Canvas API calls through a Cloudflare Worker to bypass CORS.        │
-// │  Worker code: https://github.com/studydeskapp/studydesk-proxy               │
-// │  Deploy/edit: dash.cloudflare.com → Workers → studydesk-proxy               │
-// └──────────────────────────────────────────────────────────────────────────────┘
-async function fetchWithFallback(base, path, options={}) {
-  const url = `${CF_PROXY}/canvas?base=${encodeURIComponent(base)}&path=${encodeURIComponent(path)}`;
-  const r = await fetch(url, {...options, signal:AbortSignal.timeout(15000)});
-  if(r.ok) return r;
-  if(r.status===401||r.status===403) throw new Error(`Canvas returned ${r.status} — check your API token`);
-  throw new Error(`Canvas proxy returned ${r.status}`);
-}
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § FIREBASE AUTH                                                             │
-// │  Email/password sign up, sign in, password reset, email verification,       │
-// │  account deletion, Google SSO via Google Identity Services (GSI).           │
-// └──────────────────────────────────────────────────────────────────────────────┘
-async function fbSignUp(email, password, displayName) {
-  const r = await fetch(`${FB_AUTH}:signUp?key=${FB_KEY}`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({email, password, returnSecureToken:true})
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error.message);
-  if(displayName) {
-    await fetch(`${FB_AUTH}:update?key=${FB_KEY}`, {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({idToken:d.idToken, displayName, returnSecureToken:true})
-    });
-  }
-  return {uid:d.localId, email:d.email, displayName, idToken:d.idToken, photoURL:null};
-}
-
-async function fbSignIn(email, password) {
-  const r = await fetch(`${FB_AUTH}:signInWithPassword?key=${FB_KEY}`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({email, password, returnSecureToken:true})
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error.message);
-  return {uid:d.localId, email:d.email, displayName:d.displayName||null, idToken:d.idToken, photoURL:d.photoUrl||null};
-}
-
-async function fbResetPassword(email) {
-  const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({requestType:"PASSWORD_RESET", email})
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error.message);
-  return true;
-}
-
-async function fbSendVerificationEmail(idToken) {
-  const r = await fetch(`${FB_AUTH}:sendOobCode?key=${FB_KEY}`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({
-      requestType:"VERIFY_EMAIL",
-      idToken,
-      continueUrl:"https://mystudydesk.app"
-    })
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error.message);
-  return true;
-}
-
-async function fbCheckEmailVerified(idToken) {
-  const r = await fetch(`${FB_AUTH}:lookup?key=${FB_KEY}`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({idToken})
-  });
-  const d = await r.json();
-  if(d.error) throw new Error(d.error.message);
-  return d.users?.[0]?.emailVerified === true;
-}
-
-async function fbDeleteAccount(idToken) {
-  await fetch(`${FB_AUTH}:delete?key=${FB_KEY}`, {
-    method:"POST", headers:{"Content-Type":"application/json"},
-    body: JSON.stringify({idToken})
-  });
-}
-
-async function fbAdminDeleteUserData(uid, adminIdToken) {
-  // Delete user's Firestore docs (users + presence)
-  await Promise.allSettled([
-    fetch(`${FB_FS}/users/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
-    fetch(`${FB_FS}/presence/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
-  ]);
-}
-
-// ── Google Identity Services sign-in ─────────────────────────────────────────
-// IMPORTANT: Replace the value below with your real Web Client ID from:
-// Firebase Console → Authentication → Sign-in method → Google → Web SDK configuration → Web client ID
-const GOOGLE_CLIENT_ID = "354710751847-29cuupcg436t4uubpa212ftg341s9t6p.apps.googleusercontent.com";
-
-function loadGSI() {
-  return new Promise(resolve => {
-    if(window.google?.accounts?.id) { resolve(); return; }
-    const s = document.createElement("script");
-    s.src = "https://accounts.google.com/gsi/client";
-    s.onload = resolve;
-    document.head.appendChild(s);
-  });
-}
-
-async function fbGoogleSignIn() {
-  if(GOOGLE_CLIENT_ID === "REPLACE_WITH_YOUR_WEB_CLIENT_ID") {
-    throw new Error("Google sign-in not configured. See setup instructions.");
-  }
-  await loadGSI();
-  return new Promise((resolve, reject) => {
-    window.google.accounts.id.initialize({
-      client_id: GOOGLE_CLIENT_ID,
-      callback: (response) => {
-        if(response.credential) {
-          resolve({ idToken: response.credential });
-        } else {
-          reject(new Error("No credential returned"));
-        }
-      },
-      cancel_on_tap_outside: true,
-    });
-    // Use a popup-style button click flow
-    window.google.accounts.id.prompt((notification) => {
-      if(notification.isNotDisplayed() || notification.isSkippedMoment()) {
-        // Fallback: render a hidden button and click it
-        const div = document.createElement("div");
-        div.style.cssText = "position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:99999;";
-        document.body.appendChild(div);
-        window.google.accounts.id.renderButton(div, {
-          type:"standard", theme:"outline", size:"large", text:"signin_with",
-          width: 300,
-        });
-        const btn = div.querySelector("div[role=button]");
-        if(btn) btn.click();
-        // Clean up div after sign-in
-        setTimeout(() => { try { document.body.removeChild(div); } catch{} }, 5000);
-      }
-    });
-  });
-}
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § FIREBASE DATA                                                             │
-// │  Load/save user data (assignments + classes + game state) via Firestore     │
-// │  REST. Also handles presence tracking and admin stats.                      │
-// └──────────────────────────────────────────────────────────────────────────────┘
-async function fbLoadData(uid, idToken) {
-  const r = await fetch(`${FB_FS}/users/${uid}`, {
-    headers:{"Authorization":`Bearer ${idToken}`}
-  });
-  if(r.status===404) return null;
-  const d = await r.json();
-  if(d.error) return null;
-  const raw = d.fields?.data?.stringValue;
-  return raw ? JSON.parse(raw) : null;
-}
-
-async function fbSaveData(uid, idToken, data) {
-  try {
-    await fetch(`${FB_FS}/users/${uid}?updateMask.fieldPaths=data`, {
-      method:"PATCH", headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
-      body: JSON.stringify({fields:{data:{stringValue:JSON.stringify(data)}}})
-    });
-  } catch(e) { console.warn("Save error", e); }
-}
-
-function fbGetSession() {
-  try { const s=localStorage.getItem("sd-session"); return s?JSON.parse(s):null; } catch{return null;}
-}
-function fbSetSession(user) {
-  try { localStorage.setItem("sd-session", user?JSON.stringify(user):""); } catch{}
-}
-function fbClearSession() {
-  try { localStorage.removeItem("sd-session"); } catch{}
-}
-
 const ADMIN_PASS = "studydesk2026";
 const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY;
-async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[]){
-  const contents = [
-    ...history.map(m=>({role:m.role==="ai"?"model":"user", parts:[{text:m.text}]})),
-    {role:"user", parts:[{text:prompt}]}
-  ];
-  const model = "gemini-2.5-flash-lite";
-  try{
-    const controller = new AbortController();
-    const timeout = setTimeout(()=>controller.abort(), 30000);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,{
-      method:"POST",
-      signal:controller.signal,
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify({
-        system_instruction:{parts:[{text:systemPrompt}]},
-        contents,
-        generationConfig:{maxOutputTokens:2048,temperature:0.7}
-      })
-    });
-    clearTimeout(timeout);
-    if(!res.ok){
-      const e = await res.json();
-      const msg = e.error?.message||"";
-      if(res.status===429){
-        const numMatch = msg.match(/(\d+)\.\d+s/);
-        const secs = numMatch ? Math.ceil(parseInt(numMatch[1])) + 2 : 60;
-        return `⏳ Rate limited — you've hit the 20 requests/min limit. Please wait about ${secs} seconds and try again.`;
-      }
-      return "Error: "+msg;
-    }
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let full = "";
-    let buffer = "";
-    while(true){
-      const {done,value} = await reader.read();
-      if(done) break;
-      buffer += decoder.decode(value,{stream:true});
-      const lines = buffer.split("\n");
-      buffer = lines.pop();
-      for(const line of lines){
-        if(!line.startsWith("data: ")) continue;
-        const json = line.slice(6).trim();
-        try{
-          const parsed = JSON.parse(json);
-          const delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
-          if(delta){ full+=delta; onChunk(full); await new Promise(r=>setTimeout(r,18)); }
-        }catch(e){}
-      }
-    }
-    return full || "Sorry, I couldn't get a response.";
-  }catch(e){
-    if(e.name==="AbortError") return "Request timed out. Please try again.";
-    return "Network error: "+e.message;
-  }
-}
-async function callGemini(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly."){
-  return callGeminiStream(prompt, systemPrompt, ()=>{});
-}
-
-async function fbIncrementStat(field, amount, idToken) {
-  if(!amount) amount=1;
-  try{
-    await fetch(`https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents:commit?key=${FB_KEY}`,{
-      method:"POST",headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
-      body:JSON.stringify({writes:[{transform:{document:`projects/${FB_PROJECT}/databases/(default)/documents/analytics/global`,fieldTransforms:[{fieldPath:field,increment:{integerValue:amount}}]}}]})
-    });
-  }catch(e){console.warn("Stat error",e);}
-}
-
-async function fbUpdatePresence(user, extra={}) {
-  try{
-    const extraFields = {};
-    if(extra.points!=null) extraFields.points = {integerValue: String(extra.points)};
-    if(extra.streak!=null) extraFields.streak = {integerValue: String(extra.streak)};
-    const fieldPaths = ["lastSeen","email","displayName","photoURL",...Object.keys(extraFields)].map(f=>`updateMask.fieldPaths=${f}`).join("&");
-    await fetch(`${FB_FS}/presence/${user.uid}?key=${FB_KEY}&${fieldPaths}`,{
-      method:"PATCH",headers:{"Content-Type":"application/json","Authorization":`Bearer ${user.idToken}`},
-      body:JSON.stringify({fields:{lastSeen:{timestampValue:new Date().toISOString()},email:{stringValue:user.email},displayName:{stringValue:user.displayName||user.email.split("@")[0]},photoURL:{stringValue:user.photoURL||""},...extraFields}})
-    });
-  }catch(e){console.warn("Presence error",e);}
-}
-
-async function fbGetAdminStats(idToken) {
-  try{
-    const [gSnap,pSnap,uSnap]=await Promise.all([
-      fetch(`${FB_FS}/analytics/global?key=${FB_KEY}`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
-      fetch(`${FB_FS}/presence?key=${FB_KEY}&pageSize=200`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
-      fetch(`${FB_FS}/users?key=${FB_KEY}&pageSize=200`,{headers:{"Authorization":`Bearer ${idToken}`}}).then(r=>r.json()),
-    ]);
-    const g=gSnap.fields||{};
-    const gi=f=>parseInt(f?.integerValue||f?.doubleValue||0);
-    const twoMin=new Date(Date.now()-2*60*1000);
-    const allP=(pSnap.documents||[]);
-    const online=allP.filter(p=>{const ls=p.fields?.lastSeen?.timestampValue;return ls&&new Date(ls)>twoMin;})
-      .map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||"",lastSeen:p.fields?.lastSeen?.timestampValue}));
-    const allUsers=(uSnap.documents||[]).map(u=>({uid:u.name.split("/").pop(),email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
-    // Use actual document counts from Firestore — more reliable than manual counters
-    const totalUsersReal = Math.max(gi(g.totalUsers), allUsers.length, allP.length);
-    const today = new Date().toISOString().split("T")[0];
-    const newToday = allP.filter(p=>{
-      const ls=p.fields?.lastSeen?.timestampValue;
-      return ls&&ls.startsWith(today);
-    }).length;
-    return{
-      totalUsers:totalUsersReal,
-      onlineNow:online.length,onlineUsers:online,
-      totalAssignments:gi(g.totalAssignments),totalSubmitted:gi(g.totalSubmitted),
-      totalClasses:gi(g.totalClasses),totalPoints:gi(g.totalPoints),
-      newUsersToday:newToday,
-      allUsers: allUsers.length > 0 ? allUsers :
-        allP.map(p=>({uid:p.name.split("/").pop(),email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||""})),
-    };
-  }catch(e){console.warn("Admin error",e);return null;}
-}
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § CONSTANTS                                                                 │
-// │  APP_VERSION  — bump this when deploying a new release                      │
-// │  RELEASES     — release notes shown in the 🚀 What's New modal              │
-// │  SUBJECT_COLORS — color palette for auto-assigning class colors             │
-// │  SHOP_ITEMS   — all purchasable buddy accessories                           │
-// │  MONTHS       — month name → number mapping for import parser               │
-// └──────────────────────────────────────────────────────────────────────────────┘
 const STORAGE_KEY = "hw-tracker-v1";
 const APP_VERSION = "1.4.0";
-const RELEASES = [
-  {
-    version: "1.4.0",
-    date: "11 March 2026",
-    title: "UI Refresh & Productivity Boost",
-    changes: [
-      "🎨 Vibrant new accent color — blue gradient replaces the dark theme for a more modern look",
-      "📏 Wider sidebar (260px) — more breathing room for navigation on desktop",
-      "✨ Enhanced stat cards — subtle gradients, larger icons (25% opacity), and smoother animations",
-      "📝 Bigger assignment titles — improved readability with larger font and better spacing",
-      "📊 Prominent progress bars — 8px height with clearer percentage labels, now visible on mobile",
-      "🚨 Attention-grabbing overdue styling — red border with glow effect so you never miss a deadline",
-      "⚡ Snappier interactions — reduced animation times from 180ms to 120ms throughout",
-      "🎯 Floating action button — quick-add assignments from anywhere with the + button",
-      "⌨️ Keyboard shortcuts — press N to add, J/K to navigate tabs (shown in header)",
-      "🐣 Animated buddy — subtle glow effect makes your study companion feel more alive",
-      "📱 Better mobile layout — progress bars full-width, improved card spacing, compact header",
-      "🌊 Horizontal scroll fade — visual indicator when tabs overflow on mobile",
-      "�️ Improved desktop spacing — header has proper margins from sidebar",
-    ]
-  },
-  {
-    version: "1.3.2",
-    date: "10 March 2026",
-    title: "Custom Domain & Bug Fixes",
-    changes: [
-      "🌐 StudyDesk is now live at mystudydesk.app — a proper home for the app",
-      "🔒 Google sign-in now works correctly on the custom domain",
-      "📱 Fixed modals and import dialogs being covered by the mobile bottom nav bar",
-      "✅ Import assignments now shows up properly on mobile after fetching",
-      "🗂️ Subject filter tabs now only appear when there are pending assignments",
-      "📝 Assignments tab now shows the empty state correctly when you have nothing due",
-      "📧 Email verification link now points to mystudydesk.app",
-    ]
-  },
-  {
-    version: "1.3.1",
-    date: "09 March 2026",
-    title: "UI Cleanup & Chromebook Fix",
-    changes: [
-      "🎨 Cleaner header — icon buttons replace the old row of text buttons for a less cluttered look",
-      "🗂️ Tabs redesigned with a subtle card-style active state instead of the filled color",
-      "✨ Refined color palette, tighter spacing, and smoother hover animations throughout",
-      "🔒 Canvas token no longer synced to the cloud — stays on your device only",
-      "🚫 Canvas Connect now shows a clear message on Chromebooks instead of silently failing",
-      "🐛 Removed background keep-alive requests that were firing even when Canvas wasn't connected",
-    ]
-  },
-  {
-    version: "1.3.0",
-    date: "08 March 2026",
-    title: "Canvas Sync, Grades & School Schedules",
-    changes: [
-      "🎓 One-click Canvas import — connect your token and import every upcoming assignment, quiz, and discussion instantly with no copy-pasting",
-      "🔄 Canvas auto-syncs every 3 minutes — assignments mark themselves done the moment you submit on Canvas",
-      "📈 Grades tab — per-class averages, letter grades, weighted scores, and expandable assignment breakdowns",
-      "💯 Grades shown on every assignment card, color coded green/blue/yellow/red by letter grade",
-      "🔁 Import updates existing assignments with latest Canvas data instead of creating duplicates",
-      "🏫 School schedule import — search your school and get bell times loaded automatically",
-      "📅 Naperville Central fully supported with day-specific times, SOAR period, and Wednesday late start",
-      "🌐 School search uses two APIs in parallel — 80+ schools pre-loaded for instant results",
-      "🔐 Google sign-in rebuilt with Google Identity Services — no more authorization errors",
-      "👤 Click your username to sign out — cleaner header, no separate sign out button",
-    ]
-  },
-  {
-    version: "1.2.0",
-    date: "03 March 2026",
-    title: "Big UI Refresh + Dark Mode",
-    changes: [
-      "🌙 Dark mode — toggle in the header, remembers your preference",
-      "📊 Redesigned dashboard with color-accent stat cards, overdue alert banner, and due-soon badges on today's classes",
-      "📋 Assignments tab now splits into Pending and Completed sections",
-      "📅 Schedule reworked into a two-panel layout with class list + pending counts alongside the timetable",
-      "🧠 Smart subject picker — dropdown pulls from your schedule and past assignments when adding manually",
-      "💡 Add-to-schedule prompt — if an imported or manually added subject isn't in your timetable, you'll be asked to set it up",
-      "🎨 Polished cards, hover animations, and consistent spacing across all tabs",
-      "💡 Suggestions button — send feature ideas and bug reports directly from the header",
-    ]
-  },
-  {
-    version: "1.1.0",
-    date: "03 March 2026",
-    title: "Study Buddy + Points",
-    changes: [
-      "🐣 Study Buddy tab — a little creature that grows as your streak increases through 6 evolution stages",
-      "⭐ Points system — earn 15 points per completed assignment",
-      "🔥 Daily streak — complete 3 assignments in a day to extend your streak, with scaling bonus points",
-      "🛍️ Shop tab — spend points on 12 accessories for your buddy (hats, glasses, capes, and more)",
-      "Streak and points badges in the header so you always know your progress",
-      "Daily quest tracker with pip indicators on the Buddy tab",
-    ]
-  },
-  {
-    version: "1.0.0",
-    date: "03 March 2026",
-    title: "Initial Launch",
-    changes: [
-      "Homework tracker with assignments, schedule, and dashboard",
-      "Import from Google Slides — paste a link to auto fetch or upload a .txt file",
-      "Import from Google Docs agenda calendars — finds all linked slides from today onwards",
-      "Import from Canvas — paste your planner JSON to pull in upcoming assignments",
-      "Smart homework parser reads both \'Due [day]\' and \'TODAY\'S HOMEWORK\' formats",
-      "Supports numeric dates like 1/27 and 2/4 for chemistry-style slides",
-      "Subject dropdown on review screen — correct the class before adding",
-      "Remove individual assignments from import preview with the ✕ button",
-      "Priority levels, progress tracking, and overdue detection",
-      "Weekly schedule view with class time and room management",
-    ]
-  }
-];
-const PRIORITY = {
-  high:   { label: "High",   bg: "#fef2f2", text: "#dc2626" },
-  medium: { label: "Medium", bg: "#fffbeb", text: "#d97706" },
-  low:    { label: "Low",    bg: "#f0fdf4", text: "#16a34a" },
-};
-const SUBJECT_COLORS = ["#6366f1","#ec4899","#14b8a6","#f59e0b","#3b82f6","#8b5cf6","#10b981","#f97316","#06b6d4","#e11d48","#84cc16","#0ea5e9"];
-const DAYS = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
-const HOURS = Array.from({length:15},(_,i)=>i+7);
-const SHOP_ITEMS=[{id:"party_hat",name:"Party Hat",cat:"hat",price:50,emoji:"🎉",desc:"Ready to celebrate!"},{id:"crown",name:"Royal Crown",cat:"hat",price:200,emoji:"👑",desc:"Fit for royalty"},{id:"wizard_hat",name:"Wizard Hat",cat:"hat",price:150,emoji:"🪄",desc:"Full of magic"},{id:"santa_hat",name:"Santa Hat",cat:"hat",price:100,emoji:"🎅",desc:"Ho ho homework!"},{id:"sunglasses",name:"Sunglasses",cat:"face",price:75,emoji:"😎",desc:"Too cool for school"},{id:"heart_eyes",name:"Heart Glasses",cat:"face",price:120,emoji:"🩷",desc:"Love studying"},{id:"monocle",name:"Monocle",cat:"face",price:130,emoji:"🧐",desc:"Very distinguished"},{id:"bow_tie",name:"Bow Tie",cat:"body",price:60,emoji:"🎀",desc:"Dressed to impress"},{id:"cape",name:"Hero Cape",cat:"body",price:220,emoji:"🦸",desc:"Study hero!"},{id:"halo",name:"Halo",cat:"special",price:280,emoji:"😇",desc:"Pure dedication"},{id:"wings",name:"Fairy Wings",cat:"special",price:350,emoji:"🦋",desc:"Soar through homework"},{id:"rainbow",name:"Rainbow Aura",cat:"special",price:420,emoji:"🌈",desc:"Legendary scholar"}];
-const BUDDY_STAGES=[{name:"Sleeping Egg",min:0,next:1,desc:"Complete your first streak to hatch!"},{name:"Baby Bud",min:1,next:3,desc:"A little buddy is growing..."},{name:"Tiny Tot",min:3,next:7,desc:"Getting bigger every day!"},{name:"Young Pal",min:7,next:14,desc:"Really coming into their own!"},{name:"Study Star",min:14,next:30,desc:"Nearly at legendary status!"},{name:"Legend",min:30,next:null,desc:"You have reached the pinnacle!"}];
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § HELPER FUNCTIONS                                                          │
-// │  Pure utility functions — no side effects, no state.                        │
-// │  getBuddyStage, daysUntil, fmtDate, fmt12, subjectColor, extractId, etc.    │
-// └──────────────────────────────────────────────────────────────────────────────┘
-function getBuddyStage(s){return s>=30?5:s>=14?4:s>=7?3:s>=3?2:s>=1?1:0;}
 
-
-function daysUntil(d){if(!d)return Infinity;const n=new Date();n.setHours(0,0,0,0);return Math.ceil((new Date(d+"T00:00:00")-n)/86400000);}
-function fmtDate(d){if(!d)return"";return new Date(d+"T12:00:00").toLocaleDateString("en-US",{month:"short",day:"numeric"});}
-function fmt12(t){if(!t)return"";const[h,m]=t.split(":").map(Number);return`${h%12||12}:${String(m).padStart(2,"0")}${h>=12?"pm":"am"}`;}
-function fmt12h(h){return`${h%12||12}${h>=12?"pm":"am"}`;}
-function todayAbbr(){return DAYS[[6,0,1,2,3,4,5][new Date().getDay()]];}
-function subjectColor(name,classes){const c=classes.find(x=>x.name===name);if(c?.color)return c.color;let h=0;for(const ch of(name||""))h=(h*31+ch.charCodeAt(0))%SUBJECT_COLORS.length;return SUBJECT_COLORS[h];}
-function extractId(url){const m=url.match(/\/presentation\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § CSS                                                                       │
-// │  All styles in a single template string, injected via <style>{css}</style>  │
-// │                                                                              │
-// │  STRUCTURE:                                                                  │
-// │    :root / .dark  — CSS variables (colors, spacing)                         │
-// │    .app .hdr      — layout, desktop header                                  │
-// │    .tabs .tab     — top navigation tabs                                      │
-// │    .acard         — assignment card                                          │
-// │    .modal .overlay — modal / overlay                                         │
-// │    .stats .stat   — dashboard stat cards                                     │
-// │    .timer-*       — study timer                                              │
-// │    .lb-*          — leaderboard                                              │
-// │    .mob-*         — mobile header + status strip                             │
-// │    .bnav .bnav-btn — mobile bottom navigation bar                            │
-// │    @media(max-width:768px) — mobile overrides                               │
-// │    @keyframes     — animations (fadeIn, slideUp, spin, etc.)                │
-// └──────────────────────────────────────────────────────────────────────────────┘
-const css = `
-@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
-*{box-sizing:border-box;margin:0;padding:0}
-:root{--bg:#F4F1EB;--bg2:#FFFFFF;--bg3:#EDEAE3;--bg4:#E5E1D8;--border:#DDD9D1;--border2:#C4BFB5;--text:#18192B;--text2:#52556E;--text3:#8F93A8;--text4:#C2C5D4;--accent:#5B8DEE;--accent2:#4A7DD9;--card:#FFFFFF;--card2:#F9F7F3;--sh:rgba(24,25,43,.06);--sh2:rgba(24,25,43,.13);--mbg:#F4F1EB;--ibg:#FFFFFF;--sg:linear-gradient(160deg,#FFFFFF,#F5F3EE);--hb:#18192B;--tb:#E8E4DC;--tc:#F5F3ED;--schdr:#5B8DEE;--radius:16px;--sb-bg:#DDE1E8;--sb-text:#1a1a2e;--sb-text2:rgba(26,26,46,.75);--sb-border:rgba(0,0,0,.08);--sb-hover:rgba(0,0,0,.06);--sb-on:rgba(0,0,0,.12);--sb-bottom-border:rgba(0,0,0,.06)}
-.dark{--bg:#0D0F18;--bg2:#13151F;--bg3:#181B27;--bg4:#1E2130;--border:#232638;--border2:#2E3248;--text:#E0E4F8;--text2:#8A90B8;--text3:#525875;--text4:#303550;--accent:#7C85FF;--accent2:#9199FF;--card:#13151F;--card2:#171A26;--sh:rgba(0,0,0,.35);--sh2:rgba(0,0,0,.55);--mbg:#13151F;--ibg:#181B27;--sg:linear-gradient(160deg,#181B27,#13151F);--hb:#232638;--tb:#171A26;--tc:#161822;--schdr:#7C85FF;--radius:16px;--sb-bg:#1A2B3C;--sb-text:#fff;--sb-text2:rgba(255,255,255,.75);--sb-border:rgba(255,255,255,.08);--sb-hover:rgba(255,255,255,.08);--sb-on:rgba(255,255,255,.14);--sb-bottom-border:rgba(255,255,255,.06)}
-/* Custom Scrollbars */
-::-webkit-scrollbar{width:10px;height:10px}
-::-webkit-scrollbar-track{background:var(--bg3);border-radius:10px}
-::-webkit-scrollbar-thumb{background:var(--border2);border-radius:10px;border:2px solid var(--bg3)}
-::-webkit-scrollbar-thumb:hover{background:var(--text4)}
-/* Firefox */
-*{scrollbar-width:thin;scrollbar-color:var(--border2) var(--bg3)}
-body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:100vh;color:var(--text);transition:background .25s,color .25s}
-.dk{background:var(--bg);min-height:100vh;transition:background .25s}
-.app{max-width:1080px;margin:0 auto;padding:0 20px 40px}
-/* ── SIDEBAR LAYOUT (desktop): fixed full-height, main content scrolls only ── */
-@media(min-width:769px){
-  .app.has-sidebar{max-width:none;padding:0}
-  .sidebar{position:fixed;left:0;top:0;bottom:0;width:260px;height:100vh;height:100dvh;display:flex;flex-direction:column;background:var(--sb-bg);border-right:1px solid var(--sb-border);box-shadow:2px 0 12px rgba(0,0,0,.08);padding-top:max(env(safe-area-inset-top),12px);z-index:100;transition:background .25s,border-color .25s,color .25s}
-  .sidebar-logo{display:flex;align-items:center;gap:10px;padding:16px 18px 20px;border-bottom:1px solid var(--sb-bottom-border)}
-  .sidebar-logo-img{width:40px;height:40px;border-radius:10px;flex-shrink:0;object-fit:contain;display:block}
-  .sidebar-logo-text{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:700;color:var(--sb-text);letter-spacing:-.3px}
-  .sidebar-nav{flex:1;padding:14px 10px;overflow-y:auto;min-height:0}
-  .sidebar-item{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border-radius:10px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--sb-text2);transition:all .18s;text-align:left;margin-bottom:2px}
-  .sidebar-item:hover{background:var(--sb-hover);color:var(--sb-text)}
-  .sidebar-item.on{background:var(--sb-on);color:var(--sb-text)}
-  .sidebar-item svg{flex-shrink:0;opacity:.9}
-  .sidebar-item.on svg{opacity:1}
-  .sidebar-item-wrap{position:relative}
-  .sidebar-more-dropdown{position:absolute;top:100%;left:0;right:0;margin-top:4px;background:var(--sb-bg);border:1px solid var(--sb-border);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.2);z-index:50}
-  .sidebar-more-dropdown button,.sidebar-more-dropdown a{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:var(--sb-text);text-align:left;transition:background .15s;text-decoration:none}
-  .sidebar-more-dropdown button:hover,.sidebar-more-dropdown a:hover{background:var(--sb-hover)}
-  .sidebar-more-dropdown button:not(:last-child),.sidebar-more-dropdown a:not(:last-child){border-bottom:1px solid var(--sb-bottom-border)}
-  .sidebar-bottom{border-top:1px solid var(--sb-bottom-border);padding:14px 10px}
-  .sidebar-profile{display:flex;align-items:center;gap:12px;width:100%;padding:12px 14px;border-radius:10px;border:none;background:var(--sb-on);cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;text-align:left;margin-bottom:10px;transition:all .18s}
-  .sidebar-profile:hover{background:var(--sb-hover)}
-  .sidebar-profile-avatar{width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#5B8DEE,#7C85FF);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;flex-shrink:0;overflow:hidden}
-  .sidebar-profile-avatar img{width:100%;height:100%;object-fit:cover}
-  .sidebar-profile-info{flex:1;min-width:0}
-  .sidebar-profile-name{font-size:.82rem;font-weight:700;color:var(--sb-text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .sidebar-profile-email{font-size:.68rem;color:var(--sb-text2);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:1px}
-  .sidebar-dm{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--sb-text2);width:100%;text-align:left;margin-bottom:6px;transition:all .18s}
-  .sidebar-dm:hover{background:var(--sb-hover);color:var(--sb-text)}
-  .sidebar-dm-toggle{width:42px;height:24px;border-radius:12px;background:var(--sb-on);margin-left:auto;position:relative;transition:background .2s;flex-shrink:0}
-  .sidebar-dm-toggle.on{background:#5B8DEE}
-  .sidebar-dm-knob{width:18px;height:18px;border-radius:50%;background:#fff;position:absolute;top:3px;left:3px;transition:transform .2s;box-shadow:0 1px 4px rgba(0,0,0,.25)}
-  .sidebar-dm-toggle.on .sidebar-dm-knob{transform:translateX(18px)}
-  .sidebar-logout{display:flex;align-items:center;gap:12px;width:100%;padding:11px 14px;border-radius:10px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--sb-text);background:var(--sb-on);text-align:left;transition:all .18s;margin-top:4px}
-  .sidebar-logout:hover{background:var(--sb-hover)}
-  .sidebar-user-menu{background:var(--sb-bg);border:1px solid var(--sb-border);border-radius:12px;overflow:hidden;box-shadow:0 8px 24px rgba(0,0,0,.2);margin-bottom:10px}
-  .sidebar-user-menu .sidebar-profile-email{color:var(--sb-text2);padding:8px 14px;font-size:.7rem;border-bottom:1px solid var(--sb-bottom-border)}
-  .sidebar-user-menu .sidebar-signout{display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;border:none;background:transparent;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:#f87171;text-align:left;transition:background .15s}
-  .sidebar-user-menu .sidebar-signout:hover{background:rgba(248,113,113,.15)}
-  .main-wrap{margin-left:260px;min-height:100vh;height:100vh;height:100dvh;overflow-y:auto;display:flex;flex-direction:column}
-  .main-inner{max-width:1080px;margin:0 auto;width:100%;padding:0 32px 32px;flex:1;padding-top:max(env(safe-area-inset-top),20px);padding-left:max(env(safe-area-inset-left),32px);padding-right:max(env(safe-area-inset-right),32px)}
-  .app.has-sidebar .tabs{display:none}
-  .app.has-sidebar .hdr{padding:max(env(safe-area-inset-top),20px) 0 16px;margin-bottom:20px;gap:8px;margin-left:32px}
-  .app.has-sidebar .hdr-title{font-size:1.5rem}
-  .app.has-sidebar .hdr-sub{font-size:.7rem;margin-top:2px}
-  .app.has-sidebar .hdr-r{gap:6px;flex-shrink:0}
-  .app.has-sidebar .hdr .streak-pill,.app.has-sidebar .hdr .pts-pill{font-size:.72rem;padding:4px 10px}
-  .app.has-sidebar .btn-sm{padding:4px 10px;font-size:.72rem}
-  .app.has-sidebar .hdr-icon-btn{width:32px;height:32px;font-size:.8rem}
-}
-@media(max-width:768px){
-  .sidebar{display:none!important}
-  .main-inner{padding:0}
-}
-.hdr{padding:max(env(safe-area-inset-top),16px) 0 16px;display:flex;align-items:center;justify-content:space-between;border-bottom:1.5px solid var(--border);margin-bottom:24px;gap:12px;flex-wrap:wrap}
-.hdr-title{font-family:'Fraunces',serif;font-size:1.85rem;font-weight:700;color:var(--text);letter-spacing:-.5px;line-height:1}
-.hdr-sub{font-size:.75rem;color:var(--text3);margin-top:3px;font-weight:500}
-.hdr-hint{font-size:.68rem;color:var(--text4);margin-top:4px;font-weight:500;opacity:.7}
-.hdr-hint kbd{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:1px 5px;font-family:monospace;font-size:.7em;margin:0 2px}
-.hdr-r{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.hdr-icon-btn{width:34px;height:34px;border-radius:10px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.85rem;color:var(--text2);transition:all .15s;position:relative;flex-shrink:0}
-.hdr-icon-btn:hover{background:var(--bg3);border-color:var(--border2);color:var(--text)}
-.hdr-icon-btn .notif-dot{position:absolute;top:-3px;right:-3px;width:7px;height:7px;background:#ef4444;border-radius:50%;border:1.5px solid var(--bg)}
-.dm-btn{width:44px;height:26px;border-radius:13px;border:1.5px solid var(--border2);background:var(--bg3);cursor:pointer;position:relative;transition:all .2s;flex-shrink:0;padding:0}
-.dm-knob{width:20px;height:20px;border-radius:50%;background:var(--text2);position:absolute;top:2px;left:2px;transition:transform .2s;display:flex;align-items:center;justify-content:center;font-size:.65rem;line-height:1}
-.dark .dm-knob{transform:translateX(18px)}
-.tabs{display:flex;gap:2px;margin-bottom:22px;background:var(--tb);padding:3px;border-radius:14px;width:fit-content;overflow-x:auto;max-width:100%;scrollbar-width:none;position:relative}
-.tabs::-webkit-scrollbar{display:none}
-.tabs::after{content:'';position:absolute;right:0;top:0;bottom:0;width:40px;background:linear-gradient(90deg,transparent,var(--tb));pointer-events:none;border-radius:0 14px 14px 0}
-@media(max-width:768px){.tabs::after{display:block}}
-.tab{padding:7px 15px;border-radius:11px;border:none;background:transparent;font-family:'Plus Jakarta Sans',sans-serif;font-size:.8rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .12s;white-space:nowrap;letter-spacing:.01em}
-.tab:hover:not(.on){background:var(--bg4);color:var(--text2)}
-.tab.on{background:var(--card);color:var(--text);box-shadow:0 1px 6px var(--sh2),0 0 0 1px var(--border)}
-.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-bottom:20px}
-.stat{background:linear-gradient(135deg,var(--card),var(--card2));border-radius:18px;padding:18px 18px 15px;border:1.5px solid var(--border);position:relative;overflow:hidden;transition:transform .12s,box-shadow .12s;cursor:default}
-.stat:hover{transform:translateY(-2px);box-shadow:0 8px 24px var(--sh2)}
-.sacc{position:absolute;top:0;left:0;right:0;height:4px;border-radius:18px 18px 0 0;background:linear-gradient(90deg,var(--accent),var(--accent2))}
-.stat-n{font-family:'Fraunces',serif;font-size:1.9rem;font-weight:700;color:var(--text);line-height:1;margin-top:4px}
-.stat-l{font-size:.68rem;color:var(--text3);margin-top:5px;font-weight:700;text-transform:uppercase;letter-spacing:.07em}
-.stat-ico{position:absolute;right:12px;top:12px;font-size:1.4rem;opacity:.25}
-.sec-hd{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
-.sec-t{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:600;color:var(--text)}
-.sec-lbl{font-size:.67rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;margin-bottom:10px}
-.alist{display:flex;flex-direction:column;gap:8px}
-.acard{background:var(--card);border-radius:14px;padding:15px 17px;border:1.5px solid var(--border);display:flex;align-items:center;gap:12px;transition:all .12s;flex-wrap:wrap}
-.acard:hover{transform:translateY(-1px);box-shadow:0 6px 20px var(--sh);border-color:var(--border2)}
-.acard.ov{border-color:#ef4444;background:#fef2f2;border-width:2px;box-shadow:0 0 0 3px rgba(239,68,68,.15)}
-.dark .acard.ov{border-color:#dc2626;background:#1c0000;box-shadow:0 0 0 3px rgba(220,38,38,.2)}
-.stripe{width:5px;border-radius:5px;align-self:stretch;min-height:40px;flex-shrink:0}
-.amain{flex:1;min-width:0}
-.atitle{font-weight:700;color:var(--text);font-size:1.02rem;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-bottom:5px;line-height:1.3}
-.ameta{display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-.mtag{font-size:.72rem;font-weight:700}
-.ppill{font-size:.66rem;font-weight:700;padding:2px 8px;border-radius:20px}
-.dbadge{font-size:.71rem;font-weight:700}
-.pbar-wrap{width:100px;flex-shrink:0}
-.pbar-track{height:8px;background:var(--bg3);border-radius:5px;overflow:hidden}
-.pbar-fill{height:100%;border-radius:5px;transition:width .4s ease}
-.plabel{font-size:.7rem;color:var(--text2);text-align:right;margin-top:3px;font-weight:700}
-.qbtns{display:flex;gap:3px;margin-top:7px}
-.qbtn{font-size:.65rem;padding:3px 7px;border-radius:6px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;color:var(--text3);font-weight:700;transition:all .12s;font-family:'Plus Jakarta Sans',sans-serif}
-.qbtn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.qbtn:hover:not(.on){background:var(--bg3);color:var(--text)}
-.ibtn{width:28px;height:28px;border-radius:8px;border:none;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:.75rem;background:transparent;color:var(--text4);transition:all .15s;font-family:'Plus Jakarta Sans',sans-serif}
-.ibtn:hover{background:#fef2f2;color:#dc2626}
-.dark .ibtn:hover{background:#350000;color:#ff7070}
-.sfilt{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
-.sfbtn{padding:5px 13px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.75rem;font-weight:600;cursor:pointer;color:var(--text2);transition:all .12s;font-family:'Plus Jakarta Sans',sans-serif}
-.sfbtn:hover{background:var(--bg3);color:var(--text)}
-.btn{padding:8px 15px;border-radius:10px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:600;font-size:.81rem;transition:all .12s;display:inline-flex;align-items:center;gap:5px;letter-spacing:.01em}
-.btn-p{background:var(--accent);color:#fff;box-shadow:0 1px 4px var(--sh)}
-.btn-p:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 14px var(--sh2)}
-.btn-g{background:var(--card);color:var(--text2);border:1.5px solid var(--border)}
-.btn-g:hover{background:var(--bg3);color:var(--text);border-color:var(--border2)}
-.btn-sm{padding:5px 11px;font-size:.75rem;border-radius:8px}
-.overlay{position:fixed;inset:0;background:rgba(8,10,18,.55);backdrop-filter:blur(8px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
-.modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:460px;max-height:min(92vh,92dvh);overflow-y:auto;border:1.5px solid var(--border);box-shadow:0 20px 60px var(--sh2)}
-.modal-t{font-family:'Fraunces',serif;font-size:1.2rem;font-weight:700;color:var(--text);margin-bottom:18px}
-.fg{margin-bottom:12px}
-.flbl{display:block;font-size:.67rem;font-weight:800;color:var(--text3);text-transform:uppercase;letter-spacing:.07em;margin-bottom:5px}
-.finp,.fsel,.ftxt{width:100%;padding:9px 12px;border:1.5px solid var(--border);border-radius:10px;font-family:'Plus Jakarta Sans',sans-serif;font-size:.85rem;background:var(--ibg);color:var(--text);outline:none;transition:border-color .15s,box-shadow .15s}
-.finp:focus,.fsel:focus,.ftxt:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--sh)}
-.ftxt{resize:vertical;min-height:60px}
-.frow{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.range{width:100%;accent-color:var(--accent)}
-.mactions{display:flex;gap:8px;justify-content:flex-end;margin-top:18px}
-@media(max-width:768px){.mactions{position:sticky;bottom:0;background:var(--mbg);padding:12px 0 4px;margin-top:12px;border-top:1.5px solid var(--border)}}
-.dtoggle{padding:6px 10px;border-radius:8px;border:1.5px solid var(--border);cursor:pointer;font-size:.76rem;font-weight:600;background:var(--card);color:var(--text2);transition:all .15s;font-family:'Plus Jakarta Sans',sans-serif}
-.dtoggle.on{border-color:var(--accent);background:var(--accent);color:#fff}
-.dtogglerow{display:flex;gap:5px;flex-wrap:wrap}
-.swatches{display:flex;gap:7px;flex-wrap:wrap}
-.swatch{width:26px;height:26px;border-radius:50%;cursor:pointer;border:2.5px solid transparent;transition:transform .1s}
-.swatch.on{border-color:var(--text);transform:scale(1.18)}
-.sched-layout{display:grid;grid-template-columns:270px 1fr;gap:18px;align-items:start}
-.sc-classes{display:flex;flex-direction:column;gap:8px}
-.sc-card{background:var(--card);border-radius:14px;padding:13px 15px;border:1.5px solid var(--border);display:flex;align-items:center;gap:11px;transition:box-shadow .15s}
-.sc-card:hover{box-shadow:0 4px 16px var(--sh)}
-.sc-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
-.sc-name{font-weight:700;color:var(--text);font-size:.88rem}
-.sc-meta{font-size:.72rem;color:var(--text3);margin-top:2px;line-height:1.4}
-.sc-badge{font-size:.66rem;font-weight:700;color:inherit;margin-top:2px}
-.sgrid{background:var(--card);border-radius:16px;border:1.5px solid var(--border);overflow:auto;box-shadow:0 2px 12px var(--sh)}
-.shdr{display:grid;grid-template-columns:48px repeat(7,1fr);background:var(--schdr);color:#fff;min-width:520px;border-radius:14px 14px 0 0}
-.shcell{padding:10px 3px;text-align:center;font-size:.72rem;font-weight:700;letter-spacing:.04em}
-.shcell.tdy{background:rgba(255,255,255,.13)}
-.sgrid-body{display:grid;grid-template-columns:48px repeat(7,1fr);min-width:520px;position:relative}
-.sgrid-times{display:flex;flex-direction:column}
-.stime-row{height:52px;padding:4px 6px 0 0;font-size:.62rem;color:var(--text4);text-align:right;font-weight:600;border-top:1px solid var(--border);box-sizing:border-box}
-.sgrid-daycol{position:relative;border-left:1px solid var(--border)}
-.sgrid-daycol.tdy{background:var(--tc)}
-.sgrid-hrline{position:absolute;left:0;right:0;border-top:1px solid var(--border);pointer-events:none}
-.cblock{position:absolute;left:2px;right:2px;border-radius:6px;padding:3px 5px;font-size:.64rem;font-weight:700;color:#fff;display:flex;flex-direction:column;justify-content:center;line-height:1.3;overflow:hidden;box-sizing:border-box;z-index:1}
-.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
-.dcard{background:var(--card);border:1.5px solid var(--border);border-radius:18px;overflow:hidden;box-shadow:0 2px 12px var(--sh)}
-.dcard-hdr{padding:13px 16px;border-bottom:1.5px solid var(--border);display:flex;align-items:center;gap:9px}
-.dcard-title{font-family:'Fraunces',serif;font-size:1rem;font-weight:600;color:var(--text)}
-.dcard-body{padding:10px 12px;display:flex;flex-direction:column;gap:7px;max-height:340px;overflow-y:auto}
-.cacard{background:var(--bg3);border-radius:11px;padding:10px 12px;display:flex;align-items:center;gap:10px;transition:background .12s}
-.cacard:hover{background:var(--bg4)}
-.castripe{width:4px;border-radius:4px;align-self:stretch;min-height:30px;flex-shrink:0}
-.catitle{font-weight:700;font-size:.86rem;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.cadue{font-size:.7rem;font-weight:700;white-space:nowrap}
-.tccard{display:flex;align-items:center;gap:10px;background:var(--bg3);border-radius:11px;padding:10px 12px}
-.tcdot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
-.tcname{font-weight:700;color:var(--text);font-size:.86rem}
-.tctime{font-size:.72rem;color:var(--text3);margin-left:auto;white-space:nowrap;font-weight:700;text-align:right;line-height:1.4}
-.tcroom{font-size:.68rem;color:var(--text4);margin-top:1px}
-.pts-pill{display:inline-flex;align-items:center;gap:5px;background:#FFFBEB;border:1.5px solid #FDE68A;border-radius:20px;padding:5px 12px;font-size:.78rem;font-weight:700;color:#D97706}
-.dark .pts-pill{background:#231800;border-color:#8A5000;color:#F59E0B}
-.streak-pill{display:inline-flex;align-items:center;gap:5px;background:#FFF7F0;border:1.5px solid #FDDCB5;border-radius:20px;padding:5px 12px;font-size:.78rem;font-weight:700;color:#EA580C}
-.dark .streak-pill{background:#200E00;border-color:#7A3000;color:#FB923C}
-.pts-float{position:fixed;top:45%;left:50%;transform:translate(-50%,-50%);pointer-events:none;font-size:1.6rem;font-weight:900;animation:ptsFly 1.8s ease-out forwards;z-index:9999;text-shadow:0 2px 12px rgba(0,0,0,.2)}
-@keyframes ptsFly{0%{opacity:1;transform:translate(-50%,-50%) scale(1.4)}100%{opacity:0;transform:translate(-50%,-200%) scale(.8)}}
-.confetti-piece{position:fixed;pointer-events:none;z-index:9998;border-radius:3px;animation:confettiFall var(--dur,1.4s) ease-out forwards}
-@keyframes confettiFall{0%{opacity:1;transform:translate(0,0) rotate(0deg) scale(1)}100%{opacity:0;transform:translate(var(--tx,0px),var(--ty,320px)) rotate(var(--rot,480deg)) scale(.4)}}
-.submit-btn{padding:6px 13px;border-radius:9px;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-weight:700;font-size:.74rem;background:#16a34a;color:#fff;box-shadow:0 0 10px rgba(22,163,74,.5),0 0 20px rgba(22,163,74,.25);transition:all .18s;white-space:nowrap;flex-shrink:0}
-.submit-btn:hover{background:#15803d;box-shadow:0 0 16px rgba(22,163,74,.7),0 0 32px rgba(22,163,74,.35);transform:translateY(-1px) scale(1.04)}
-.submit-btn:active{transform:scale(.97)}
-.submit-btn.done{background:#15803d;box-shadow:none;cursor:default;opacity:.7}
-.submit-btn.compact{padding:4px 9px;font-size:.68rem;border-radius:7px;box-shadow:0 0 8px rgba(22,163,74,.45),0 0 14px rgba(22,163,74,.2)}
-.quest-strip{background:linear-gradient(135deg,#FFFBEB,#FFF8D6);border:1.5px solid #FDE68A;border-radius:14px;padding:12px 16px;margin-bottom:18px;display:flex;align-items:center;gap:14px}
-.dark .quest-strip{background:linear-gradient(135deg,#221600,#1A1200);border-color:#6A3800}
-.qpip{width:34px;height:34px;border-radius:50%;border:2.5px solid #FDE68A;display:flex;align-items:center;justify-content:center;font-size:.9rem;background:var(--card);transition:all .3s}
-.qpip.lit{background:#F59E0B;border-color:#F59E0B;box-shadow:0 2px 10px rgba(245,158,11,.4);color:#fff}
-.buddy-wrap{display:flex;justify-content:center;margin:0 auto 4px;width:180px;height:200px}
-.buddy-bounce{animation:bBounce 2.8s ease-in-out infinite}
-@keyframes bBounce{0%,100%{transform:translateY(0)}50%{transform:translateY(-10px)}}
-.buddy-shell{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:20px;margin-bottom:16px;text-align:center;position:relative;overflow:hidden}
-.buddy-shell::before{content:'';position:absolute;top:-50%;left:-50%;width:200%;height:200%;background:radial-gradient(circle,rgba(91,141,238,.08) 0%,transparent 70%);animation:buddyGlow 4s ease-in-out infinite;pointer-events:none}
-@keyframes buddyGlow{0%,100%{transform:translate(0,0) scale(1);opacity:.6}50%{transform:translate(10px,-10px) scale(1.1);opacity:.9}}
-.buddy-stage-name{font-family:'Fraunces',serif;font-size:1.3rem;font-weight:700;color:var(--text);margin-bottom:3px}
-.buddy-stage-desc{font-size:.76rem;color:var(--text3);margin-bottom:14px}
-.bpbar{height:8px;background:var(--bg3);border-radius:6px;overflow:hidden;margin:10px 0 5px}
-.bpfill{height:100%;border-radius:6px;background:linear-gradient(90deg,#f5a623,#ffd060);transition:width .6s}
-.bplbl{display:flex;justify-content:space-between;font-size:.68rem;color:var(--text4);font-weight:600;margin-bottom:14px}
-.quest-card{background:linear-gradient(135deg,#FFFBEB,#FFF8D6);border:1.5px solid #FDE68A;border-radius:16px;padding:16px 18px;margin-bottom:14px}
-.dark .quest-card{background:linear-gradient(135deg,#221600,#1A1200);border-color:#6A3800}
-.quest-title{font-size:.68rem;font-weight:800;color:#D97706;text-transform:uppercase;letter-spacing:.08em;margin-bottom:3px}
-.quest-text{font-size:.86rem;font-weight:600;color:var(--text);margin-bottom:12px}
-.quest-pips{display:flex;gap:10px;align-items:center}
-.quest-pip{width:42px;height:42px;border-radius:50%;border:2.5px solid #FDE68A;display:flex;align-items:center;justify-content:center;font-size:1.1rem;background:var(--card);transition:all .3s;font-weight:700}
-.quest-pip.lit{background:#F59E0B;border-color:#F59E0B;box-shadow:0 2px 12px rgba(245,158,11,.4)}
-.bstat-row{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:14px}
-.pts-how{background:var(--bg3);border:1.5px solid var(--border);border-radius:14px;padding:14px 16px;margin-bottom:14px}
-.pts-how-row{display:flex;justify-content:space-between;font-size:.82rem;align-items:center;padding:4px 0;color:var(--text2)}
-.pts-how-amt{font-weight:700;color:#F59E0B;white-space:nowrap}
-.shop-filter{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:14px}
-.shop-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}
-.shop-card{background:var(--card);border:1.5px solid var(--border);border-radius:16px;padding:18px 14px 14px;text-align:center;transition:transform .18s,box-shadow .18s;position:relative}
-.shop-card:hover{transform:translateY(-3px);box-shadow:0 8px 24px var(--sh2)}
-.shop-card.owned{border-color:#BBF7D0;background:#F0FDF4}
-.dark .shop-card.owned{border-color:#166534;background:#001508}
-.shop-card.equipped{border-color:var(--accent);box-shadow:0 0 0 3px var(--sh2)}
-.shop-badge{position:absolute;top:8px;right:8px;font-size:.58rem;font-weight:800;padding:2px 7px;border-radius:20px;color:#fff}
-.shop-icon{font-size:2.6rem;margin-bottom:8px;display:block;line-height:1}
-.shop-name{font-size:.84rem;font-weight:700;color:var(--text);margin-bottom:1px}
-.shop-cat{font-size:.63rem;color:var(--text4);text-transform:uppercase;letter-spacing:.07em;font-weight:700;margin-bottom:4px}
-.shop-desc{font-size:.73rem;color:var(--text3);margin-bottom:10px;line-height:1.4}
-.eq-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px;min-height:20px}
-.eq-chip{background:var(--bg3);border-radius:20px;padding:3px 10px;font-size:.72rem;font-weight:600;color:var(--text3)}
-.release-overlay{position:fixed;inset:0;background:rgba(8,10,18,.62);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px}
-.release-box{background:var(--mbg);border-radius:22px;width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px var(--sh2);border:1.5px solid var(--border)}
-.release-hd{padding:22px 24px 16px;border-bottom:1.5px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-.release-title{font-family:'Fraunces',serif;font-size:1.35rem;font-weight:700;color:var(--text)}
-.release-sub{font-size:.74rem;color:var(--text3);margin-top:3px}
-.release-body{overflow-y:auto;padding:20px 24px;flex:1}
-.release-entry{margin-bottom:24px}
-.release-entry:last-child{margin-bottom:0}
-.release-ver{display:inline-flex;align-items:center;gap:8px;margin-bottom:10px}
-.release-badge{background:var(--accent);color:#fff;font-size:.7rem;font-weight:700;padding:3px 10px;border-radius:20px}
-.release-date{font-size:.72rem;color:var(--text3);font-weight:500}
-.release-name{font-size:.95rem;font-weight:700;color:var(--text);margin-bottom:8px}
-.release-changes{display:flex;flex-direction:column;gap:5px}
-.release-change{display:flex;gap:8px;font-size:.8rem;color:var(--text2);line-height:1.5}
-.release-dot{color:#f5a623;font-size:.9rem;flex-shrink:0;margin-top:1px}
-.about-body{padding:24px;overflow-y:auto;flex:1}
-.about-hero{text-align:center;padding:8px 0 20px}
-.about-logo{width:64px;height:64px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 12px}
-.about-name{font-family:'Fraunces',serif;font-size:1.6rem;font-weight:700;color:var(--text)}
-.about-tagline{font-size:.82rem;color:var(--text3);margin-top:4px}
-.about-section{margin-bottom:20px}
-.about-section-title{font-size:.7rem;font-weight:700;color:var(--text3);letter-spacing:.08em;text-transform:uppercase;margin-bottom:10px}
-.about-card{background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;padding:12px 14px;font-size:.82rem;color:var(--text2);line-height:1.7}
-.about-feature{display:flex;gap:10px;align-items:flex-start;padding:7px 0;border-bottom:1px solid var(--border)}
-.about-feature:last-child{border-bottom:none}
-.about-feature-icon{font-size:1rem;flex-shrink:0;margin-top:1px}
-.about-feature-text{font-size:.8rem;color:var(--text2);line-height:1.5}
-.about-feature-text b{color:var(--text)}
-.about-made{text-align:center;padding:16px 0 4px;font-size:.78rem;color:var(--text4)}
-.about-made span{color:var(--text);font-weight:700}
-.import-step{display:flex;align-items:flex-start;gap:9px;margin-bottom:11px}
-.import-num{width:22px;height:22px;border-radius:50%;background:var(--accent);color:#fff;font-size:.68rem;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
-.import-txt{font-size:.81rem;color:var(--text2);line-height:1.5}
-.import-txt b{color:var(--text)}
-.apreview{border:1.5px solid var(--border);border-radius:13px;overflow:hidden;margin-top:10px}
-.apreview-hd{background:var(--accent);color:#fff;padding:8px 13px;font-size:.76rem;font-weight:600}
-.apreview-list{max-height:210px;overflow-y:auto}
-.apreview-item{display:flex;align-items:center;gap:8px;padding:8px 13px;border-bottom:1px solid var(--border)}
-.apreview-item:last-child{border-bottom:none}
-.apreview-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
-.apreview-name{font-size:.83rem;font-weight:600;color:var(--text);flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.apreview-due{font-size:.7rem;color:var(--text3);white-space:nowrap}
-.spin{animation:spin .8s linear infinite;display:inline-block}
-@keyframes pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:.5;transform:scale(.85)}}
-.cv-spin{animation:spin .8s linear infinite;display:inline-block}
-@keyframes spin{to{transform:rotate(360deg)}}
-/* Loading skeletons */
-.skeleton{background:linear-gradient(90deg,var(--bg3) 25%,var(--bg4) 50%,var(--bg3) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:8px}
-@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
-.skeleton-card{height:80px;margin-bottom:8px}
-.skeleton-stat{height:100px;border-radius:18px}
-.err-box{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#dc2626;margin-top:8px;line-height:1.5}
-.dark .err-box{background:#1c0000;border-color:#7f1d1d;color:#ff8080}
-.success-box{background:#f0fdf4;border:1.5px solid #86efac;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#16a34a;margin-top:6px;font-weight:600}
-.dark .success-box{background:#001500;border-color:#166534;color:#4ade80}
-.loading-box{display:flex;flex-direction:column;align-items:center;padding:30px;gap:12px;color:var(--text3)}
-.loading-box p{font-size:.82rem;text-align:center;max-width:260px;line-height:1.5;color:var(--text2)}
-.itabs{display:flex;gap:4px;background:var(--bg3);padding:4px;border-radius:11px;margin-bottom:16px}
-.itab{flex:1;padding:7px 0;border-radius:8px;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:.82rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .15s;background:transparent}
-.itab.on{background:var(--accent);color:#fff}
-.itab.canvas-on{background:#4338ca;color:#fff}
-.itab.agenda-on{background:#ea580c;color:#fff}
-.empty{text-align:center;padding:42px 20px;color:var(--text4)}
-.empty-i{font-size:2.2rem;margin-bottom:10px}
-.empty-t{font-family:'Fraunces',serif;font-size:1rem;color:var(--text4)}
-.twocol{display:grid;grid-template-columns:1fr 1fr;gap:16px}
-.tclass{display:flex;flex-direction:column;gap:7px}
-.clsrow{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:13px}
-.clstag{display:flex;align-items:center;gap:5px;padding:4px 10px;background:var(--card);border-radius:9px;border:1.5px solid var(--border)}
-.prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.6);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
-.prompt-modal{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:420px;border:1.5px solid var(--border);box-shadow:0 20px 50px var(--sh2)}
-@media(max-width:800px){.sched-layout{grid-template-columns:1fr}.dash-grid{grid-template-columns:1fr}.hdr-title{font-size:1.6rem}.frow{grid-template-columns:1fr}.stats{grid-template-columns:repeat(auto-fit,minmax(110px,1fr))}}
-/* ── MOBILE BOTTOM NAV ── */
-.mob-content{padding:0}
-.bnav{display:none}
-.mob-hdr{display:none}.mob-status{display:none}
-.mob-icon-btn{width:36px;height:36px;border-radius:50%;border:none;background:var(--bg3);cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text2);transition:all .15s;-webkit-tap-highlight-color:transparent;flex-shrink:0}
-.mob-icon-btn:active{background:var(--bg4);transform:scale(.93)}
-/* ── FLOATING ACTION BUTTON ── */
-.fab{position:fixed;bottom:calc(80px + env(safe-area-inset-bottom));right:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;border:none;cursor:pointer;display:none;align-items:center;justify-content:center;font-size:1.4rem;box-shadow:0 4px 20px rgba(91,141,238,.4),0 8px 40px rgba(91,141,238,.2);z-index:150;transition:all .15s;-webkit-tap-highlight-color:transparent}
-.fab:hover{transform:translateY(-2px) scale(1.05);box-shadow:0 6px 28px rgba(91,141,238,.5),0 12px 48px rgba(91,141,238,.25)}
-.fab:active{transform:scale(.92)}
-@media(min-width:769px){.fab{display:flex;bottom:32px;right:32px}}
-@media(max-width:768px){.fab{display:flex}}
-@media(max-width:768px){
-  .app{padding:0 0 88px}
-  .tabs{display:none}
-  /* Show mobile header, hide desktop */
-  .hdr{display:none}
-  .mob-status{display:flex;}
-  .mob-hdr{display:flex;align-items:center;justify-content:space-between;padding:max(env(safe-area-inset-top),10px) 18px 8px;position:sticky;top:0;z-index:50;background:var(--bg);border-bottom:1px solid var(--border)}
-  .mob-hdr-title{font-family:'Fraunces',serif;font-size:1.25rem;font-weight:700;color:var(--text);letter-spacing:-.3px}
-  .mob-hdr-date{font-size:.65rem;color:var(--text3);margin-top:1px;font-weight:500}
-  .mob-hdr-r{display:flex;align-items:center;gap:8px}
-  .mob-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.8rem;overflow:hidden;flex-shrink:0;cursor:pointer;border:2px solid var(--bg3)}
-  /* Status strip */
-  .mob-status{display:flex;align-items:center;gap:7px;padding:9px 18px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border);background:var(--bg)}
-  .mob-status::-webkit-scrollbar{display:none}
-  .mob-pill{display:inline-flex;align-items:center;gap:4px;padding:6px 11px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.73rem;font-weight:700;color:var(--text2);white-space:nowrap;cursor:pointer;flex-shrink:0;-webkit-tap-highlight-color:transparent}
-  .mob-pill:active{opacity:.75}
-  .mob-pill.fire{border-color:#FDDCB5;background:#FFF7F0;color:#EA580C}
-  .mob-pill.star{border-color:#FDE68A;background:#FFFBEB;color:#D97706}
-  .mob-pill.canvas{border-color:#c7d2fe;background:#eef2ff;color:#4338ca}
-  .mob-pill.err{border-color:#fca5a5;background:#fef2f2;color:#dc2626}
-  .mob-pill.ok{border-color:#86efac;background:#f0fdf4;color:#16a34a}
-  .dark .mob-pill.fire{background:#200E00;border-color:#7A3000;color:#FB923C}
-  .dark .mob-pill.star{background:#231800;border-color:#8A5000;color:#F59E0B}
-  .dark .mob-pill.canvas{background:#1e1b4b;border-color:#4338ca;color:#a5b4fc}
-  .dark .mob-pill{border-color:var(--border2);background:var(--card);color:var(--text2)}
-  /* Page padding */
-  .mob-content{padding:16px 18px calc(100px + env(safe-area-inset-bottom))}
-  /* Content area */
-  .tab-content,.sfilt,.sec-hd,.alist,.stats,.sec-lbl,.empty,.twocol{padding-left:0;padding-right:0}
-  /* Bottom nav */
-  .bnav{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--card);border-top:1px solid var(--border);z-index:200;padding:8px 0 calc(8px + env(safe-area-inset-bottom));backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px)}
-  .bnav-btn{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:4px 2px;background:none;border:none;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.58rem;font-weight:600;color:var(--text4);transition:color .15s;-webkit-tap-highlight-color:transparent;letter-spacing:.01em}
-  .bnav-btn.on{color:var(--accent)}
-  .bnav-ico{width:26px;height:26px;display:flex;align-items:center;justify-content:center;border-radius:8px;transition:all .15s;font-size:0}
-  .bnav-btn.on .bnav-ico{background:var(--bg3)}
-  /* Modals as bottom sheets */
-  .modal{padding:0 20px calc(24px + env(safe-area-inset-bottom));border-radius:20px 20px 0 0;max-height:min(92vh,92dvh);position:fixed;bottom:0;left:0;right:0;width:100%;max-width:100%;box-shadow:0 -8px 40px var(--sh2);overflow-y:auto}
-  .modal::before{content:'';display:block;width:36px;height:4px;border-radius:2px;background:var(--border2);margin:12px auto 16px;flex-shrink:0}
-  .overlay{align-items:flex-end;padding:0}
-  /* Cards */
-  .acard{padding:14px 15px;border-radius:14px;gap:10px;align-items:flex-start}
-  .acard .amain{flex:1 1 100%;min-width:0}
-  .atitle{font-size:.95rem}
-  .pbar-wrap{width:100%;order:10;flex-basis:100%}
-  .stat{padding:14px 14px 11px;border-radius:16px}
-  .stats{grid-template-columns:repeat(3,1fr);gap:8px}
-  .stat-n{font-size:1.5rem}
-  .stat-l{font-size:.62rem}
-  .stat-ico{font-size:1rem;right:10px;top:10px}
-  /* Buttons */
-  .btn{padding:12px 16px;font-size:.85rem;border-radius:12px;min-height:44px}
-  .btn-sm{padding:9px 13px;font-size:.77rem;border-radius:9px;min-height:38px}
-  /* Inputs */
-  .finp,.fsel,.ftxt{font-size:16px;padding:12px 14px;min-height:44px}
-  /* Section headers */
-  .sec-t{font-size:1.08rem}
-  .sec-hd{margin-bottom:14px}
-  /* Grid fixes */
-  .twocol{grid-template-columns:1fr}
-  .sched-layout{grid-template-columns:1fr}
-  .frow{grid-template-columns:1fr}
-  .pbar-wrap{width:72px}
-}
-/* ── PWA INSTALL BANNER ── */
-.pwa-banner{position:fixed;bottom:calc(70px + env(safe-area-inset-bottom));left:12px;right:12px;background:var(--accent);color:#fff;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:300;box-shadow:0 8px 32px rgba(99,102,241,.4);animation:slideUp .3s ease}
-@media(min-width:769px){.pwa-banner{bottom:20px;max-width:420px;left:50%;transform:translateX(-50%)}}
-/* ── SEARCH BAR ── */
-.search-bar{display:flex;align-items:center;gap:8px;background:var(--card);border:1.5px solid var(--border);border-radius:12px;padding:8px 14px;margin-bottom:16px;transition:border-color .15s}
-.search-bar:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--sh)}
-.search-inp{flex:1;border:none;background:none;outline:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:.88rem;color:var(--text)}
-/* ── TIMER ── */
-.timer-card{background:var(--card);border:1.5px solid var(--border);border-radius:20px;padding:28px 24px;text-align:center;margin-bottom:16px}
-.timer-display{font-family:'Fraunces',serif;font-size:4.5rem;font-weight:700;color:var(--text);line-height:1;letter-spacing:-2px;margin:16px 0}
-.timer-modes{display:flex;gap:6px;justify-content:center;flex-wrap:wrap;margin-bottom:20px}
-.timer-mode-btn{padding:6px 14px;border-radius:20px;border:1.5px solid var(--border);background:var(--card);font-size:.75rem;font-weight:700;cursor:pointer;color:var(--text2);transition:all .15s;font-family:'Plus Jakarta Sans',sans-serif}
-.timer-mode-btn.on{background:var(--accent);color:#fff;border-color:var(--accent)}
-.timer-btns{display:flex;gap:10px;justify-content:center}
-.timer-ring{width:180px;height:180px;margin:0 auto}
-/* ── LEADERBOARD ── */
-.lb-row{display:flex;align-items:center;gap:12px;padding:10px 14px;background:var(--card);border:1.5px solid var(--border);border-radius:14px;transition:transform .15s}
-.lb-row:hover{transform:translateX(3px)}
-.lb-rank{font-family:'Fraunces',serif;font-size:1.1rem;font-weight:700;color:var(--text3);width:28px;text-align:center;flex-shrink:0}
-.lb-rank.top{color:var(--accent)}
-.lb-avatar{width:34px;height:34px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#ec4899);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.8rem;flex-shrink:0;overflow:hidden}
-/* ── ANIMATIONS ── */
-@keyframes slideUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
-@keyframes fadeIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.5}}
-.tab-content{animation:fadeIn .2s ease;padding-top:2px}
-.acard{animation:fadeIn .15s ease}
-.auth-page{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:20px}
-.auth-card{background:var(--card);border:1.5px solid var(--border);border-radius:24px;padding:36px 32px;width:100%;max-width:420px;box-shadow:0 24px 60px var(--sh2)}
-.auth-logo{width:56px;height:56px;background:linear-gradient(135deg,var(--text),var(--accent2));border-radius:16px;display:flex;align-items:center;justify-content:center;font-size:1.8rem;margin:0 auto 16px}
-.auth-title{font-family:'Fraunces',serif;font-size:1.7rem;font-weight:700;color:var(--text);text-align:center;margin-bottom:4px}
-.auth-sub{font-size:.82rem;color:var(--text3);text-align:center;margin-bottom:24px}
-.auth-tabs{display:grid;grid-template-columns:1fr 1fr;background:var(--bg3);border-radius:12px;padding:4px;margin-bottom:22px;gap:4px}
-.auth-tab{padding:8px;border-radius:9px;border:none;font-family:'Plus Jakarta Sans',sans-serif;font-size:.84rem;font-weight:600;color:var(--text3);cursor:pointer;transition:all .15s;background:transparent}
-.auth-tab.on{background:var(--card);color:var(--text);box-shadow:0 2px 8px var(--sh)}
-.auth-divider{display:flex;align-items:center;gap:10px;margin:16px 0;color:var(--text4);font-size:.75rem;font-weight:600}
-.auth-divider::before,.auth-divider::after{content:'';flex:1;height:1px;background:var(--border)}
-.google-btn{width:100%;padding:11px;border-radius:12px;border:1.5px solid var(--border);background:var(--card);cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;font-size:.86rem;font-weight:600;color:var(--text);display:flex;align-items:center;justify-content:center;gap:10px;transition:all .15s;margin-bottom:4px}
-.google-btn:hover{background:var(--bg3);border-color:var(--border2);transform:translateY(-1px);box-shadow:0 4px 14px var(--sh)}
-.auth-btn{width:100%;padding:12px;border-radius:12px;border:none;background:var(--accent);color:#fff;font-family:'Plus Jakarta Sans',sans-serif;font-size:.88rem;font-weight:700;cursor:pointer;transition:all .18s;margin-top:4px}
-.auth-btn:hover{background:var(--accent2);transform:translateY(-1px);box-shadow:0 4px 18px var(--sh2)}
-.auth-btn:disabled{opacity:.5;cursor:not-allowed;transform:none}
-.auth-err{background:#fef2f2;border:1.5px solid #fca5a5;border-radius:10px;padding:10px 13px;font-size:.8rem;color:#dc2626;margin-top:10px;line-height:1.5}
-.dark .auth-err{background:#350000;border-color:#7f1d1d;color:#f87171}
-.auth-user-pill{display:flex;align-items:center;gap:7px;background:var(--bg3);border:1.5px solid var(--border);border-radius:20px;padding:4px 10px 4px 6px;font-size:.75rem;font-weight:600;color:var(--text2)}
-.auth-avatar{width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:flex;align-items:center;justify-content:center;font-size:.65rem;font-weight:700;color:#fff;flex-shrink:0;overflow:hidden}
-
-.prompt-overlay{position:fixed;inset:0;background:rgba(8,10,18,.5);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:16px}
-.prompt-card{background:var(--mbg);border-radius:20px;padding:24px;width:100%;max-width:400px;border:1.5px solid var(--border);box-shadow:0 24px 60px var(--sh2);animation:slideUp .28s cubic-bezier(.34,1.56,.64,1) forwards}
-@keyframes slideUp{from{opacity:0;transform:translateY(24px)}to{opacity:1;transform:translateY(0)}}
-.prompt-icon{font-size:2.2rem;margin-bottom:12px;display:block;text-align:center}
-.prompt-title{font-family:'Fraunces',serif;font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:6px;text-align:center}
-.prompt-body{font-size:.82rem;color:var(--text2);line-height:1.6;text-align:center;margin-bottom:20px}
-.prompt-body b{color:var(--text)}
-
-`;
-
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § SMALL COMPONENTS                                                          │
-// │  CopyBtn — one-click copy with checkmark feedback                           │
-// │  FetcherCopyBox — renders HTML content + copy button                        │
-// │  BuddyCreature — SVG avatar that changes with streak stage                  │
-// └──────────────────────────────────────────────────────────────────────────────┘
-function CopyBtn({text}){
-  const [copied,setCopied]=useState(false);
-  return(
-    <button onClick={()=>{navigator.clipboard.writeText(text).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),2000);});}}
-      style={{position:"absolute",top:5,right:5,background:copied?"#16a34a":"#4338ca",color:"#fff",border:"none",borderRadius:5,padding:"3px 8px",fontSize:".65rem",fontWeight:700,cursor:"pointer",fontFamily:"sans-serif"}}>
-      {copied?"✅ Copied!":"📋 Copy"}
-    </button>
-  );
-}
-
-function FetcherCopyBox({html}){
-  const [copied,setCopied]=useState(false);
-  return(
-    <div style={{marginBottom:14}}>
-      <div style={{position:"relative"}}>
-        <textarea readOnly value={html}
-          style={{width:"100%",height:90,fontFamily:"monospace",fontSize:".62rem",borderRadius:9,border:"1.5px solid #c7d2fe",padding:"8px 10px",background:"#f8f8ff",color:"#333",resize:"none",boxSizing:"border-box"}}/>
-        <button onClick={()=>{navigator.clipboard.writeText(html).then(()=>{setCopied(true);setTimeout(()=>setCopied(false),3000);});}}
-          style={{position:"absolute",top:6,right:6,background:copied?"#16a34a":"#4338ca",color:"#fff",border:"none",borderRadius:6,padding:"4px 10px",fontSize:".72rem",fontWeight:700,cursor:"pointer"}}>
-          {copied?"✅ Copied!":"📋 Copy All"}
-        </button>
-      </div>
-      <div style={{fontSize:".72rem",color:"#888",marginTop:6,lineHeight:1.6}}>
-        1. Click <b>Copy All</b> above<br/>
-        2. Open <b>Notepad</b> (Windows) or <b>TextEdit</b> (Mac)<br/>
-        3. Paste and save as <b>agenda-fetcher.html</b><br/>
-        4. Open that file in Chrome/Edge while logged into Google
-      </div>
-    </div>
-  );
-}
-
-function BuddyCreature({stage,eq={}}){
-  const s=Math.min(stage,5);
-  const cfg=[
-    {fill:"#FFF0CC",sk:"#D4A850",ec:"#8B6340",mood:"sleep",path:"M100 72 C145 72 165 108 163 148 C161 188 144 218 100 218 C56 218 39 188 37 148 C35 108 55 72 100 72Z"},
-    {fill:"#B8EAFF",sk:"#64C8F0",ec:"#0055AA",mood:"happy",path:"M100 84 C138 84 156 112 156 142 C156 172 138 198 100 198 C62 198 44 172 44 142 C44 112 62 84 100 84Z"},
-    {fill:"#4ECDE8",sk:"#1AB0D0",ec:"#005A7A",mood:"happy",path:"M100 78 C144 78 165 108 164 142 C163 176 144 204 100 204 C56 204 37 176 36 142 C35 108 56 78 100 78Z"},
-    {fill:"#1AACB0",sk:"#0A8A8A",ec:"#004050",mood:"cool",path:"M100 74 C150 74 174 106 173 142 C172 178 150 208 100 208 C50 208 28 178 27 142 C26 106 50 74 100 74Z"},
-    {fill:"#C472E8",sk:"#9030C8",ec:"#3D0070",mood:"power",path:"M100 70 C155 70 180 104 180 142 C180 180 155 212 100 212 C45 212 20 180 20 142 C20 104 45 70 100 70Z"},
-    {fill:"#FFB840",sk:"#E07800",ec:"#703000",mood:"legend",path:"M76 72 C72 54 90 48 100 58 C110 48 128 54 124 72 C162 74 184 106 184 142 C184 178 162 212 100 212 C38 212 16 178 16 142 C16 106 38 74 76 72Z"},
-  ][s];
-  const{fill,sk,ec,mood,path}=cfg;
-  const ey=139-s*2,elx=78,erx=122,er=8+s*1.2,my=ey+28+s;
-  const hatY=parseInt(path.match(/M\d+ (\d+)/)[1])-2;
-  return(
-    <svg viewBox="0 0 200 240" style={{width:"100%",height:"100%",overflow:"visible",filter:s>=4?"drop-shadow(0 0 16px "+sk+")":"none"}}>
-      <defs>
-        <radialGradient id={"bg"+s} cx="40%" cy="35%" r="65%"><stop offset="0%" stopColor="#fff" stopOpacity="0.25"/><stop offset="100%" stopColor="#000" stopOpacity="0"/></radialGradient>
-        <linearGradient id="rG" x1="0%" y1="0%" x2="100%" y2="0%">{["#F00","#F80","#FF0","#0C0","#00F","#90C"].map((c,i)=><stop key={i} offset={i*20+"%"} stopColor={c}/>)}</linearGradient>
-      </defs>
-      {eq.special==="wings"&&<><ellipse cx="24" cy={ey+14} rx="22" ry="36" fill="#C8F5D8" stroke="#60D898" strokeWidth="2" transform={"rotate(-20 24 "+(ey+14)+")"} opacity="0.9"/><ellipse cx="176" cy={ey+14} rx="22" ry="36" fill="#C8F5D8" stroke="#60D898" strokeWidth="2" transform={"rotate(20 176 "+(ey+14)+")"} opacity="0.9"/></>}
-      {eq.special==="rainbow"&&<path d={"M5 "+(my+55)+" Q100 "+(ey-90)+" 195 "+(my+55)} fill="none" stroke="url(#rG)" strokeWidth="10" strokeLinecap="round" opacity="0.55"/>}
-      {eq.body==="cape"&&<path d={"M"+(elx+2)+","+(ey-10)+" L"+(elx-22)+","+(my+55)+" Q100,"+(my+72)+" "+(erx+22)+","+(my+55)+" L"+(erx-2)+","+(ey-10)+"Z"} fill="#6820B0" stroke="#4A10A0" strokeWidth="2" opacity="0.9"/>}
-      <path d={path} fill={fill} stroke={sk} strokeWidth="3.5"/><path d={path} fill={"url(#bg"+s+")"}/>
-      <ellipse cx="107" cy={my+4} rx="19" ry="13" fill="white" opacity="0.16"/>
-      {s>=1&&s<=3&&<><ellipse cx={elx-15} cy={ey+20} rx="11" ry="7" fill="#FF7FA8" opacity="0.38"/><ellipse cx={erx+15} cy={ey+20} rx="11" ry="7" fill="#FF7FA8" opacity="0.38"/></>}
-      {s===5&&<><text x="16" y="54" fontSize="14" opacity="0.8" fill="#FFD700">✦</text><text x="166" y="48" fontSize="10" opacity="0.7" fill="#FFD700">✦</text><text x="12" y="185" fontSize="10" opacity="0.6" fill="#FFD700">✦</text><text x="168" y="192" fontSize="13" opacity="0.75" fill="#FFD700">✦</text></>}
-      {mood==="sleep"?<><path d={"M"+(elx-9)+" "+ey+" Q"+elx+" "+(ey-10)+" "+(elx+9)+" "+ey} fill="none" stroke={ec} strokeWidth="3.5" strokeLinecap="round"/><path d={"M"+(erx-9)+" "+ey+" Q"+erx+" "+(ey-10)+" "+(erx+9)+" "+ey} fill="none" stroke={ec} strokeWidth="3.5" strokeLinecap="round"/><text x="110" y={ey-4} fontSize="10" fill={ec} opacity="0.6">z</text><text x="121" y={ey-12} fontSize="7" fill={ec} opacity="0.4">z</text></>
-      :<><circle cx={elx} cy={ey} r={er} fill="white"/><circle cx={elx+1} cy={ey+1} r={er*0.62} fill={ec}/><circle cx={elx-er*0.28} cy={ey-er*0.28} r={er*0.22} fill="white"/><circle cx={erx} cy={ey} r={er} fill="white"/><circle cx={erx+1} cy={ey+1} r={er*0.62} fill={ec}/><circle cx={erx-er*0.28} cy={ey-er*0.28} r={er*0.22} fill="white"/>{(mood==="power"||mood==="legend")&&<><circle cx={elx} cy={ey} r={er+1.5} fill="none" stroke={sk} strokeWidth="2" opacity="0.4"/><circle cx={erx} cy={ey} r={er+1.5} fill="none" stroke={sk} strokeWidth="2" opacity="0.4"/></>}{mood==="cool"&&<><path d={"M"+(elx-er)+" "+(ey-er-4)+" Q"+elx+" "+(ey-er-11)+" "+(elx+er)+" "+(ey-er-4)} fill="none" stroke={ec} strokeWidth="2.5" strokeLinecap="round"/><path d={"M"+(erx-er)+" "+(ey-er-4)+" Q"+erx+" "+(ey-er-11)+" "+(erx+er)+" "+(ey-er-4)} fill="none" stroke={ec} strokeWidth="2.5" strokeLinecap="round"/></>}</>}
-      {eq.face==="sunglasses"&&<><rect x={elx-er-3} y={ey-er-2} width={(er+3)*2} height={(er+3)*2} rx={er+3} fill="rgba(0,0,0,0.82)"/><rect x={erx-er-3} y={ey-er-2} width={(er+3)*2} height={(er+3)*2} rx={er+3} fill="rgba(0,0,0,0.82)"/><rect x={elx+er+1} y={ey-1.5} width={erx-elx-er*2-2} height="3" fill="#111"/></>}
-      {eq.face==="heart_eyes"&&[elx,erx].map((cx2,ki)=><path key={ki} d={"M"+cx2+" "+(ey-2)+" C"+(cx2-er*1.1)+" "+(ey-er*1.5)+" "+(cx2-er*1.7)+" "+(ey-2)+" "+cx2+" "+(ey+er*0.9)+" C"+(cx2+er*1.7)+" "+(ey-2)+" "+(cx2+er*1.1)+" "+(ey-er*1.5)+" "+cx2+" "+(ey-2)+"Z"} fill="#FF3D7F" opacity="0.9"/>)}
-      {eq.face==="monocle"&&<><circle cx={erx} cy={ey} r={er+4} fill="none" stroke="#9B8030" strokeWidth="2.5"/><line x1={erx+er+4} y1={ey+er+4} x2={erx+er+10} y2={ey+er+18} stroke="#9B8030" strokeWidth="2"/></>}
-      {mood!=="sleep"&&(mood==="cool"?<path d={"M"+(100-13)+" "+my+" Q100 "+(my+10)+" "+(100+13)+" "+my} fill="none" stroke={ec} strokeWidth="3" strokeLinecap="round"/>:<path d={"M"+(100-16)+" "+my+" Q100 "+(my+16)+" "+(100+16)+" "+my} fill="none" stroke={ec} strokeWidth="3" strokeLinecap="round"/>)}
-      {eq.body==="bow_tie"&&<><polygon points={(100-21)+","+(my+16)+" "+(100-6)+","+(my+24)+" "+(100-21)+","+(my+32)} fill="#FF4D8A" stroke="#D0306A" strokeWidth="1.5"/><polygon points={(100+21)+","+(my+16)+" "+(100+6)+","+(my+24)+" "+(100+21)+","+(my+32)} fill="#FF4D8A" stroke="#D0306A" strokeWidth="1.5"/><circle cx="100" cy={my+24} r="5.5" fill="#FF6BA8"/></>}
-      {eq.hat==="party_hat"&&<><polygon points={"100,"+(hatY-48)+" "+(100-30)+","+(hatY-2)+" "+(100+30)+","+(hatY-2)} fill="#FF6BA8" stroke="#D0356E" strokeWidth="2"/><rect x={100-32} y={hatY-8} width="64" height="10" rx="5" fill="#FFC0D8" opacity="0.7"/><circle cx="100" cy={hatY-52} r="5.5" fill="#FFD700"/></>}
-      {eq.hat==="crown"&&<><path d={"M"+(100-34)+","+hatY+" L"+(100-34)+","+(hatY-32)+" L"+(100-17)+","+(hatY-19)+" L100,"+(hatY-40)+" L"+(100+17)+","+(hatY-19)+" L"+(100+34)+","+(hatY-32)+" L"+(100+34)+","+hatY+"Z"} fill="#FFD700" stroke="#DAA520" strokeWidth="2.5"/><circle cx={100-17} cy={hatY-19} r="3.5" fill="#FF3333"/><circle cx="100" cy={hatY-40} r="3.5" fill="#4488FF"/><circle cx={100+17} cy={hatY-19} r="3.5" fill="#33CC33"/></>}
-      {eq.hat==="wizard_hat"&&<><polygon points={"100,"+(hatY-60)+" "+(100-36)+","+(hatY-2)+" "+(100+36)+","+(hatY-2)} fill="#3A0090" stroke="#7030C0" strokeWidth="2.5"/><ellipse cx="100" cy={hatY-2} rx="40" ry="9" fill="#3A0090" stroke="#7030C0" strokeWidth="2.5"/><text x="88" y={hatY-30} fontSize="13" fill="#FFD700" opacity="0.9">✦</text></>}
-      {eq.hat==="santa_hat"&&<><polygon points={"100,"+(hatY-56)+" "+(100-34)+","+(hatY-2)+" "+(100+34)+","+(hatY-2)} fill="#CC0000" stroke="#AA0000" strokeWidth="2"/><rect x={100-36} y={hatY-11} width="72" height="14" rx="7" fill="white"/><circle cx="100" cy={hatY-60} r="8" fill="white"/></>}
-      {eq.special==="halo"&&<ellipse cx="100" cy={hatY-22} rx="30" ry="9" fill="rgba(255,220,50,0.75)" stroke="#FFD700" strokeWidth="3.5"/>}
-    </svg>
-  );
-}
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § AUTH SCREEN                                                               │
-// │  Full login/signup UI. Handles:                                              │
-// │    - Email + password login & signup                                         │
-// │    - Google Sign-In (GSI popup)                                              │
-// │    - Email verification flow                                                 │
-// │    - Password reset                                                          │
-// └──────────────────────────────────────────────────────────────────────────────┘
-function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
-  const [mode, setMode] = useState("login");
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [name, setName] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [err, setErr] = useState("");
-  const [resetSent, setResetSent] = useState(false);
-  const [showReset, setShowReset] = useState(false);
-  const [resetEmail, setResetEmail] = useState("");
-  const [resetLoading, setResetLoading] = useState(false);
-  // Email verification state
-  const [verifyStep, setVerifyStep] = useState(false); // true = showing verify screen
-  const [verifyUser, setVerifyUser] = useState(null);  // temp user object while verifying
-  const [verifyPolling, setVerifyPolling] = useState(false);
-  const [resendLoading, setResendLoading] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const pollRef = useRef(null);
-
-  async function handleReset(){
-    if(!resetEmail){setErr("Enter your email first.");return;}
-    setResetLoading(true);setErr("");
-    try{
-      await fbResetPassword(resetEmail);
-      setResetSent(true);
-    } catch(e){
-      if(e.message==="PREVIEW_MODE") setErr("Password reset emails work on the deployed app, not in the preview.");
-      else {
-        const msgs={"EMAIL_NOT_FOUND":"No account found with that email.","INVALID_EMAIL":"Please enter a valid email."};
-        setErr(msgs[e.message]||e.message);
-      }
-    }
-    setResetLoading(false);
-  }
-  const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
-
-  function startResendCooldown(){
-    setResendCooldown(60);
-    const t=setInterval(()=>setResendCooldown(c=>{if(c<=1){clearInterval(t);return 0;}return c-1;}),1000);
-  }
-
-  async function checkVerified(u, manual=false){
-    try{
-      const verified=await fbCheckEmailVerified(u.idToken);
-      if(verified){
-        clearInterval(pollRef.current);
-        setVerifyPolling(false);
-        fbSetSession(u);
-        fbIncrementStat("totalUsers",1,u.idToken);
-        onAuth(u);
-        return true;
-      } else if(manual){
-        setErr("Email not verified yet — make sure you clicked the link in your inbox.");
-      }
-    }catch(e){
-      if(manual) setErr("Couldn't check verification status. Try again.");
-    }
-    return false;
-  }
-
-  function startPolling(u){
-    setVerifyPolling(true);
-    // Poll every 5 seconds — less aggressive than 3s
-    pollRef.current=setInterval(()=>checkVerified(u), 5000);
-  }
-
-  async function handleResend(){
-    if(resendCooldown>0||!verifyUser)return;
-    setResendLoading(true);
-    try{
-      await fbSendVerificationEmail(verifyUser.idToken);
-      startResendCooldown();
-    }catch(e){setErr(e.message);}
-    setResendLoading(false);
-  }
-
-  async function handleCancelVerify(){
-    clearInterval(pollRef.current);
-    if(verifyUser){try{await fbDeleteAccount(verifyUser.idToken);}catch{}}
-    setVerifyStep(false);setVerifyUser(null);setErr("");
-  }
-
-  async function handleSubmit(){
-    if(!email||!password)return;
-    if(mode==="signup"){
-      if(!name){setErr("Please enter your name.");return;}
-      if(password!==confirmPassword){setErr("Passwords don't match.");return;}
-      if(password.length<6){setErr("Password must be at least 6 characters.");return;}
-    }
-    setLoading(true);setErr("");
-    try{
-      let user;
-      if(mode==="login"){
-        user=await fbSignIn(email,password);
-        fbSetSession(user);
-        onAuth(user);
-      } else {
-        // Create account, send verification email, show verify screen
-        user=await fbSignUp(email,password,name);
-        await fbSendVerificationEmail(user.idToken);
-        setVerifyUser(user);
-        setVerifyStep(true);
-        startResendCooldown();
-        startPolling(user);
-      }
-    } catch(e){
-      const msgs={
-        "EMAIL_NOT_FOUND":"No account found with that email.",
-        "INVALID_PASSWORD":"Incorrect password.",
-        "EMAIL_EXISTS":"An account with this email already exists.",
-        "WEAK_PASSWORD : Password should be at least 6 characters":"Password must be at least 6 characters.",
-        "INVALID_EMAIL":"Please enter a valid email address.",
-        "INVALID_LOGIN_CREDENTIALS":"Incorrect email or password.",
-      };
-      setErr(msgs[e.message]||e.message);
-    }
-    setLoading(false);
-  }
-
-  async function handleGoogle(){
-    setLoading(true); setErr("");
-    try{
-      const result = await fbGoogleSignIn();
-      // Exchange Google ID token with Firebase signInWithIdp
-      const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FB_KEY}`,{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          requestUri:window.location.origin,
-          postBody:`id_token=${result.idToken}&providerId=google.com`,
-          returnSecureToken:true,
-          returnIdpCredential:true
-        })
-      });
-      const d = await r.json();
-      if(d.error) throw new Error(d.error.message);
-      const u={uid:d.localId,email:d.email,displayName:d.displayName||null,idToken:d.idToken,photoURL:d.photoUrl||null};
-      fbSetSession(u);
-      onAuth(u);
-    } catch(e){
-      if(e.message!=="Popup closed"&&e.message!=="No credential returned"){
-        setErr(e.message||"Google sign-in failed.");
-      }
-    }
-    setLoading(false);
-  }
-
-  const bg   = darkMode ? "#0F1117" : "#F5F2EC";
-  const card = darkMode ? "#161921" : "#FFFFFF";
-  const bd   = darkMode ? "#262B3C" : "#E2DDD6";
-  const txt  = darkMode ? "#DDE2F5" : "#1B1F3B";
-  const txt3 = darkMode ? "#5C6480" : "#888888";
-  const txt4 = darkMode ? "#353C58" : "#bbbbbb";
-  const bg3  = darkMode ? "#1C1F2B" : "#F0EDE7";
-  const acc  = darkMode ? "#7B83F7" : "#1B1F3B";
-  const acc2 = darkMode ? "#9199FF" : "#2d3260";
-  const sh2  = darkMode ? "rgba(0,0,0,.5)" : "rgba(27,31,59,.14)";
-
-  const inp = {width:"100%",padding:"10px 13px",border:`1.5px solid ${bd}`,borderRadius:11,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".88rem",background:card,color:txt,outline:"none",transition:"border-color .15s",marginTop:5,boxSizing:"border-box"};
-  const lbl = {display:"block",fontSize:".68rem",fontWeight:800,color:txt3,textTransform:"uppercase",letterSpacing:".07em",marginBottom:2};
-
-  return(
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",background:bg,padding:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
-
-      <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:420,boxShadow:`0 24px 60px ${sh2}`}}>
-
-        {/* Logo + title */}
-        <div style={{width:56,height:56,borderRadius:16,overflow:"hidden",margin:"0 auto 16px"}}><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100%" height="100%">
-  <defs>
-    <linearGradient id="sd-bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#1B1F3B"/>
-      <stop offset="100%" stopColor="#2d3561"/>
-    </linearGradient>
-    <linearGradient id="sd-acc" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stopColor="#f5a623"/>
-      <stop offset="100%" stopColor="#f7c059"/>
-    </linearGradient>
-  </defs>
-  <circle cx="50" cy="50" r="48" fill="url(#sd-bg)"/>
-  <rect x="24" y="30" width="24" height="38" rx="3" fill="#fff" opacity="0.15"/>
-  <rect x="26" y="30" width="22" height="38" rx="2" fill="#fff" opacity="0.9"/>
-  <rect x="24" y="30" width="4" height="38" rx="2" fill="#ddd"/>
-  <line x1="32" y1="40" x2="44" y2="40" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
-  <line x1="32" y1="45" x2="44" y2="45" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
-  <line x1="32" y1="50" x2="40" y2="50" stroke="#1B1F3B" strokeWidth="1.5" strokeLinecap="round" opacity="0.3"/>
-  <circle cx="63" cy="57" r="16" fill="url(#sd-acc)"/>
-  <polyline points="55,57 61,63 72,50" fill="none" stroke="#1B1F3B" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
-</svg></div>
-        <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.75rem",fontWeight:700,color:txt,textAlign:"center",marginBottom:4}}>Study Desk</div>
-        <div style={{fontSize:".83rem",color:txt3,textAlign:"center",marginBottom:adminMode?12:24}}>{mode==="login"?"Welcome back! Sign in to continue.":"Create your free account."}</div>
-        {adminMode&&(
-          <div style={{background:darkMode?"#1e1b4b":"#eef2ff",border:`1.5px solid ${darkMode?"#4338ca":"#c7d2fe"}`,borderRadius:12,padding:"10px 14px",marginBottom:20,textAlign:"center"}}>
-            <div style={{fontSize:".78rem",fontWeight:700,color:darkMode?"#a5b4fc":"#4338ca"}}>🔐 Admin Access Only</div>
-          </div>
-        )}
-
-        {/* Sign in / Sign up toggle */}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",background:bg3,borderRadius:12,padding:4,marginBottom:22,gap:4}}>
-          {["login","signup"].map(m=>(
-            <button key={m} onClick={()=>{setMode(m);setErr("");setConfirmPassword("");}} style={{padding:"9px 0",borderRadius:9,border:"none",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".84rem",fontWeight:600,cursor:"pointer",transition:"all .15s",
-              background:mode===m?card:"transparent",color:mode===m?txt:txt3,
-              boxShadow:mode===m?`0 2px 8px ${sh2}`:"none"}}>
-              {m==="login"?"Sign In":"Sign Up"}
-            </button>
-          ))}
-        </div>
-
-        {/* Google button */}
-        <button onClick={handleGoogle} disabled={loading} style={{width:"100%",padding:"11px 0",borderRadius:12,border:`1.5px solid ${bd}`,background:card,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".86rem",fontWeight:600,color:txt,display:"flex",alignItems:"center",justifyContent:"center",gap:10,transition:"all .15s",marginBottom:4}}>
-          <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.5 0 6.6 1.2 9 3.2l6.7-6.7C35.8 2.5 30.2 0 24 0 14.6 0 6.6 5.4 2.6 13.3l7.8 6C12.2 13 17.7 9.5 24 9.5z"/><path fill="#4285F4" d="M46.5 24.5c0-1.6-.1-3.1-.4-4.5H24v8.5h12.7c-.6 3-2.3 5.5-4.8 7.2l7.5 5.8c4.4-4.1 7.1-10.1 7.1-17z"/><path fill="#FBBC05" d="M10.4 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.7l7.8-6z"/><path fill="#34A853" d="M24 48c6.2 0 11.4-2 15.2-5.5l-7.5-5.8c-2 1.4-4.6 2.2-7.7 2.2-6.3 0-11.6-4.2-13.6-10l-7.8 6C6.6 42.6 14.6 48 24 48z"/></svg>
-          Continue with Google
-        </button>
-
-        {/* Divider */}
-        <div style={{display:"flex",alignItems:"center",gap:10,margin:"14px 0",color:txt4,fontSize:".74rem",fontWeight:600}}>
-          <div style={{flex:1,height:1,background:bd}}/>or<div style={{flex:1,height:1,background:bd}}/>
-        </div>
-
-        {/* Fields */}
-        {mode==="signup"&&(
-          <div style={{marginBottom:12}}>
-            <label style={lbl}>Your Name</label>
-            <input style={inp} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Alex" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
-          </div>
-        )}
-        <div style={{marginBottom:12}}>
-          <label style={lbl}>Email</label>
-          <input style={inp} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="you@email.com" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
-        </div>
-        {/* Email verification screen — overlays the form */}
-        {verifyStep&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}>
-            <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:24,padding:"36px 32px",width:"100%",maxWidth:400,boxShadow:`0 24px 60px ${sh2}`,textAlign:"center"}}>
-              <div style={{fontSize:"3rem",marginBottom:16}}>📬</div>
-              <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.3rem",fontWeight:700,color:txt,marginBottom:8}}>Check your email</div>
-              <div style={{fontSize:".83rem",color:txt3,lineHeight:1.7,marginBottom:6}}>
-                We sent a verification link to
-              </div>
-              <div style={{fontWeight:700,color:txt,fontSize:".9rem",marginBottom:20,padding:"8px 14px",background:bg3,borderRadius:10,display:"inline-block"}}>{email}</div>
-              <div style={{fontSize:".78rem",color:txt3,marginBottom:24,lineHeight:1.6}}>
-                Click the link in the email to verify your account. This page will update automatically once verified.
-              </div>
-              {/* Steps */}
-              <div style={{textAlign:"left",marginBottom:20,background:bg3,borderRadius:12,padding:"12px 14px"}}>
-                {[
-                  "Open the email from StudyDesk in your inbox",
-                  "Click the verification link inside it",
-                  "Come back here — you'll be signed in automatically",
-                ].map((t,i)=>(
-                  <div key={i} style={{display:"flex",gap:10,alignItems:"center",marginBottom:i<2?8:0}}>
-                    <div style={{width:20,height:20,borderRadius:"50%",background:acc,color:"#fff",fontSize:".65rem",fontWeight:700,display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{i+1}</div>
-                    <div style={{fontSize:".78rem",color:txt}}>{t}</div>
-                  </div>
-                ))}
-              </div>
-              {/* Polling indicator */}
-              <div style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,marginBottom:16,fontSize:".75rem",color:txt3}}>
-                <div style={{width:7,height:7,borderRadius:"50%",background:"#10b981",animation:"pulse 1.5s ease-in-out infinite"}}/>
-                Checking automatically every 5 seconds...
-              </div>
-              {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"9px 12px",fontSize:".78rem",color:darkMode?"#f87171":"#dc2626",marginBottom:14,textAlign:"left"}}>{err}</div>}
-              <div style={{display:"flex",gap:8,flexDirection:"column"}}>
-                <button onClick={()=>{setErr("");checkVerified(verifyUser,true);}}
-                  style={{width:"100%",padding:"12px",borderRadius:11,border:"none",background:acc,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".88rem",cursor:"pointer"}}>
-                  ✓ I've clicked the link
-                </button>
-                <button onClick={handleResend} disabled={resendCooldown>0||resendLoading}
-                  style={{width:"100%",padding:"10px",borderRadius:11,border:`1.5px solid ${bd}`,background:"transparent",color:resendCooldown>0?txt3:acc,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".83rem",cursor:resendCooldown>0?"not-allowed":"pointer"}}>
-                  {resendLoading?"Sending...":`📨 Resend Email${resendCooldown>0?` (${resendCooldown}s)`:""}`}
-                </button>
-                <button onClick={handleCancelVerify}
-                  style={{width:"100%",padding:"8px",borderRadius:11,border:"none",background:"transparent",color:txt3,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:500,fontSize:".78rem",cursor:"pointer",textDecoration:"underline"}}>
-                  Cancel & use a different email
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-
-        <div style={{marginBottom:8}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:2}}>
-            <label style={lbl}>Password</label>
-            {mode==="login"&&<button onClick={()=>{setShowReset(true);setResetEmail(email);setErr("");setResetSent(false);}} style={{background:"none",border:"none",cursor:"pointer",fontSize:".72rem",color:acc,fontWeight:600,padding:0,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>Forgot password?</button>}
-          </div>
-          <input style={inp} type="password" value={password} onChange={e=>setPassword(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
-        </div>
-        {mode==="signup"&&(
-          <div style={{marginBottom:8}}>
-            <label style={lbl}>Confirm Password</label>
-            <input style={{...inp,borderColor:confirmPassword&&confirmPassword!==password?"#ef4444":bd}} type="password" value={confirmPassword} onChange={e=>setConfirmPassword(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==="Enter"&&handleSubmit()}/>
-            {confirmPassword&&confirmPassword!==password&&<div style={{fontSize:".72rem",color:"#ef4444",marginTop:4}}>Passwords don't match</div>}
-          </div>
-        )}
-
-        {/* Forgot password modal */}
-        {showReset&&(
-          <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.6)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
-            onClick={e=>{if(e.target===e.currentTarget){setShowReset(false);setResetSent(false);}}}>
-            <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:20,padding:"28px 28px 24px",width:"100%",maxWidth:380,boxShadow:`0 24px 60px ${sh2}`}}>
-              {resetSent?(
-                <>
-                  <div style={{fontSize:"2rem",textAlign:"center",marginBottom:10}}>📬</div>
-                  <div style={{fontWeight:700,color:txt,fontSize:"1.05rem",textAlign:"center",marginBottom:8}}>Check your inbox!</div>
-                  <div style={{color:txt3,fontSize:".82rem",textAlign:"center",lineHeight:1.6,marginBottom:20}}>
-                    <>We sent a password reset link to <strong style={{color:txt}}>{resetEmail}</strong>. Check your spam folder if you don't see it.</>
-                  </div>
-                  <button onClick={()=>{setShowReset(false);setResetSent(false);}} style={{width:"100%",padding:"11px",borderRadius:11,border:"none",background:acc,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".88rem",cursor:"pointer"}}>Back to Sign In</button>
-                </>
-              ):(
-                <>
-                  <div style={{fontWeight:700,color:txt,fontSize:"1.05rem",marginBottom:6}}>🔑 Reset Password</div>
-                  <div style={{color:txt3,fontSize:".8rem",marginBottom:16,lineHeight:1.5}}>Enter your email and we'll send you a link to reset your password.</div>
-                  <label style={lbl}>Email</label>
-                  <input style={{...inp,marginBottom:10}} type="email" value={resetEmail} onChange={e=>setResetEmail(e.target.value)} placeholder="you@email.com" autoFocus onKeyDown={e=>e.key==="Enter"&&handleReset()}/>
-                  {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"9px 12px",fontSize:".78rem",color:darkMode?"#f87171":"#dc2626",marginBottom:10}}>{err}</div>}
-                  <div style={{display:"flex",gap:8}}>
-                    <button onClick={()=>{setShowReset(false);setErr("");}} style={{flex:1,padding:"10px",borderRadius:11,border:`1.5px solid ${bd}`,background:"transparent",color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".84rem",cursor:"pointer"}}>Cancel</button>
-                    <button onClick={handleReset} disabled={resetLoading||!resetEmail} style={{flex:2,padding:"10px",borderRadius:11,border:"none",background:resetLoading||!resetEmail?"#ccc":acc,color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".84rem",cursor:resetLoading||!resetEmail?"not-allowed":"pointer"}}>
-                      {resetLoading?"Sending...":"Send Reset Link →"}
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Error */}
-        {err&&<div style={{background:darkMode?"#350000":"#fef2f2",border:`1.5px solid ${darkMode?"#7f1d1d":"#fca5a5"}`,borderRadius:10,padding:"10px 13px",fontSize:".8rem",color:darkMode?"#f87171":"#dc2626",marginBottom:10,lineHeight:1.5}}>{err}</div>}
-
-        {/* Submit */}
-        <button onClick={handleSubmit} disabled={loading||!email||!password}
-          style={{width:"100%",padding:"12px 0",borderRadius:12,border:"none",background:(!loading&&email&&password)?acc:"#ccc",color:"#fff",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".9rem",fontWeight:700,cursor:(!loading&&email&&password)?"pointer":"not-allowed",transition:"all .18s",marginTop:4}}>
-          {loading?"Loading...":(mode==="login"?"Sign In →":"Create Account →")}
-        </button>
-
-      </div>
-    </div>
-  );
-}
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § ADMIN PANEL                                                               │
-// │  Password-protected admin dashboard. Shows:                                 │
-// │    - Live user count, assignment count, total sessions                      │
-// │    - Online users (last seen < 2 min ago)                                   │
-// │    - All registered users with delete option                                │
-// │  Only accessible to: asgoyal1@stu.naperville203.org                         │
-// └──────────────────────────────────────────────────────────────────────────────┘
-function AdminPanel({user, onClose, inline=false}){
-  const [pass, setPass] = useState("");
-  const [authed, setAuthed] = useState(inline);
-  const [stats, setStats] = useState(null);
-  const [loading, setLoading] = useState(false);
-  const [err, setPassErr] = useState("");
-  const [deletingUser, setDeletingUser] = useState(null);
-  const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
-
-  const bg=darkMode?"#0F1117":"#F5F2EC", card=darkMode?"#161921":"#fff", bd=darkMode?"#262B3C":"#E2DDD6";
-  const txt=darkMode?"#DDE2F5":"#1B1F3B", txt3=darkMode?"#5C6480":"#888", bg3=darkMode?"#1C1F2B":"#F0EDE7";
-  const sh=darkMode?"rgba(0,0,0,.5)":"rgba(27,31,59,.14)";
-
-  async function loadStats(){
-    setLoading(true);
-    const s=await fbGetAdminStats(user.idToken);
-    setStats(s);setLoading(false);
-  }
-  useEffect(()=>{ if(inline&&user) loadStats(); },[]);
-
-  function tryLogin(){
-    if(pass===ADMIN_PASS){setAuthed(true);loadStats();}
-    else setPassErr("Wrong password.");
-  }
-
-  const completionRate = stats && stats.totalAssignments>0
-    ? Math.round((stats.totalSubmitted/stats.totalAssignments)*100) : 0;
-
-  const STAT_CARDS=[
-    {label:"Total Users",value:stats?.totalUsers??"-",icon:"👤",color:"#6366f1"},
-    {label:"Online Now",value:stats?.onlineNow??"-",icon:"🟢",color:"#10b981"},
-    {label:"New Today",value:stats?.newUsersToday??"-",icon:"✨",color:"#f59e0b"},
-    {label:"Assignments Created",value:stats?.totalAssignments??"-",icon:"📝",color:"#3b82f6"},
-    {label:"Submitted",value:stats?.totalSubmitted??"-",icon:"✅",color:"#16a34a"},
-    {label:"Completion Rate",value:stats?completionRate+"%":"-",icon:"📊",color:"#8b5cf6"},
-    {label:"Classes Created",value:stats?.totalClasses??"-",icon:"🏫",color:"#ec4899"},
-    {label:"Total Points Earned",value:stats?.totalPoints??"-",icon:"⭐",color:"#f97316"},
-  ];
-
-  const panelContent=(
-    <div style={{background:card,borderRadius:inline?24:24,width:"100%",fontFamily:"'Plus Jakarta Sans',sans-serif",border:`1.5px solid ${bd}`,maxHeight:inline?"none":"88vh",overflow:inline?"visible":"auto",boxShadow:inline?"none":`0 32px 80px ${sh}`}}>
-
-        {/* Header */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"22px 28px 18px",borderBottom:`1.5px solid ${bd}`,position:"sticky",top:0,background:card,zIndex:1,borderRadius:"24px 24px 0 0"}}>
-          <div>
-            <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.4rem",fontWeight:700,color:txt}}>🛡️ Admin Panel</div>
-            <div style={{fontSize:".76rem",color:txt3,marginTop:2}}>StudyDesk analytics dashboard</div>
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            {authed&&<button onClick={loadStats} style={{padding:"7px 14px",borderRadius:9,border:`1.5px solid ${bd}`,background:bg3,color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".78rem",fontWeight:600,cursor:"pointer"}}>🔄 Refresh</button>}
-            <button onClick={onClose} style={{padding:"7px 14px",borderRadius:9,border:`1.5px solid ${bd}`,background:bg3,color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".78rem",fontWeight:600,cursor:"pointer"}}>✕ Close</button>
-          </div>
-        </div>
-
-        <div style={{padding:"24px 28px"}}>
-          {/* Password gate */}
-          {!authed?(
-            <div style={{maxWidth:320,margin:"0 auto",paddingTop:20}}>
-              <div style={{fontSize:"1.1rem",fontWeight:700,color:txt,marginBottom:6,textAlign:"center"}}>🔒 Enter Admin Password</div>
-              <div style={{fontSize:".8rem",color:txt3,textAlign:"center",marginBottom:20}}>Access restricted to admins only.</div>
-              <input type="password" value={pass} onChange={e=>setPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&tryLogin()}
-                placeholder="Password..." autoFocus
-                style={{width:"100%",padding:"10px 13px",border:`1.5px solid ${bd}`,borderRadius:11,background:bg3,color:txt,fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".9rem",outline:"none",marginBottom:10,boxSizing:"border-box"}}/>
-              {err&&<div style={{color:"#ef4444",fontSize:".8rem",marginBottom:10,textAlign:"center"}}>{err}</div>}
-              <button onClick={tryLogin} style={{width:"100%",padding:"11px",borderRadius:11,border:"none",background:txt,color:card,fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:700,fontSize:".9rem",cursor:"pointer"}}>
-                Unlock →
-              </button>
-
-            </div>
-          ):(
-            <>
-              {/* Preview badge */}
-
-
-              {loading?(
-                <div style={{textAlign:"center",padding:40,color:txt3}}>Loading stats...</div>
-              ):stats?(
-                <>
-                  {/* Stats grid */}
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12,marginBottom:24}}>
-                    {STAT_CARDS.map(sc=>(
-                      <div key={sc.label} style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"16px 14px",position:"relative",overflow:"hidden"}}>
-                        <div style={{position:"absolute",top:0,left:0,width:3,height:"100%",background:sc.color,borderRadius:"16px 0 0 16px"}}/>
-                        <div style={{fontSize:"1.5rem",marginBottom:4,marginLeft:6}}>{sc.icon}</div>
-                        <div style={{fontSize:"1.6rem",fontWeight:800,color:txt,marginLeft:6,lineHeight:1}}>{sc.value}</div>
-                        <div style={{fontSize:".68rem",fontWeight:700,color:txt3,marginTop:4,marginLeft:6,textTransform:"uppercase",letterSpacing:".04em"}}>{sc.label}</div>
-                      </div>
-                    ))}
-                  </div>
-
-                  {/* Progress bar: submission rate */}
-                  <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px",marginBottom:16}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-                      <div style={{fontWeight:700,color:txt,fontSize:".88rem"}}>📈 Assignment Completion Rate</div>
-                      <div style={{fontWeight:800,color:"#16a34a",fontSize:".88rem"}}>{completionRate}%</div>
-                    </div>
-                    <div style={{background:bd,borderRadius:99,height:10,overflow:"hidden"}}>
-                      <div style={{width:completionRate+"%",height:"100%",background:"linear-gradient(90deg,#16a34a,#4ade80)",borderRadius:99,transition:"width .6s ease"}}/>
-                    </div>
-                    <div style={{display:"flex",justifyContent:"space-between",marginTop:6,fontSize:".72rem",color:txt3}}>
-                      <span>{stats.totalSubmitted} submitted</span>
-                      <span>{(stats.totalAssignments-stats.totalSubmitted)} still pending</span>
-                    </div>
-                  </div>
-
-                  {/* Online users */}
-                  <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px",marginBottom:16}}>
-                    <div style={{fontWeight:700,color:txt,fontSize:".88rem",marginBottom:12}}>🟢 Online Now ({stats.onlineNow})</div>
-                    {stats.onlineUsers.length===0?(
-                      <div style={{color:txt3,fontSize:".8rem"}}>No users active in the last 2 minutes.</div>
-                    ):(
-                      <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                        {stats.onlineUsers.map((u,i)=>(
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:10}}>
-                            <div style={{width:8,height:8,borderRadius:"50%",background:"#10b981",flexShrink:0}}/>
-                            <div style={{width:30,height:30,borderRadius:"50%",background:"linear-gradient(135deg,#6366f1,#8b5cf6)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:".75rem",flexShrink:0}}>
-                              {(u.displayName||u.email||"?")[0].toUpperCase()}
-                            </div>
-                            <div>
-                              <div style={{fontSize:".82rem",fontWeight:600,color:txt}}>{u.displayName||u.email.split("@")[0]}</div>
-                              <div style={{fontSize:".7rem",color:txt3}}>{u.email}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* All users */}
-                  {stats.allUsers&&stats.allUsers.length>0&&(
-                    <div style={{background:bg3,border:`1.5px solid ${bd}`,borderRadius:16,padding:"18px 20px"}}>
-                      <div style={{fontWeight:700,color:txt,fontSize:".88rem",marginBottom:12}}>👥 All Registered Users ({stats.allUsers.length})</div>
-                      <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:260,overflow:"auto"}}>
-                        {stats.allUsers.map((u,i)=>(
-                          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"6px 0",borderBottom:`1px solid ${bd}`}}>
-                            <div style={{width:28,height:28,borderRadius:"50%",background:"linear-gradient(135deg,#3b82f6,#6366f1)",display:"flex",alignItems:"center",justifyContent:"center",color:"#fff",fontWeight:700,fontSize:".7rem",flexShrink:0}}>
-                              {(u.displayName||u.email||"?")[0].toUpperCase()}
-                            </div>
-                            <div style={{flex:1,minWidth:0}}>
-                              <div style={{fontSize:".8rem",fontWeight:600,color:txt,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.displayName||u.email.split("@")[0]}</div>
-                              <div style={{fontSize:".69rem",color:txt3,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{u.email}</div>
-                            </div>
-                            {u.uid&&(
-                              <button
-                                disabled={deletingUser===u.uid}
-                                onClick={async()=>{
-                                  if(!window.confirm(`Remove ${u.email} from StudyDesk?\n\nThis deletes their Firestore data. Their login account will remain.`)) return;
-                                  setDeletingUser(u.uid);
-                                  await fbAdminDeleteUserData(u.uid, user.idToken);
-                                  setStats(s=>({...s,allUsers:s.allUsers.filter(x=>x.uid!==u.uid),totalUsers:s.totalUsers-1}));
-                                  setDeletingUser(null);
-                                }}
-                                style={{padding:"4px 10px",borderRadius:7,border:"1.5px solid #fca5a5",background:deletingUser===u.uid?"#fca5a5":"#fef2f2",color:"#dc2626",fontFamily:"'Plus Jakarta Sans',sans-serif",fontSize:".7rem",fontWeight:700,cursor:deletingUser===u.uid?"not-allowed":"pointer",flexShrink:0,transition:"all .15s"}}>
-                                {deletingUser===u.uid?"...":"🗑 Remove"}
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </>
-              ):(
-                <div style={{textAlign:"center",padding:40,color:"#ef4444"}}>Failed to load stats. Check your connection.</div>
-              )}
-            </>
-          )}
-        </div>
-      </div>
-  );
-  if(inline) return panelContent;
-  return(
-    <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.7)",zIndex:9999,display:"flex",alignItems:"center",justifyContent:"center",padding:20,backdropFilter:"blur(4px)"}}
-      onClick={e=>{if(e.target===e.currentTarget)onClose();}}>
-      <div style={{maxWidth:700,width:"100%"}}>
-        {panelContent}
-      </div>
-    </div>
-  );
-}
-
-// ╔══════════════════════════════════════════════════════════════════════════════╗
-// ║  § MAIN COMPONENT — StudyDesk()                                             ║
-// ║  This is the entire app in one component. All state lives here.             ║
-// ║  Scroll down for STATE → EFFECTS → LOGIC → RENDER                          ║
-// ╚══════════════════════════════════════════════════════════════════════════════╝
-
-function renderMarkdown(text) {
-  // Protect math blocks before escaping HTML
-  const mathBlocks = [];
-  text = text.replace(/\$\$([\s\S]+?)\$\$/g, (_, m) => { mathBlocks.push({display:true,m}); return "%%MATH"+(mathBlocks.length-1)+"%%"; });
-  text = text.replace(/\$([^\$\n]+?)\$/g, (_, m) => { mathBlocks.push({display:false,m}); return "%%MATH"+(mathBlocks.length-1)+"%%"; });
-  // Escape HTML
-  text = text.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
-  // Markdown formatting
-  text = text.replace(/^### (.+)/gm,"<strong style='font-size:.9rem;display:block;margin:10px 0 4px'>$1</strong>");
-  text = text.replace(/^## (.+)/gm,"<strong style='font-size:.95rem;display:block;margin:12px 0 5px'>$1</strong>");
-  text = text.replace(/^# (.+)/gm,"<strong style='font-size:1rem;display:block;margin:14px 0 6px'>$1</strong>");
-  text = text.replace(/\*\*(.+?)\*\*/g,"<strong>$1</strong>");
-  text = text.replace(/\*(.+?)\*/g,"<em>$1</em>");
-  text = text.replace(/`([^`]+)`/g,"<code style='background:var(--bg2);padding:1px 5px;border-radius:4px;font-size:.8rem;font-family:monospace'>$1</code>");
-  text = text.replace(/^---$/gm,"<hr style='border:none;border-top:1px solid var(--border);margin:10px 0'>");
-  text = text.replace(/^\* (.+)/gm,"<div style='padding-left:12px;margin:2px 0'>• $1</div>");
-  text = text.replace(/^- (.+)/gm,"<div style='padding-left:12px;margin:2px 0'>• $1</div>");
-  text = text.replace(/^\d+\. (.+)/gm,"<div style='padding-left:12px;margin:2px 0'>$&</div>");
-  text = text.replace(/\n/g,"<br>");
-  // Restore math with KaTeX if available
-  text = text.replace(/%%MATH(\d+)%%/g, (_, i) => {
-    const {display, m} = mathBlocks[parseInt(i)];
-    if (typeof window !== "undefined" && window.katex) {
-      try { return window.katex.renderToString(m, {displayMode:display, throwOnError:false}); }
-      catch(e) {}
-    }
-    return display ? "$$"+m+"$$" : "$"+m+"$";
-  });
-  return text;
-}
-
-function AITab({assignments, classes}){
-  const [aiMode, setAiMode] = useState("chat");
-  const [chatMsgs, setChatMsgs] = useState([{role:"ai",text:"Hi! I'm your AI study assistant. Ask me anything — homework help, study tips, essay feedback, or just to explain a concept. 🎓"}]);
-  const [chatInput, setChatInput] = useState("");
-  const [chatLoading, setChatLoading] = useState(false);
-  const [flashInput, setFlashInput] = useState("");
-  const [flashCards, setFlashCards] = useState([]);
-  const [flashLoading, setFlashLoading] = useState(false);
-  const [flashFlipped, setFlashFlipped] = useState({});
-  const [writingInput, setWritingInput] = useState("");
-  const [writingFeedback, setWritingFeedback] = useState("");
-  const [writingLoading, setWritingLoading] = useState(false);
-  const [gradeInsight, setGradeInsight] = useState("");
-  const [gradeLoading, setGradeLoading] = useState(false);
-  const chatEndRef = useRef(null);
-  
-  // Homework help state
-  const [hwUploadMode, setHwUploadMode] = useState(null); // null, "file", "camera", "phone"
-  const [hwImage, setHwImage] = useState(null);
-  const [hwImagePreview, setHwImagePreview] = useState(null);
-  const [hwSolution, setHwSolution] = useState("");
-  const [hwLoading, setHwLoading] = useState(false);
-  const [qrCode, setQrCode] = useState(null);
-  const [phoneUploadUrl, setPhoneUploadUrl] = useState(null);
-  const [uploadId, setUploadId] = useState(null);
-  const [checkingUpload, setCheckingUpload] = useState(false);
-  const [hwWorkImage, setHwWorkImage] = useState(null);
-  const [hwWorkPreview, setHwWorkPreview] = useState(null);
-  const [hwFeedback, setHwFeedback] = useState("");
-  const [hwFeedbackLoading, setHwFeedbackLoading] = useState(false);
-  const [hwFollowUp, setHwFollowUp] = useState("");
-  const [hwFollowUpResponse, setHwFollowUpResponse] = useState("");
-  const [hwFollowUpLoading, setHwFollowUpLoading] = useState(false);
-  const videoRef = useRef(null);
-  const canvasRef = useRef(null);
-  const uploadPollInterval = useRef(null);
-
-  const chatScrollRef = useRef(null);
-  useEffect(()=>{ if(chatScrollRef.current){ chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight; }},[chatMsgs]);
-
-  // Cleanup camera on unmount or mode change
-  useEffect(()=>{
-    return ()=>stopCamera();
-  },[]);
-
-  useEffect(()=>{
-    if(aiMode!=="homework") stopCamera();
-  },[aiMode]);
-
-  // Homework help functions
-  function handleFileUploadHw(e){
-    const file = e.target.files?.[0];
-    if(!file) return;
-    setHwImage(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setHwImagePreview(ev.target.result);
-    reader.readAsDataURL(file);
-    setHwUploadMode("file");
-  }
-
-  async function startCamera(){
-    try{
-      const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:"environment"}});
-      if(videoRef.current){
-        videoRef.current.srcObject = stream;
-        videoRef.current.play();
-      }
-      setHwUploadMode("camera");
-    }catch(e){
-      alert("Camera access denied or not available");
-    }
-  }
-
-  function capturePhoto(){
-    if(!videoRef.current||!canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    canvas.width = video.videoWidth;
-    canvas.height = video.videoHeight;
-    const ctx = canvas.getContext("2d");
-    ctx.drawImage(video,0,0);
-    canvas.toBlob(blob=>{
-      setHwImage(blob);
-      setHwImagePreview(canvas.toDataURL());
-      stopCamera();
-      setHwUploadMode("file");
-    },"image/jpeg",0.9);
-  }
-
-  function stopCamera(){
-    if(videoRef.current?.srcObject){
-      videoRef.current.srcObject.getTracks().forEach(t=>t.stop());
-      videoRef.current.srcObject = null;
-    }
-  }
-
-  async function generateQRCode(){
-    // Generate a unique upload URL
-    const id = Math.random().toString(36).substring(7);
-    const uploadUrl = `${window.location.origin}/upload/${id}`;
-    setPhoneUploadUrl(uploadUrl);
-    setUploadId(id);
-    
-    // Generate QR code using a simple QR code API
-    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(uploadUrl)}`;
-    setQrCode(qrUrl);
-    setHwUploadMode("phone");
-    
-    // Start polling for uploads
-    startPollingForUpload(id);
-  }
-
-  function startPollingForUpload(id){
-    // Poll Firestore every 2 seconds for the upload
-    uploadPollInterval.current = setInterval(()=>{
-      checkForUpload(id);
-    }, 2000);
-  }
-
-  function stopPollingForUpload(){
-    if(uploadPollInterval.current){
-      clearInterval(uploadPollInterval.current);
-      uploadPollInterval.current = null;
-    }
-  }
-
-  async function checkForUpload(id){
-    setCheckingUpload(true);
-    try{
-      // Check Firestore for the uploaded image
-      const response = await fetch(`${FB_FS}/uploads/${id}?key=${FB_KEY}`);
-      
-      if(response.ok){
-        const data = await response.json();
-        const imageData = data.fields?.image?.stringValue;
-        
-        if(imageData){
-          // Found an upload!
-          // Convert base64 back to blob
-          const fetchResponse = await fetch(imageData);
-          const blob = await fetchResponse.blob();
-          
-          setHwImage(blob);
-          setHwImagePreview(imageData);
-          setHwUploadMode("file");
-          
-          // Clean up - delete the upload from Firestore
-          await fetch(`${FB_FS}/uploads/${id}?key=${FB_KEY}`, {method:"DELETE"});
-          stopPollingForUpload();
-        }
-      }
-    }catch(e){
-      console.error("Error checking upload:", e);
-    }
-    setCheckingUpload(false);
-  }
-
-  function manualCheckUpload(){
-    if(uploadId){
-      checkForUpload(uploadId);
-    }
-  }
-
-  async function analyzeHomework(){
-    if(!hwImage||hwLoading) return;
-    setHwLoading(true);
-    setHwSolution("");
-    
-    try{
-      // Convert image to base64
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try{
-          const base64 = e.target.result.split(',')[1];
-          
-          console.log("Calling Gemini Vision API...");
-          console.log("API Key present:", !!GEMINI_KEY);
-          
-          // Call Gemini Vision API
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({
-              contents:[{
-                parts:[
-                  {text:"You are a helpful homework tutor. Analyze this homework problem and provide a clear, step-by-step solution. Explain the concepts involved and show your work. Be encouraging and educational."},
-                  {inline_data:{mime_type:"image/jpeg",data:base64}}
-                ]
-              }]
-            })
-          });
-          
-          console.log("Gemini response status:", response.status);
-          
-          if(!response.ok){
-            const errorData = await response.json();
-            console.error("Gemini API error:", errorData);
-            throw new Error(`API error: ${errorData.error?.message || response.status}`);
-          }
-          
-          const data = await response.json();
-          console.log("Gemini response:", data);
-          
-          const solution = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't analyze this image. Please try again.";
-          setHwSolution(solution);
-          setHwLoading(false);
-        }catch(err){
-          console.error("Analysis error:", err);
-          setHwSolution("Error analyzing image: " + err.message);
-          setHwLoading(false);
-        }
-      };
-      reader.readAsDataURL(hwImage);
-    }catch(e){
-      console.error("Reader error:", e);
-      setHwSolution("Error reading image: " + e.message);
-      setHwLoading(false);
-    }
-  }
-
-  function resetHomework(){
-    setHwUploadMode(null);
-    setHwImage(null);
-    setHwImagePreview(null);
-    setHwSolution("");
-    setQrCode(null);
-    setPhoneUploadUrl(null);
-    setUploadId(null);
-    setHwWorkImage(null);
-    setHwWorkPreview(null);
-    setHwFeedback("");
-    setHwFollowUp("");
-    setHwFollowUpResponse("");
-    stopPollingForUpload();
-    stopCamera();
-  }
-
-  function handleWorkUpload(e){
-    const file = e.target.files?.[0];
-    if(!file) return;
-    setHwWorkImage(file);
-    const reader = new FileReader();
-    reader.onload = (ev) => setHwWorkPreview(ev.target.result);
-    reader.readAsDataURL(file);
-  }
-
-  async function checkWork(){
-    if(!hwWorkImage||hwFeedbackLoading) return;
-    setHwFeedbackLoading(true);
-    setHwFeedback("");
-    
-    try{
-      const reader = new FileReader();
-      reader.onload = async (e) => {
-        try{
-          const base64 = e.target.result.split(',')[1];
-          
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,{
-            method:"POST",
-            headers:{"Content-Type":"application/json"},
-            body:JSON.stringify({
-              contents:[{
-                parts:[
-                  {text:`You are a helpful homework tutor reviewing a student's work. Compare their work to the correct solution below and provide constructive feedback. Point out what they did right and what needs to be fixed. Be encouraging but specific about errors.\n\nCorrect solution:\n${hwSolution}\n\nNow review the student's work in the image:`},
-                  {inline_data:{mime_type:"image/jpeg",data:base64}}
-                ]
-              }]
-            })
-          });
-          
-          if(!response.ok){
-            throw new Error(`API error: ${response.status}`);
-          }
-          
-          const data = await response.json();
-          const feedback = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't analyze your work. Please try again.";
-          setHwFeedback(feedback);
-          setHwFeedbackLoading(false);
-        }catch(err){
-          console.error("Feedback error:", err);
-          setHwFeedback("Error analyzing your work: " + err.message);
-          setHwFeedbackLoading(false);
-        }
-      };
-      reader.readAsDataURL(hwWorkImage);
-    }catch(e){
-      console.error("Reader error:", e);
-      setHwFeedback("Error reading image: " + e.message);
-      setHwFeedbackLoading(false);
-    }
-  }
-
-  async function askFollowUp(){
-    if(!hwFollowUp.trim()||hwFollowUpLoading) return;
-    setHwFollowUpLoading(true);
-    setHwFollowUpResponse("");
-    
-    try{
-      const context = `Original problem solution:\n${hwSolution}\n\n${hwFeedback?"Student's work feedback:\n"+hwFeedback+"\n\n":""}Student's follow-up question: ${hwFollowUp}`;
-      
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,{
-        method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({
-          contents:[{
-            parts:[{text:context}]
-          }],
-          generationConfig:{maxOutputTokens:1024,temperature:0.7}
-        })
-      });
-      
-      if(!response.ok){
-        throw new Error(`API error: ${response.status}`);
-      }
-      
-      const data = await response.json();
-      const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't answer that. Please try again.";
-      setHwFollowUpResponse(answer);
-    }catch(err){
-      console.error("Follow-up error:", err);
-      setHwFollowUpResponse("Error: " + err.message);
-    }
-    
-    setHwFollowUpLoading(false);
-  }
-
-  // Cleanup polling on unmount
-  useEffect(()=>{
-    return ()=>{
-      stopPollingForUpload();
-      stopCamera();
-    };
-  },[]);
-
-  async function sendChat(){
-    if(!chatInput.trim()||chatLoading) return;
-    const msg = chatInput.trim();
-    setChatInput("");
-    setChatMsgs(prev=>[...prev,{role:"user",text:msg}]);
-    setChatLoading(true);
-    const context = `Student has ${assignments.filter(a=>a.progress<100).length} pending assignments. Classes: ${[...new Set(classes.map(c=>c.name))].join(", ")}. Upcoming: ${assignments.filter(a=>a.progress<100).slice(0,5).map(a=>`${a.title} (${a.subject}) due ${a.dueDate}`).join(", ")}.`;
-    const historySnapshot = chatMsgs.filter(m=>m.text.trim());
-    setChatMsgs(prev=>[...prev,{role:"ai",text:""}]);
-    await callGeminiStream(msg, `You are a friendly, helpful AI study assistant for a high school student. Context: ${context} Keep responses clear and encouraging. Remember the full conversation. Use emojis occasionally.`, (partial)=>{
-      setChatMsgs(prev=>[...prev.slice(0,-1),{role:"ai",text:partial}]);
-    }, historySnapshot);
-    setChatLoading(false);
-  }
-
-  async function genFlashcards(){
-    if(!flashInput.trim()||flashLoading) return;
-    setFlashLoading(true);
-    setFlashCards([]);
-    setFlashFlipped({});
-    const reply = await callGemini(`A high school student wants flashcards to study. Based on the input below, generate 10 flashcards covering actual content they would be tested on — key terms, formulas, theorems, concepts, historical events, vocabulary, etc. If the input is just a subject name (e.g. "Honors Algebra 2", "AP US History"), generate cards covering the most important testable content from that subject. Never ask what the class is about — just generate real study cards. Respond ONLY with a JSON array: [{"q":"question","a":"answer"},...]
-
-Input: ${flashInput}`, "You are a high school study tool. Generate specific, exam-ready flashcards on real subject content. If given only a class name, cover the most commonly tested concepts in that class. Return ONLY valid JSON array, no markdown, no explanation.");
-    try {
-      const clean = reply.replace(/```json|```/g,"").trim();
-      setFlashCards(JSON.parse(clean));
-    } catch(e){ setFlashCards([{q:"Error parsing cards",a:"Try again with clearer notes"}]); }
-    setFlashLoading(false);
-  }
-
-  async function getWritingFeedback(){
-    if(!writingInput.trim()||writingLoading) return;
-    setWritingLoading(true);
-    setWritingFeedback("");
-    const reply = await callGemini(`Give detailed writing feedback on this text. Cover: clarity, structure, grammar, and suggestions for improvement.
-
-Text:
-${writingInput}`, "You are an expert writing coach for high school students. Be encouraging but honest. Use clear sections.");
-    setWritingFeedback(reply);
-    setWritingLoading(false);
-  }
-
-  async function getGradeInsights(){
-    setGradeLoading(true);
-    setGradeInsight("");
-    const graded = assignments.filter(a=>a.grade!=null);
-    const byClass = {};
-    graded.forEach(a=>{ if(!byClass[a.subject]) byClass[a.subject]=[]; byClass[a.subject].push(a.grade); });
-    const summary = Object.entries(byClass).map(([cls,grades])=>`${cls}: avg ${(grades.reduce((s,g)=>s+g,0)/grades.length).toFixed(1)}% (${grades.length} grades)`).join(", ");
-    const reply = await callGemini(`Analyze these grades and give personalized study advice.
-
-Grade summary: ${summary||"No grades yet"}
-Pending assignments: ${assignments.filter(a=>a.progress<100).length}
-
-Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study tips 4) Encouragement`, "You are a supportive academic advisor. Be specific, actionable, and encouraging.");
-    setGradeInsight(reply);
-    setGradeLoading(false);
-  }
-
-  const modes = [["chat","💬 Chat"],["homework","📸 Homework Help"],["flashcards","🃏 Flashcards"],["writing","✍️ Writing"],["grades","📊 Insights"]];
-
-  return(
-    <div>
-      <div className="sec-hd"><div className="sec-t">✨ AI Study Assistant</div></div>
-      <div style={{display:"flex",gap:8,marginBottom:18,flexWrap:"wrap"}}>
-        {modes.map(([m,l])=>(
-          <button key={m} className="sfbtn" onClick={()=>setAiMode(m)}
-            style={aiMode===m?{background:"var(--accent)",borderColor:"var(--accent)",color:"#fff"}:{}}>
-            {l}
-          </button>
-        ))}
-      </div>
-
-      {aiMode==="chat"&&(
-        <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",overflow:"hidden",display:"flex",flexDirection:"column",height:500,minHeight:300}}>
-          <div ref={chatScrollRef} style={{flex:1,overflowY:"auto",padding:"16px 16px 8px"}}>
-            {chatMsgs.map((m,i)=>(
-              <div key={i} style={{display:"flex",justifyContent:m.role==="user"?"flex-end":"flex-start",marginBottom:12}}>
-                <div style={{maxWidth:m.role==="user"?"75%":"90%",background:m.role==="user"?"var(--accent)":"var(--bg3)",color:m.role==="user"?"#fff":"var(--text)",borderRadius:m.role==="user"?"18px 18px 4px 18px":"18px 18px 18px 4px",padding:"10px 14px",fontSize:".82rem",lineHeight:1.6}}>
-                  {m.role==="ai"?<span dangerouslySetInnerHTML={{__html:renderMarkdown(m.text)}}/>:<span>{m.text}</span>}
-                </div>
-              </div>
-            ))}
-            {chatLoading&&<div style={{display:"flex",justifyContent:"flex-start",marginBottom:12}}><div style={{background:"var(--bg3)",borderRadius:"18px 18px 18px 4px",padding:"10px 14px",fontSize:".82rem",color:"var(--text3)"}}>✨ Thinking...</div></div>}
-          </div>
-          <div style={{borderTop:"1px solid var(--border)",padding:"10px 12px",display:"flex",gap:8,flexShrink:0}}>
-            <input className="finp" style={{flex:1,margin:0}} placeholder="Ask anything..." value={chatInput}
-              onChange={e=>setChatInput(e.target.value)}
-              onKeyDown={e=>e.key==="Enter"&&sendChat()}/>
-            <button className="btn btn-p" onClick={sendChat} disabled={chatLoading} style={{padding:"8px 16px"}}>Send</button>
-          </div>
-        </div>
-      )}
-
-      {aiMode==="homework"&&(
-        <div>
-          {!hwUploadMode&&!hwImage&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
-              <div className="sec-lbl" style={{marginBottom:16}}>How would you like to submit your homework?</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(200px,1fr))",gap:12}}>
-                <label style={{background:"var(--bg3)",border:"2px dashed var(--border)",borderRadius:14,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
-                  <input type="file" accept="image/*" style={{display:"none"}} onChange={handleFileUploadHw}/>
-                  <div style={{fontSize:"2.5rem"}}>📁</div>
-                  <div style={{fontWeight:700,fontSize:".88rem",color:"var(--text)"}}>Upload File</div>
-                  <div style={{fontSize:".75rem",color:"var(--text3)",lineHeight:1.4}}>Choose a photo or document from your device</div>
-                </label>
-                
-                <button onClick={startCamera} style={{background:"var(--bg3)",border:"2px dashed var(--border)",borderRadius:14,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
-                  <div style={{fontSize:"2.5rem"}}>📷</div>
-                  <div style={{fontWeight:700,fontSize:".88rem",color:"var(--text)"}}>Use Camera</div>
-                  <div style={{fontSize:".75rem",color:"var(--text3)",lineHeight:1.4}}>Take a photo with your device camera</div>
-                </button>
-                
-                <button onClick={generateQRCode} style={{background:"var(--bg3)",border:"2px dashed var(--border)",borderRadius:14,padding:"24px 16px",cursor:"pointer",textAlign:"center",transition:"all .2s",display:"flex",flexDirection:"column",alignItems:"center",gap:10}}>
-                  <div style={{fontSize:"2.5rem"}}>📱</div>
-                  <div style={{fontWeight:700,fontSize:".88rem",color:"var(--text)"}}>Use Phone</div>
-                  <div style={{fontSize:".75rem",color:"var(--text3)",lineHeight:1.4}}>Scan QR code to upload from your phone</div>
-                </button>
-              </div>
-            </div>
-          )}
-
-          {hwUploadMode==="camera"&&!hwImage&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
-              <div className="sec-lbl" style={{marginBottom:12}}>Position your homework in the frame</div>
-              <div style={{position:"relative",background:"#000",borderRadius:12,overflow:"hidden",marginBottom:12}}>
-                <video ref={videoRef} style={{width:"100%",display:"block"}} autoPlay playsInline/>
-                <canvas ref={canvasRef} style={{display:"none"}}/>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button className="btn btn-g" onClick={()=>{stopCamera();setHwUploadMode(null);}} style={{flex:1}}>Cancel</button>
-                <button className="btn btn-p" onClick={capturePhoto} style={{flex:2}}>📸 Capture Photo</button>
-              </div>
-            </div>
-          )}
-
-          {hwUploadMode==="phone"&&!hwImage&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,textAlign:"center"}}>
-              <div className="sec-lbl" style={{marginBottom:16}}>Scan this QR code with your phone</div>
-              {qrCode&&(
-                <div style={{marginBottom:16}}>
-                  <img src={qrCode} alt="QR Code" style={{maxWidth:200,margin:"0 auto",display:"block",border:"4px solid var(--border)",borderRadius:12}}/>
-                </div>
-              )}
-              <div style={{fontSize:".85rem",color:"var(--text3)",marginBottom:16,lineHeight:1.6}}>
-                Open your phone's browser and scan this QR code, then upload a photo. It will appear here automatically.
-              </div>
-              <div style={{background:"var(--bg3)",borderRadius:12,padding:"12px 16px",marginBottom:16}}>
-                <div style={{fontSize:".75rem",fontWeight:700,color:"var(--text2)",marginBottom:6}}>
-                  {checkingUpload?"🔄 Checking for upload...":"📱 Waiting for upload..."}
-                </div>
-                <div style={{fontSize:".72rem",color:"var(--text3)"}}>
-                  {checkingUpload?"Checking if you've uploaded from your phone...":"Once you upload from your phone, the image will appear here automatically"}
-                </div>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button className="btn btn-g" onClick={resetHomework} style={{flex:1}}>Cancel</button>
-                <button className="btn btn-p" onClick={manualCheckUpload} disabled={checkingUpload} style={{flex:1}}>
-                  {checkingUpload?"Checking...":"🔄 Check for Upload"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {hwImage&&hwImagePreview&&!hwSolution&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
-              <div className="sec-lbl" style={{marginBottom:12}}>Preview your homework</div>
-              <div style={{marginBottom:16,borderRadius:12,overflow:"hidden",border:"1.5px solid var(--border)"}}>
-                <img src={hwImagePreview} alt="Homework" style={{width:"100%",display:"block"}}/>
-              </div>
-              <div style={{display:"flex",gap:8}}>
-                <button className="btn btn-g" onClick={resetHomework} style={{flex:1}}>Start Over</button>
-                <button className="btn btn-p" onClick={analyzeHomework} disabled={hwLoading} style={{flex:2}}>
-                  {hwLoading?"✨ Analyzing...":"🤖 Get Help with This"}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {hwSolution&&(
-            <div>
-              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,marginBottom:16}}>
-                <div className="sec-lbl" style={{marginBottom:12}}>Your homework</div>
-                <div style={{borderRadius:12,overflow:"hidden",border:"1.5px solid var(--border)",marginBottom:12}}>
-                  <img src={hwImagePreview} alt="Homework" style={{width:"100%",maxHeight:300,objectFit:"contain",display:"block"}}/>
-                </div>
-                <button className="btn btn-g" onClick={resetHomework} style={{width:"100%"}}>Submit Another Problem</button>
-              </div>
-              
-              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,marginBottom:16}}>
-                <div className="sec-lbl" style={{marginBottom:12}}>📚 Solution & Explanation</div>
-                <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwSolution)}}/>
-              </div>
-
-              {/* Check Your Work */}
-              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,marginBottom:16}}>
-                <div className="sec-lbl" style={{marginBottom:12}}>✅ Check Your Work</div>
-                <div style={{fontSize:".82rem",color:"var(--text3)",marginBottom:14,lineHeight:1.6}}>
-                  Upload a photo of your work and I'll compare it to the solution above, pointing out what's correct and what needs fixing.
-                </div>
-                
-                {!hwWorkPreview?(
-                  <label style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"24px 16px",border:"2px dashed var(--border)",borderRadius:12,cursor:"pointer",background:"var(--bg3)"}}>
-                    <input type="file" accept="image/*" style={{display:"none"}} onChange={handleWorkUpload}/>
-                    <div style={{fontSize:"2rem"}}>📸</div>
-                    <div style={{fontSize:".85rem",fontWeight:600,color:"var(--text)"}}>Upload Your Work</div>
-                    <div style={{fontSize:".75rem",color:"var(--text3)"}}>Take a photo or select from your device</div>
-                  </label>
-                ):(
-                  <div>
-                    <div style={{marginBottom:12,borderRadius:12,overflow:"hidden",border:"1.5px solid var(--border)"}}>
-                      <img src={hwWorkPreview} alt="Your work" style={{width:"100%",display:"block"}}/>
-                    </div>
-                    <div style={{display:"flex",gap:8}}>
-                      <button className="btn btn-g" onClick={()=>{setHwWorkImage(null);setHwWorkPreview(null);setHwFeedback("");}} style={{flex:1}}>Change Photo</button>
-                      <button className="btn btn-p" onClick={checkWork} disabled={hwFeedbackLoading} style={{flex:2}}>
-                        {hwFeedbackLoading?"✨ Checking...":"🔍 Check My Work"}
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {hwFeedback&&(
-                  <div style={{marginTop:16,padding:"14px 16px",background:"var(--bg3)",borderRadius:12,border:"1.5px solid var(--border)"}}>
-                    <div style={{fontWeight:700,fontSize:".85rem",color:"var(--text)",marginBottom:8}}>📝 Feedback on Your Work</div>
-                    <div style={{fontSize:".82rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwFeedback)}}/>
-                  </div>
-                )}
-              </div>
-
-              {/* Follow-up Questions */}
-              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
-                <div className="sec-lbl" style={{marginBottom:12}}>💬 Ask a Follow-up Question</div>
-                <div style={{fontSize:".82rem",color:"var(--text3)",marginBottom:14,lineHeight:1.6}}>
-                  Still confused? Ask me anything about this problem!
-                </div>
-                <textarea 
-                  className="finp" 
-                  rows={3} 
-                  style={{resize:"vertical",fontFamily:"inherit",marginBottom:10}} 
-                  placeholder="e.g., Why did we use this formula? Can you explain step 3 more?"
-                  value={hwFollowUp}
-                  onChange={e=>setHwFollowUp(e.target.value)}
-                />
-                <button className="btn btn-p" onClick={askFollowUp} disabled={hwFollowUpLoading||!hwFollowUp.trim()} style={{width:"100%"}}>
-                  {hwFollowUpLoading?"✨ Thinking...":"💡 Ask Question"}
-                </button>
-
-                {hwFollowUpResponse&&(
-                  <div style={{marginTop:16,padding:"14px 16px",background:"var(--bg3)",borderRadius:12,border:"1.5px solid var(--border)"}}>
-                    <div style={{fontWeight:700,fontSize:".85rem",color:"var(--text)",marginBottom:8}}>💡 Answer</div>
-                    <div style={{fontSize:".82rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwFollowUpResponse)}}/>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {aiMode==="flashcards"&&(
-        <div>
-          <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16,marginBottom:16}}>
-            <div className="flbl" style={{marginBottom:8}}>Paste your notes</div>
-            <textarea className="finp" rows={6} style={{resize:"vertical",fontFamily:"inherit"}} placeholder="Paste notes, textbook content, or any material you want to study..." value={flashInput} onChange={e=>setFlashInput(e.target.value)}/>
-            <button className="btn btn-p" style={{marginTop:10,width:"100%"}} onClick={genFlashcards} disabled={flashLoading}>
-              {flashLoading?"✨ Generating...":"🃏 Generate Flashcards"}
-            </button>
-          </div>
-          {flashCards.length>0&&(
-            <div>
-              <div className="sec-lbl">{flashCards.length} cards — tap to flip</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(200px,1fr))",gap:12}}>
-                {flashCards.map((c,i)=>(
-                  <div key={i} onClick={()=>setFlashFlipped(f=>({...f,[i]:!f[i]}))}
-                    style={{background:flashFlipped[i]?"var(--accent)":"var(--card)",border:"1.5px solid var(--border)",borderRadius:14,padding:"20px 16px",minHeight:120,display:"flex",alignItems:"center",justifyContent:"center",cursor:"pointer",transition:"all .2s",textAlign:"center"}}>
-                    <div style={{fontSize:".82rem",fontWeight:600,color:flashFlipped[i]?"#fff":"var(--text)",lineHeight:1.5}}>
-                      {flashFlipped[i]?c.a:c.q}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {aiMode==="writing"&&(
-        <div>
-          <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16,marginBottom:16}}>
-            <div className="flbl" style={{marginBottom:8}}>Paste your writing</div>
-            <textarea className="finp" rows={8} style={{resize:"vertical",fontFamily:"inherit"}} placeholder="Paste your essay, paragraph, or any writing for feedback..." value={writingInput} onChange={e=>setWritingInput(e.target.value)}/>
-            <button className="btn btn-p" style={{marginTop:10,width:"100%"}} onClick={getWritingFeedback} disabled={writingLoading}>
-              {writingLoading?"✨ Analyzing...":"✍️ Get Feedback"}
-            </button>
-          </div>
-          {writingFeedback&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16}}>
-              <div className="sec-lbl" style={{marginBottom:10}}>AI Feedback</div>
-              <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(writingFeedback)}}/>
-            </div>
-          )}
-        </div>
-      )}
-
-      {aiMode==="grades"&&(
-        <div>
-          <div style={{display:"flex",gap:8,marginBottom:12,alignItems:"center"}}>
-            <button className="btn btn-p" style={{flex:1}} onClick={getGradeInsights} disabled={gradeLoading}>
-              {gradeLoading?"✨ Analyzing...":"📊 Analyze My Performance"}
-            </button>
-          </div>
-          {!gradeInsight&&!gradeLoading&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:"16px 20px",color:"var(--text3)",fontSize:".85rem"}}>
-              Click above to get AI-powered insights on your grades and study habits.
-            </div>
-          )}
-          {gradeInsight&&(
-            <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:16}}>
-              <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(gradeInsight)}}/>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ┌──────────────────────────────────────────────────────────────────────────────┐
-// │  § PHONE UPLOAD PAGE                                                         │
-// │  Simple upload page for phone users who scan QR code                        │
-// └──────────────────────────────────────────────────────────────────────────────┘
-function PhoneUploadPage({uploadId}){
-  const [uploaded, setUploaded] = useState(false);
-  const [uploading, setUploading] = useState(false);
-  const [preview, setPreview] = useState(null);
-  const [darkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
-
-  async function handleUpload(e){
-    const file = e.target.files?.[0];
-    if(!file) return;
-    
-    setUploading(true);
-    
-    // Compress the image before uploading
-    const img = new Image();
-    img.onload = async () => {
-      // Create canvas to resize/compress
-      const canvas = document.createElement('canvas');
-      let width = img.width;
-      let height = img.height;
-      
-      // Resize if too large (max 1200px on longest side)
-      const maxSize = 1200;
-      if(width > maxSize || height > maxSize){
-        if(width > height){
-          height = (height / width) * maxSize;
-          width = maxSize;
-        } else {
-          width = (width / height) * maxSize;
-          height = maxSize;
-        }
-      }
-      
-      canvas.width = width;
-      canvas.height = height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0, width, height);
-      
-      // Convert to JPEG with compression (quality 0.7 = ~70% quality)
-      const compressedData = canvas.toDataURL('image/jpeg', 0.7);
-      setPreview(compressedData);
-      
-      // Check size (base64 is ~1.37x the actual size)
-      const sizeInBytes = compressedData.length * 0.75; // rough estimate
-      console.log("Compressed image size:", Math.round(sizeInBytes / 1024), "KB");
-      
-      try{
-        console.log("Uploading to Firestore with ID:", uploadId);
-        
-        // Save to Firestore
-        const response = await fetch(`${FB_FS}/uploads?documentId=${uploadId}&key=${FB_KEY}`, {
-          method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({
-            fields: {
-              image: {stringValue: compressedData},
-              timestamp: {integerValue: String(Date.now())}
-            }
-          })
-        });
-        
-        console.log("Upload response status:", response.status);
-        
-        if(!response.ok){
-          const errorText = await response.text();
-          console.error("Upload error response:", errorText);
-          throw new Error(`Upload failed: ${response.status}`);
-        }
-        
-        console.log("Upload successful!");
-        setUploading(false);
-        setUploaded(true);
-      }catch(err){
-        console.error("Upload error:", err);
-        setUploading(false);
-        alert("Upload failed: " + err.message + "\n\nTry taking a smaller photo or reducing quality.");
-      }
-    };
-    
-    img.onerror = () => {
-      setUploading(false);
-      alert("Failed to load image. Please try again.");
-    };
-    
-    // Load the image
-    const reader = new FileReader();
-    reader.onload = (e) => { img.src = e.target.result; };
-    reader.readAsDataURL(file);
-  }
-
-  const bg=darkMode?"#0F1117":"#F5F2EC";
-  const card=darkMode?"#161921":"#FFFFFF";
-  const bd=darkMode?"#262B3C":"#E2DDD6";
-  const txt=darkMode?"#DDE2F5":"#1B1F3B";
-  const txt3=darkMode?"#5C6480":"#888888";
-  const acc=darkMode?"#7B83F7":"#1B1F3B";
-
-  return(
-    <div style={{minHeight:"100vh",background:bg,padding:20,fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-      <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');`}</style>
-      
-      <div style={{maxWidth:500,margin:"0 auto",paddingTop:40}}>
-        <div style={{textAlign:"center",marginBottom:30}}>
-          <div style={{width:64,height:64,borderRadius:16,overflow:"hidden",margin:"0 auto 16px",background:card,border:`1.5px solid ${bd}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:"2rem"}}>📚</div>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.5rem",fontWeight:700,color:txt,marginBottom:6}}>Study Desk</div>
-          <div style={{fontSize:".85rem",color:txt3}}>Upload your homework</div>
-        </div>
-
-        {!uploaded?(
-          <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:20,padding:24}}>
-            <div style={{fontSize:"1.1rem",fontWeight:700,color:txt,marginBottom:16,textAlign:"center"}}>
-              📸 Take or select a photo
-            </div>
-            
-            {preview?(
-              <div>
-                <div style={{marginBottom:16,borderRadius:12,overflow:"hidden",border:`1.5px solid ${bd}`}}>
-                  <img src={preview} alt="Preview" style={{width:"100%",display:"block"}}/>
-                </div>
-                {uploading?(
-                  <div style={{textAlign:"center",padding:20,color:txt3}}>
-                    <div style={{fontSize:"2rem",marginBottom:10}}>⏳</div>
-                    <div>Uploading...</div>
-                  </div>
-                ):(
-                  <label style={{display:"block",padding:"12px",background:acc,color:"#fff",borderRadius:12,textAlign:"center",fontWeight:700,cursor:"pointer"}}>
-                    <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
-                    📷 Take Another Photo
-                  </label>
-                )}
-              </div>
-            ):(
-              <label style={{display:"flex",flexDirection:"column",alignItems:"center",gap:12,padding:"40px 20px",border:`2px dashed ${bd}`,borderRadius:16,cursor:"pointer",background:darkMode?"#1C1F2B":"#F8F8F8"}}>
-                <input type="file" accept="image/*" capture="environment" style={{display:"none"}} onChange={handleUpload}/>
-                <div style={{fontSize:"3rem"}}>📷</div>
-                <div style={{fontSize:".9rem",fontWeight:600,color:txt}}>Tap to take a photo</div>
-                <div style={{fontSize:".75rem",color:txt3,textAlign:"center",lineHeight:1.5}}>
-                  Your photo will be sent to your computer automatically
-                </div>
-              </label>
-            )}
-          </div>
-        ):(
-          <div style={{background:card,border:`1.5px solid ${bd}`,borderRadius:20,padding:24,textAlign:"center"}}>
-            <div style={{fontSize:"3rem",marginBottom:16}}>✅</div>
-            <div style={{fontSize:"1.2rem",fontWeight:700,color:txt,marginBottom:8}}>Upload successful!</div>
-            <div style={{fontSize:".85rem",color:txt3,lineHeight:1.6,marginBottom:20}}>
-              Your homework photo has been sent to your computer. You can close this page and return to your PC.
-            </div>
-            <div style={{marginBottom:16,borderRadius:12,overflow:"hidden",border:`1.5px solid ${bd}`}}>
-              <img src={preview} alt="Uploaded" style={{width:"100%",display:"block"}}/>
-            </div>
-            <button onClick={()=>{setUploaded(false);setPreview(null);}}
-              style={{padding:"10px 20px",background:"transparent",border:`1.5px solid ${bd}`,borderRadius:10,color:txt,fontWeight:600,cursor:"pointer",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-              Upload Another
-            </button>
-          </div>
-        )}
-
-        <div style={{marginTop:20,textAlign:"center",fontSize:".75rem",color:txt3}}>
-          Upload ID: {uploadId}
-        </div>
-      </div>
-    </div>
-  );
-}
 
 export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -2558,25 +209,7 @@ export default function StudyDesk() {
   const [floats, setFloats] = useState([]);
   const [confetti, setConfetti] = useState([]);
 
-  function launchConfetti(originEl){
-    const rect=originEl?originEl.getBoundingClientRect():{left:window.innerWidth/2,top:window.innerHeight/2,width:0,height:0};
-    const ox=rect.left+rect.width/2;
-    const oy=rect.top+rect.height/2;
-    const colors=["#16a34a","#4ade80","#fbbf24","#f472b6","#60a5fa","#a78bfa","#fb923c","#fff"];
-    const pieces=Array.from({length:60},(_,i)=>({
-      id:Date.now()+i,
-      x:ox,y:oy,
-      color:colors[i%colors.length],
-      tx:(Math.random()-0.5)*700,
-      ty:-(Math.random()*300+100),
-      rot:(Math.random()-0.5)*900,
-      dur:0.9+Math.random()*0.8,
-      w:6+Math.random()*8,
-      h:8+Math.random()*10,
-    }));
-    setConfetti(pieces);
-    setTimeout(()=>setConfetti([]),2200);
-  }
+  // Animation handlers moved to service
   const [schedPrompt, setSchedPrompt] = useState(null);
   const [subjMode, setSubjMode] = useState("select");
 
@@ -2638,14 +271,24 @@ export default function StudyDesk() {
     }
     const session=fbGetSession();
     if(session){
-      setUser(session);
-      fbLoadData(session.uid, session.idToken).then(d=>{
+      // Check if token needs refreshing before using it
+      fbEnsureValidToken(session).then(validUser => {
+        setUser(validUser);
+        return fbLoadData(validUser.uid, validUser.idToken);
+      }).then(d=>{
         if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url);}}
         saveReady.current=true;
         setLoaded(true);
         const seenVersion=localStorage.getItem("studydesk-seen-version");
         if(seenVersion!==APP_VERSION) setShowReleases(true);
-      }).catch(()=>{setLoaded(true);saveReady.current=true;});
+      }).catch((error)=>{
+        console.warn("Session restore failed:", error);
+        // If token refresh fails, clear session and show auth screen
+        fbClearSession();
+        setUser(null);
+        setLoaded(true);
+        saveReady.current=true;
+      });
     } else {
       setAuthLoading(false);
     }
@@ -2655,8 +298,19 @@ export default function StudyDesk() {
   // Save to Firestore debounced
   useEffect(()=>{
     if(!saveReady.current||!user) return;
-    const t=setTimeout(()=>{
-      fbSaveData(user.uid, user.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl}});
+    const t=setTimeout(async ()=>{
+      try {
+        const validUser = await fbEnsureValidToken(user);
+        if (validUser !== user) {
+          setUser(validUser); // Update user state if token was refreshed
+        }
+        await fbSaveData(validUser.uid, validUser.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl}});
+      } catch (error) {
+        console.warn("Save failed:", error);
+        if (error.message.includes("Session expired")) {
+          setUser(null); // Force re-login
+        }
+      }
     },800); // debounce 800ms
     return()=>clearTimeout(t);
   },[assignments,classes,game,canvasBaseUrl,loaded,user]);
@@ -2700,115 +354,38 @@ export default function StudyDesk() {
   // Presence heartbeat — updates every 60s while logged in
   useEffect(()=>{
     if(!user) return;
-    fbUpdatePresence(user);
-    const t=setInterval(()=>fbUpdatePresence(user),60000);
+    const updatePresence = async () => {
+      try {
+        const validUser = await fbEnsureValidToken(user);
+        if (validUser !== user) {
+          setUser(validUser); // Update user state if token was refreshed
+        }
+        await fbUpdatePresence(validUser);
+      } catch (error) {
+        console.warn("Presence update failed:", error);
+        if (error.message.includes("Session expired")) {
+          setUser(null); // Force re-login
+        }
+      }
+    };
+    
+    updatePresence();
+    const t=setInterval(updatePresence, 60000);
     return()=>clearInterval(t);
   },[user]);
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // CANVAS SYNC
-  // syncCanvas()         — fetches submitted assignments from Canvas API
-  // importFromCanvasAPI() — imports upcoming assignments from Canvas
-  // Auto-sync fires every 3 minutes when a token is set
-  // All requests go through the Cloudflare Worker proxy (CF_PROXY)
+  // Canvas sync handler
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  async function syncCanvas(token, baseUrl, silent=false){
-    if(!token||canvasSyncRef.current) return;
-    if(isLocalhost){
-      setCanvasSync(s=>({...s,syncing:false,error:"Canvas sync doesn't work on localhost — deploy to test it"}));
-      return;
-    }
-    if(proxyBlocked){
-      setCanvasSync(s=>({...s,syncing:false,error:"Canvas sync is blocked on this network (e.g. school wifi). Try on a personal device or network."}));
-      return;
-    }
-    canvasSyncRef.current=true;
-    if(!silent) setCanvasSync(s=>({...s,syncing:true,error:""}));
-    else setCanvasSync(s=>({...s,syncing:true}));
-    try{
-      const today=new Date().toISOString().split("T")[0];
-      const syncPath=`/api/v1/planner/items?per_page=100&start_date=${today}`;
-      const syncR=await fetchWithFallback(baseUrl, syncPath,{
-        headers:{"Authorization":`Bearer ${token}`,"Accept":"application/json"},
-      });
-      let data=await syncR.json();
-      if(!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
-
-      let newSubmits=0;
-      setAssignments(prev=>{
-        let updated=[...prev];
-        for(const item of data){
-          if(!item.plannable?.title) continue;
-          const submitted=item.submissions?.submitted||false;
-          const score=item.submissions?.score??null;
-          const pointsPossible=item.plannable?.points_possible??null;
-          const dueDate=item.plannable_date?item.plannable_date.split("T")[0]:"";
-          const subject=item.context_name||"";
-          const title=item.plannable?.title||"";
-          const match=updated.find(a=>{
-            const titleMatch=a.title.toLowerCase().trim()===title.toLowerCase().trim()||
-              a.title.toLowerCase().includes(title.toLowerCase().slice(0,15))||
-              title.toLowerCase().includes(a.title.toLowerCase().slice(0,15));
-            const subjectMatch=!subject||!a.subject||
-              a.subject.toLowerCase().includes(subject.toLowerCase().slice(0,8))||
-              subject.toLowerCase().includes(a.subject.toLowerCase().slice(0,8));
-            return titleMatch&&subjectMatch;
-          });
-          if(match){
-            const wasSubmitted=match.progress>=100;
-            const patch={};
-            if(submitted&&!wasSubmitted){ patch.progress=100; newSubmits++; }
-            if(score!==null&&pointsPossible){ patch.grade=Math.round((score/pointsPossible)*100); patch.gradeRaw=`${score}/${pointsPossible}`; }
-            if(dueDate&&!match.dueDate) patch.dueDate=dueDate;
-            if(Object.keys(patch).length>0){
-              updated=updated.map(a=>a.id===match.id?{...a,...patch}:a);
-            }
-          } else if(submitted){
-            const existing=updated.find(a=>a.title.toLowerCase()===title.toLowerCase());
-            if(!existing&&dueDate){
-              const today2=new Date(); today2.setHours(0,0,0,0);
-              const due=new Date(dueDate+"T00:00:00");
-              if(due>=today2||score!==null){
-                updated.push({
-                  id:"canvas_"+Date.now()+"_"+Math.random().toString(36).slice(2),
-                  title,subject,dueDate,priority:"medium",progress:100,notes:"Auto-imported from Canvas",
-                  ...(score!==null&&pointsPossible?{grade:Math.round((score/pointsPossible)*100),gradeRaw:`${score}/${pointsPossible}`}:{})
-                });
-                newSubmits++;
-              }
-            }
-          }
-        }
-        return updated;
-      });
-
-      setCanvasSync({lastSync:new Date(),syncing:false,newSubmissions:newSubmits,error:"",everSucceeded:true});
-      if(newSubmits>0){
-        launchConfetti(null);
-        setTimeout(()=>setCanvasSync(s=>({...s,newSubmissions:0})),4000);
-      }
-    } catch(e){
-      setCanvasSync(s=>{
-        // If this was the very first sync attempt and it failed, clear the token so user isn't stuck
-        if(!s.everSucceeded){
-          setCanvasToken("");
-          return {lastSync:null,syncing:false,newSubmissions:0,error:"",everSucceeded:false};
-        }
-        const msg=e.message||"Sync failed";
-        const friendly=msg.includes("Failed to fetch")||msg.includes("NetworkError")||msg.includes("CORS")
-          ?"Network error — Canvas sync only works on the deployed site, not localhost"
-          :msg;
-        return {...s,syncing:false,error:friendly};
-      });
-    }
-    canvasSyncRef.current=false;
-  }
+  const handleSyncCanvas = (token, baseUrl, silent = false) => 
+    syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlocked, canvasSyncRef, setCanvasSync, setAssignments, setCanvasToken);
 
   // Auto-sync every 3 minutes if token is set
   useEffect(()=>{
     if(!canvasToken||!user) return;
-    syncCanvas(canvasToken, canvasBaseUrl, true);
-    const t=setInterval(()=>syncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
+    handleSyncCanvas(canvasToken, canvasBaseUrl, true);
+    const t=setInterval(()=>handleSyncCanvas(canvasToken, canvasBaseUrl, true), 3*60*1000);
     return()=>clearInterval(t);
   },[canvasToken, canvasBaseUrl, user]);
 
@@ -2834,7 +411,7 @@ export default function StudyDesk() {
     if(id) window.open(`https://docs.google.com/presentation/d/${id}/export/txt`,"_blank");
   }
 
-  function addFloat(pts,streak){const id=Date.now()+Math.random();setFloats(f=>[...f,{id,pts,streak}]);setTimeout(()=>setFloats(f=>f.filter(x=>x.id!==id)),2000);}
+  // Animation handlers moved to service
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // EFFECTS — Startup (PWA, timer, responsive breakpoint, leaderboard)
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -2850,36 +427,8 @@ export default function StudyDesk() {
   const timerSecsAtStart= useRef(0);    // timerSeconds value when timer last started
   const [timerDone, setTimerDone] = useState(false); // in-app completion banner
 
-  function playDoneSound(){
-    try{
-      const ctx = new (window.AudioContext||window.webkitAudioContext)();
-      // Three ascending beeps
-      [[0,.12,660],[.18,.30,880],[.36,.54,1100]].forEach(([start,end,freq])=>{
-        const osc=ctx.createOscillator();
-        const gain=ctx.createGain();
-        osc.connect(gain); gain.connect(ctx.destination);
-        osc.frequency.value=freq; osc.type="sine";
-        gain.gain.setValueAtTime(0,ctx.currentTime+start);
-        gain.gain.linearRampToValueAtTime(0.4,ctx.currentTime+start+0.02);
-        gain.gain.linearRampToValueAtTime(0,ctx.currentTime+end);
-        osc.start(ctx.currentTime+start);
-        osc.stop(ctx.currentTime+end+0.05);
-      });
-    }catch(e){}
-  }
-
-  function onTimerComplete(){
-    setTimerRunning(false);
-    setTimerSessions(n=>n+1);
-    setGame(g=>({...g,points:g.points+10}));
-    setTimerDone(true);
-    playDoneSound();
-    // Web Notification (works on Android PWA / desktop, not iOS)
-    if("Notification" in window && Notification.permission==="granted"){
-      new Notification("StudyDesk — Session complete! 🎉",{body:"Time for a break. You earned 10 points.",icon:"/logo192.png"});
-    }
-    setTimeout(()=>setTimerDone(false), 8000);
-  }
+  // Timer completion handler
+  const handleTimerComplete = () => onTimerComplete(setTimerRunning, setTimerSessions, setGame, setTimerDone, playDoneSound);
 
   useEffect(()=>{
     if(timerRunning){
@@ -2892,7 +441,7 @@ export default function StudyDesk() {
         if(remaining<=0){
           clearInterval(id);
           setTimerSeconds(0);
-          onTimerComplete();
+          handleTimerComplete();
         } else {
           setTimerSeconds(remaining);
         }
@@ -2911,7 +460,7 @@ export default function StudyDesk() {
       if(remaining<=0){
         clearInterval(timerInterval);
         setTimerSeconds(0);
-        onTimerComplete();
+        handleTimerComplete();
       } else {
         setTimerSeconds(remaining);
       }
@@ -2920,63 +469,34 @@ export default function StudyDesk() {
     return()=>document.removeEventListener("visibilitychange",onVisible);
   },[timerRunning,timerInterval]);
 
-  function startTimer(secs){ setTimerSeconds(secs); setTimerRunning(true); }
-  function resetTimer(secs){ clearInterval(timerInterval); setTimerRunning(false); setTimerSeconds(secs); setTimerDone(false); }
-  function fmtTimer(s){ return `${String(Math.floor(s/60)).padStart(2,"0")}:${String(s%60).padStart(2,"0")}`; }
+  // Timer control functions
+  const handleStartTimer = (secs) => startTimer(secs, setTimerSeconds, setTimerRunning);
+  const handleResetTimer = (secs) => resetTimer(secs, timerInterval, setTimerRunning, setTimerSeconds, setTimerDone);
+  const handleFmtTimer = (s) => fmtTimer(s);
 
-  // Leaderboard — fetch top users by points from Firestore presence docs
-  async function fetchLeaderboard(){
-    if(!user) return;
-    try{
-      const r = await fetch(`${FB_FS}/presence?key=${FB_KEY}&pageSize=50`,{headers:{"Authorization":`Bearer ${user.idToken}`}});
-      const d = await r.json();
-      const entries = (d.documents||[]).map(doc=>({
-        name: doc.fields?.displayName?.stringValue||doc.fields?.email?.stringValue?.split("@")[0]||"Anonymous",
-        photo: doc.fields?.photoURL?.stringValue||"",
-        points: parseInt(doc.fields?.points?.integerValue||0),
-        streak: parseInt(doc.fields?.streak?.integerValue||0),
-      })).filter(e=>e.points>0).sort((a,b)=>b.points-a.points).slice(0,10);
-      setLeaderboard(entries);
-    }catch{}
-  }
+  // Leaderboard handler
+  const handleFetchLeaderboard = () => fetchLeaderboard(user, setLeaderboard);
 
   // Save points/streak to presence for leaderboard
   useEffect(()=>{
     if(!user||!saveReady.current) return;
-    const t = setTimeout(()=>{
-      fbUpdatePresence(user, {points:game.points, streak:game.streak});
+    const t = setTimeout(async ()=>{
+      try {
+        const validUser = await fbEnsureValidToken(user);
+        if (validUser !== user) {
+          setUser(validUser); // Update user state if token was refreshed
+        }
+        await fbUpdatePresence(validUser, {points:game.points, streak:game.streak});
+      } catch (error) {
+        console.warn("Points/streak save failed:", error);
+      }
     }, 2000);
     return()=>clearTimeout(t);
   },[game.points, game.streak, user]);
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // GAME LOGIC
-  // handleComplete(prev, next) — awards XP when assignment progress hits 100
-  // spawnFloat(text, x, y)     — shows floating +pts animation
-  // Streak logic runs in the save useEffect (increments once per day)
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  function handleComplete(prev,next){
-    if(next!==100||prev>=100)return;
-    if(user)fbIncrementStat("totalSubmitted",1,user.idToken);if(user)fbIncrementStat("totalPoints",15,user.idToken);
-    const today=new Date().toISOString().split("T")[0];
-    setGame(g=>{
-      const nd=g.dailyDate!==today;
-      const nc=nd?1:g.dailyCount+1;
-      let ns=g.streak,nl=g.lastStreakDate,bonus=0;
-      if(nc===3){
-        const y=new Date();y.setDate(y.getDate()-1);
-        const ys=y.toISOString().split("T")[0];
-        ns=(g.lastStreakDate===ys||g.lastStreakDate===today)?g.streak+1:1;
-        bonus=Math.round(10+ns*4);nl=today;
-        setTimeout(()=>addFloat(bonus,true),600);
-      }
-      addFloat(15,false);
-      return{...g,points:g.points+15+bonus,streak:ns,lastStreakDate:nl,dailyDate:today,dailyCount:nc};
-    });
-  }
-  function buyItem(id){const it=SHOP_ITEMS.find(i=>i.id===id);if(!it||game.owned.includes(id)||game.points<it.price)return;setGame(g=>({...g,points:g.points-it.price,owned:[...g.owned,id]}));}
-  function equipItem(id){const it=SHOP_ITEMS.find(i=>i.id===id);if(!it||!game.owned.includes(id))return;setGame(g=>({...g,equipped:{...g.equipped,[it.cat]:g.equipped[it.cat]===id?"":id}}));}
-  function checkUnknown(adds){const cn=new Set(classes.map(c=>c.name));for(const a of adds){if(a.subject&&!cn.has(a.subject)){setSchedPrompt({subject:a.subject,pf:{name:a.subject,days:[],startTime:"09:00",endTime:"10:00",room:"",color:SUBJECT_COLORS[0]}});return;}}}
+  // Game logic handlers moved to service
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // IMPORT LOGIC
   // resetImport()          — clears all import wizard state
@@ -2992,164 +512,23 @@ export default function StudyDesk() {
     setReleaseViewed(true);
   }
 
-  function confirmImport(){
-    const incoming=importResult?.assignments||[];
-    setAssignments(prev=>{
-      let updated=[...prev];
-      const toAdd=[];
-      for(const a of incoming){
-        // Try to find existing match by canvasId or title+subject
-        const match=updated.find(ex=>
-          (a.canvasId&&ex.canvasId===a.canvasId)||
-          (ex.title.toLowerCase().trim()===a.title.toLowerCase().trim()&&
-           (!a.subject||!ex.subject||ex.subject.toLowerCase()===a.subject.toLowerCase()))
-        );
-        if(match){
-          // Update with Canvas data
-          updated=updated.map(ex=>ex.id===match.id?{
-            ...ex,
-            ...(a.canvasId?{canvasId:a.canvasId}:{}),
-            subject:a.subject||ex.subject,
-            dueDate:a.dueDate||ex.dueDate,
-            priority:a.priority||ex.priority,
-            progress:Math.max(ex.progress,a.progress),
-            ...(a.grade!=null?{grade:a.grade,gradeRaw:a.gradeRaw}:{}),
-            ...(a.pointsPossible?{pointsPossible:a.pointsPossible}:{}),
-          }:ex);
-        } else {
-          toAdd.push({...a,id:Date.now().toString()+Math.random().toString(36).slice(2)});
-        }
-      }
-      if(toAdd.length&&user) fbIncrementStat("totalAssignments",toAdd.length,user.idToken);
-      checkUnknown(toAdd);
-      return [...updated,...toAdd];
-    });
-    setImportOpen(false);resetImport();setTab("assignments");
-  }
+  // Import handlers
+  const handleConfirmImport = () => confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, () => resetImport(setImportUrl, setPasteText, setCanvasPaste, setImportResult, setImportStep, setCanvasStatus, setAgendaUrl, setFetchStatus, setAgendaStep, setAgendaDocText, setAgendaSlideLinks, setAgendaSlideTexts), setTab, fbIncrementStat);
+  const handleImportFromCanvasPaste = () => importFromCanvasPaste(canvasPaste, setImporting, setImportResult);
+  const handleImportFromCanvasAPI = () => importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult);
+  const handleImportFromSlides = () => importFromSlides(pasteText, setImporting, setImportResult);
 
   const todayStr = new Date().toISOString().split("T")[0];
   const CANVAS_URL = `https://naperville.instructure.com/api/v1/planner/items?per_page=100&start_date=${todayStr}`;
 
   const [canvasPaste, setCanvasPaste] = useState("");
 
-  async function importFromCanvasPaste(){
-    if(!canvasPaste.trim())return;
-    setImporting(true);setImportResult(null);
-    try{
-      const clean=canvasPaste.trim();
-      const s=clean.indexOf("["),e=clean.lastIndexOf("]");
-      if(s===-1)throw new Error("Doesn't look like Canvas data — make sure you selected all the text on the page.");
-      const parsed=JSON.parse(clean.slice(s,e+1));
-      if(!Array.isArray(parsed)||parsed.length===0)throw new Error("No assignments found. Make sure you're logged into Canvas first.");
-
-      // Parse Canvas planner format
-      const today=new Date(); today.setHours(0,0,0,0);
-      const assignments=parsed
-        .filter(item=>item.plannable_type==="assignment"||item.plannable_type==="quiz"||item.plannable_type==="discussion_topic")
-        .map(item=>{
-          const dueDate=item.plannable_date?item.plannable_date.split("T")[0]:"";
-          const days=dueDate?(new Date(dueDate)-today)/86400000:99;
-          return{
-            title:item.plannable?.title||item.plannable_type,
-            subject:item.context_name||"Unknown",
-            dueDate,
-            priority:days<=2?"high":days<=7?"medium":"low",
-            progress:0,
-            notes:item.plannable?.points_possible?`${item.plannable.points_possible} pts`:"",
-          };
-        });
-
-      if(assignments.length===0)throw new Error("No upcoming assignments found in that data.");
-      setImportResult({assignments,source:"canvas"});
-    }catch(e){setImportResult({error:e.message});}
-    setImporting(false);
-  }
-
-  async function importFromCanvasAPI(){
-    if(isLocalhost){setImportResult({error:"Canvas API import doesn't work on localhost due to CORS. Deploy the app or use the 'Paste Canvas data' option instead."});return;}
-    if(proxyBlocked){setImportResult({error:"Canvas is blocked on this network (e.g. school wifi). Try on a personal device or home network."});return;}
-    setImporting(true); setImportResult(null);
-    try{
-      const today=new Date(); today.setHours(0,0,0,0);
-      const startDate=today.toISOString().split("T")[0];
-      // Fetch ALL pages of upcoming assignments
-      let allItems=[];
-      let currentPath=`/api/v1/planner/items?per_page=100&start_date=${startDate}`;
-      let pageCount=0;
-      while(currentPath&&pageCount<20){
-        pageCount++;
-        const r=await fetchWithFallback(canvasBaseUrl, currentPath,{
-          headers:{"Authorization":`Bearer ${canvasToken}`,"Accept":"application/json"},
-        });
-        const link=r.headers.get("Link")||"";
-        const nextMatch=link.match(/<([^>]+)>;\s*rel="next"/);
-        let nextPath=null;
-        if(nextMatch){
-          try{ const nu=new URL(nextMatch[1]); nextPath=nu.pathname+nu.search; }catch{}
-        }
-        const data=await r.json();
-        if(!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
-        allItems=[...allItems,...data];
-        currentPath=nextPath;
-      }
-
-      if(allItems.length===0) throw new Error("No upcoming assignments found on Canvas.");
-
-      // Parse into assignment objects
-      const parsed=allItems
-        .filter(item=>["assignment","quiz","discussion_topic","wiki_page"].includes(item.plannable_type))
-        .map(item=>{
-          const dueDate=item.plannable_date?item.plannable_date.split("T")[0]:"";
-          const days=dueDate?(new Date(dueDate+"T00:00:00")-today)/86400000:99;
-          const submitted=item.submissions?.submitted||false;
-          const score=item.submissions?.score??null;
-          const pointsPossible=item.plannable?.points_possible??null;
-          return{
-            canvasId:String(item.plannable_id||""),
-            title:item.plannable?.title||item.plannable_type,
-            subject:item.context_name||"Unknown",
-            dueDate,
-            priority:days<=1?"high":days<=5?"medium":"low",
-            progress:submitted?100:0,
-            notes:pointsPossible?`${pointsPossible} pts`:"",
-            pointsPossible,
-            ...(score!==null&&pointsPossible?{grade:Math.round((score/pointsPossible)*100),gradeRaw:`${score}/${pointsPossible}`}:{})
-          };
-        });
-
-      if(parsed.length===0) throw new Error("No assignments or quizzes found.");
-      setImportResult({assignments:parsed,source:"canvas",total:allItems.length});
-    }catch(e){ setImportResult({error:e.message}); }
-    setImporting(false);
-  }
-
-  async function importFromSlides(){
-    if(!pasteText.trim())return;
-    setImporting(true);setImportResult(null);
-    try{
-      const parsed=parseHomeworkFromText(pasteText);
-      if(!parsed.length)throw new Error("No assignments detected. Make sure the text contains lines like 'Complete X Due Tomorrow'.");
-      setImportResult({assignments:parsed});
-    }catch(e){setImportResult({error:e.message});}
-    setImporting(false);
-  }
-
-  function extractDocId(url){const m=url.match(/\/document\/d\/([a-zA-Z0-9_-]+)/);return m?m[1]:null;}
-
-  async function fetchViaProxy(url){
-    const FREE_SLIDE_PROXIES=[
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
-      `https://corsproxy.io/?url=${encodeURIComponent(url)}`,
-    ];
-    let lastErr;
-    for(const proxyUrl of FREE_SLIDE_PROXIES){
-      try{
-        const res=await fetch(proxyUrl,{signal:AbortSignal.timeout(10000)});
-        if(res.ok) return res.text();
-      }catch(e){lastErr=e;}
-    }
-    throw new Error(`Failed to fetch slides. Make sure the link is set to "Anyone with link can view".`);
-  }
+  // Game logic handlers
+  const handleAddFloat = (pts, streak) => addFloat(pts, streak, setFloats);
+  const handleLaunchConfetti = (originEl) => launchConfetti(originEl, setConfetti);
+  const handleComplete = (prev, next) => handleComplete(prev, next, user, setGame, handleAddFloat);
+  const handleBuyItem = (id) => buyItem(id, game, setGame);
+  const handleEquipItem = (id) => equipItem(id, game, setGame);
 
   async function importFromSlidesUrl(){
     const id=extractId(importUrl.trim());
@@ -3875,7 +1254,7 @@ async function run(){
           {!compact&&<div className="qbtns">{[0,25,50,75,100].map(v=><button key={v} className={"qbtn"+(a.progress===v?" on":"")} onClick={()=>updateA(a.id,{progress:v})}>{v}%</button>)}</div>}
         </div>
         {!compact&&<div className="pbar-wrap"><div className="pbar-track"><div className="pbar-fill" style={{width:a.progress+"%",background:done?"#16a34a":color}}/></div><div className="plabel">{a.progress}%</div></div>}
-        {!done&&<button ref={submitRef} className={"submit-btn"+(compact?" compact":"")} onClick={()=>{launchConfetti(submitRef.current);updateA(a.id,{progress:100});}}>✓ Submit</button>}
+        {!done&&<button ref={submitRef} className={"submit-btn"+(compact?" compact":"")} onClick={()=>{handleLaunchConfetti(submitRef.current);updateA(a.id,{progress:100});}}>✓ Submit</button>}
         {done&&<span className={"submit-btn done"+(compact?" compact":"")}>✓ Done</span>}
         <button className="ibtn" onClick={()=>delAssignment(a.id)}>✕</button>
       </div>
@@ -3936,7 +1315,7 @@ async function run(){
       <div style={{minHeight:"100vh",background:"#0F1117",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
         <style>{`@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,700&family=Plus+Jakarta+Sans:wght@400;600;700&display=swap');*{box-sizing:border-box;margin:0;padding:0}`}</style>
         <div style={{padding:"14px 24px",borderBottom:"1px solid #262B3C",display:"flex",alignItems:"center",gap:12,background:"#161921",position:"sticky",top:0,zIndex:10}}>
-          <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.15rem",fontWeight:700,color:"#DDE2F5"}}>📊 StudyDesk Admin</div>
+          <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.15rem",fontWeight:700,color:"#DDE2F5"}}>StudyDesk Admin</div>
           <div style={{marginLeft:"auto",fontSize:".74rem",color:"#5C6480"}}>{user.email}</div>
           <button onClick={()=>{fbClearSession();setUser(null);window.location.href="/";}}
             style={{padding:"6px 14px",borderRadius:9,border:"1.5px solid #262B3C",background:"transparent",color:"#5C6480",fontFamily:"'Plus Jakarta Sans',sans-serif",fontWeight:600,fontSize:".78rem",cursor:"pointer"}}>
@@ -4026,10 +1405,10 @@ async function run(){
                         <span>🚀</span> Releases
                       </button>
                       <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" onClick={()=>setShowMoreDropdown(false)}>
-                        <span>💡</span> Suggestions
+                        <span></span> Suggestions
                       </a>
                       <button type="button" onClick={()=>{setShowAbout(true);setShowMoreDropdown(false);}}>
-                        <span>ℹ️</span> Info
+                        <span></span> Info
                       </button>
                     </div>
                   </>
@@ -4106,11 +1485,11 @@ async function run(){
             </div>
           </div>
           <div className="mob-status">
-            {game.streak>0&&<div className="mob-pill fire">🔥 {game.streak}d streak</div>}
-            <div className="mob-pill star">⭐ {game.points} pts</div>
+            {game.streak>0&&<div className="mob-pill fire">{game.streak}d streak</div>}
+            <div className="mob-pill star">{game.points} pts</div>
             {canvasToken?(
               <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.syncing?"canvas":canvasSync.lastSync?"ok":"canvas")}
-                onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}}>
+                onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else handleSyncCanvas(canvasToken,canvasBaseUrl);}}>
                 <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
                   {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.lastSync?"✓":"🎓"}
                 </span>
@@ -4131,10 +1510,10 @@ async function run(){
             <div className="hdr-hint">Press <kbd>N</kbd> to add • <kbd>J</kbd>/<kbd>K</kbd> to navigate</div>
           </div>
           <div className="hdr-r">
-            {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
-            <div className="pts-pill">⭐ {game.points}</div>
+            {game.streak>0&&<div className="streak-pill">{game.streak}d</div>}
+            <div className="pts-pill">{game.points}</div>
             {canvasToken&&(
-              <div onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else syncCanvas(canvasToken,canvasBaseUrl);}} title={canvasSync.error?"Click to dismiss":"Click to sync Canvas now"}
+              <div onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else handleSyncCanvas(canvasToken,canvasBaseUrl);}} title={canvasSync.error?"Click to dismiss":"Click to sync Canvas now"}
                 style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:20,border:"1.5px solid",
                   borderColor:canvasSync.error?"#fca5a5":canvasSync.newSubmissions>0?"#86efac":"var(--border2)",
                   background:canvasSync.error?"#fef2f2":canvasSync.newSubmissions>0?"#f0fdf4":"var(--bg3)",
@@ -4156,7 +1535,7 @@ async function run(){
         <div className="main-inner">
         {/* TABS (desktop: hidden when sidebar shown) */}
         <div className="tabs">
-          {[["dashboard","📊 Dashboard"],["assignments","📝 Assignments"],["grades","📈 Grades"],["schedule","📅 Schedule"],["timer","⏱ Timer"],["buddy","🐣 Buddy"],["shop","🛍️ Shop"],["ai","✨ AI"]].map(([t,l])=>(
+          {[["dashboard","Dashboard"],["assignments","Assignments"],["grades","Grades"],["schedule","Schedule"],["timer","Timer"],["buddy","Buddy"],["shop","Shop"],["ai","AI Assistant"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
@@ -4188,73 +1567,89 @@ async function run(){
 
         {/* ═══ DASHBOARD ═══════════════════════════════════════════════ */}
         {tab==="dashboard"&&(
-          <div className="tab-content">
-            <div className="stats">
-              <div className="stat"><div className="sacc" style={{background:"#6366f1"}}/><div className="stat-ico">📝</div><div className="stat-n">{assignments.filter(a=>a.progress<100).length}</div><div className="stat-l">Pending</div></div>
-              <div className="stat" style={{borderColor:overdue.length?"#fca5a5":""}}><div className="sacc" style={{background:overdue.length?"#ef4444":"#10b981"}}/><div className="stat-ico">⚠️</div><div className="stat-n" style={{color:overdue.length?"#ef4444":""}}>{overdue.length}</div><div className="stat-l">Overdue</div></div>
-              <div className="stat"><div className="sacc" style={{background:"#f59e0b"}}/><div className="stat-ico">📅</div><div className="stat-n">{dueToday.length}</div><div className="stat-l">Due Today</div></div>
-              <div className="stat"><div className="sacc" style={{background:"#10b981"}}/><div className="stat-ico">✅</div><div className="stat-n">{completed.length}</div><div className="stat-l">Done</div></div>
-              <div className="stat"><div className="sacc" style={{background:"#8b5cf6"}}/><div className="stat-ico">🏫</div><div className="stat-n">{new Set(classes.map(c=>c.name)).size}</div><div className="stat-l">Classes</div></div>
-            </div>
+          <DashboardTab 
+            assignments={assignments}
+            classes={classes}
+            overdue={overdue}
+            dueToday={dueToday}
+            completed={completed}
+            upcoming={upcoming}
+            todayC={todayC}
+            todayCnt={todayCnt}
+            game={game}
+            ACard={ACard}
+          />
+        )}
 
-            {todayCnt>0&&(
-              <div className="quest-strip">
-                <div style={{display:"flex",gap:8}}>
-                  {[0,1,2].map(n=><div key={n} className={"qpip"+(todayCnt>n?" lit":"")}>{todayCnt>n?"✓":""}</div>)}
-                </div>
-                <div>
-                  <div style={{fontSize:".7rem",fontWeight:800,color:"#D97706",textTransform:"uppercase",letterSpacing:".07em"}}>Daily Quest</div>
-                  <div style={{fontSize:".84rem",fontWeight:600,color:"var(--text)"}}>{todayCnt>=3?"🔥 Streak extended to "+game.streak+" days!":(3-todayCnt)+" more assignment"+(3-todayCnt!==1?"s":"")+" for streak bonus"}</div>
-                </div>
-              </div>
-            )}
+        {/* ═══ ASSIGNMENTS ════════════════════════════════════════════ */}
+        {tab==="assignments"&&(
+          <AssignmentsTab
+            sortedA={sortedA}
+            subjects={subjects}
+            filter={filter}
+            setFilter={setFilter}
+            classes={classes}
+            setSubjMode={setSubjMode}
+            setAddingA={setAddingA}
+            ACard={ACard}
+          />
+        )}
 
-            <div className="dash-grid">
-              <div className="dcard">
-                <div className="dcard-hdr">
-                  <span>📋</span><span className="dcard-title">Upcoming Work</span>
-                  <span style={{marginLeft:"auto",fontSize:".72rem",fontWeight:700,color:"var(--text3)"}}>{upcoming.length} pending</span>
-                </div>
-                <div className="dcard-body">
-                  {upcoming.slice(0,8).map(a=>{
-                    return <ACard key={a.id} a={a} compact/>;
-                  })}
-                  {upcoming.length===0&&<div className="empty"><div className="empty-i">🎉</div><div className="empty-t">All caught up!</div></div>}
-                </div>
-              </div>
+        {/* ═══ GRADES ════════════════════════════════════════════════ */}
+        {tab==="grades"&&(
+          <GradesTab
+            assignments={assignments}
+            classes={classes}
+          />
+        )}
 
-              <div className="dcard">
-                <div className="dcard-hdr">
-                  <span>🏫</span><span className="dcard-title">Today — {todayAbbr()}</span>
-                  <span style={{marginLeft:"auto",fontSize:".72rem",fontWeight:700,color:"var(--text3)"}}>{todayC.length} class{todayC.length!==1?"es":""}</span>
-                </div>
-                <div className="dcard-body">
-                  {[...todayC].sort((a,b)=>a.startTime.localeCompare(b.startTime)).map(c=>{
-                    const ca=assignments.filter(a=>a.subject===c.name&&a.progress<100&&daysUntil(a.dueDate)<=3);
-                    return(
-                      <div key={c.id} className="tccard">
-                        <div className="tcdot" style={{background:c.color}}/>
-                        <div style={{flex:1,minWidth:0}}>
-                          <div className="tcname">{c.name}</div>
-                          {c.room&&<div className="tcroom">📍 {c.room}</div>}
-                          {ca.length>0&&<div style={{fontSize:".66rem",color:c.color,fontWeight:700,marginTop:2}}>{ca.length} due soon</div>}
-                        </div>
-                        <div className="tctime">{fmt12(c.startTime)}<br/><span style={{fontSize:".62rem",color:"var(--text4)"}}>–{fmt12(c.endTime)}</span></div>
-                      </div>
-                    );
-                  })}
-                  {todayC.length===0&&<div className="empty"><div className="empty-i">📅</div><div className="empty-t">No classes today</div></div>}
-                </div>
-              </div>
-            </div>
+        {/* ═══ SCHEDULE ══════════════════════════════════════════════ */}
+        {tab==="schedule"&&(
+          <ScheduleTab
+            classes={classes}
+            setSchoolWiz={setSchoolWiz}
+            setAddingC={setAddingC}
+          />
+        )}
 
-            {overdue.length>0&&(
-              <div style={{marginTop:20}}>
-                <div className="sec-hd"><div className="sec-t" style={{color:"#ef4444"}}>⚠️ Overdue</div><span style={{fontSize:".75rem",color:"#ef4444",fontWeight:700}}>{overdue.length} item{overdue.length!==1?"s":""}</span></div>
-                <div className="alist">{overdue.map(a=><ACard key={a.id} a={a}/>)}</div>
-              </div>
-            )}
-          </div>
+        {/* ═══ AI ════════════════════════════════════════════════════ */}
+        {tab==="ai"&&<AITab assignments={assignments} classes={classes}/>}
+
+        {/* ═══ BUDDY ════════════════════════════════════════════════ */}
+        {tab==="buddy"&&(
+          <BuddyTab
+            game={game}
+            todayCnt={todayCnt}
+          />
+        )}
+
+        {/* ═══ TIMER ════════════════════════════════════════════════ */}
+        {tab==="timer"&&(
+          <TimerTab
+            timerMode={timerMode}
+            setTimerMode={setTimerMode}
+            timerSeconds={timerSeconds}
+            timerRunning={timerRunning}
+            startTimer={startTimer}
+            resetTimer={resetTimer}
+            fmtTimer={fmtTimer}
+            customFocus={customFocus}
+            customShort={customShort}
+            customLong={customLong}
+            showCustomTimer={showCustomTimer}
+            setShowCustomTimer={setShowCustomTimer}
+          />
+        )}
+
+        {/* ═══ SHOP ═════════════════════════════════════════════════ */}
+        {tab==="shop"&&(
+          <ShopTab
+            game={game}
+            shopCat={shopCat}
+            setShopCat={setShopCat}
+            equipItem={equipItem}
+            buyItem={buyItem}
+          />
         )}
 
         {/* ═══ ASSIGNMENTS ════════════════════════════════════════════ */}
@@ -4473,13 +1868,13 @@ async function run(){
         {/* ═══ SCHEDULE ══════════════════════════════════════════════ */}
         {tab==="schedule"&&(
           <div>
-            <div className="sec-hd"><div className="sec-t">Class Schedule</div><div style={{display:"flex",gap:8}}><button className="btn btn-g btn-sm" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>🏫 Import from School</button><button className="btn btn-p btn-sm" onClick={()=>setAddingC(true)}>＋ Add Class</button></div></div>
+            <div className="sec-hd"><div className="sec-t">Class Schedule</div><div style={{display:"flex",gap:8}}><button className="btn btn-g btn-sm" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>Import from School</button><button className="btn btn-p btn-sm" onClick={()=>setAddingC(true)}>＋ Add Class</button></div></div>
             {classes.length===0?(
               <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
                 <div className="empty-i">📅</div>
                 <div className="empty-t">No classes yet</div>
                 <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Add your weekly classes to see them on the timetable</div>
-                <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}><button className="btn btn-g" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>🏫 Import from School</button><button className="btn btn-p" onClick={()=>setAddingC(true)}>＋ Add Manually</button></div>
+                <div style={{display:"flex",gap:10,justifyContent:"center",flexWrap:"wrap"}}><button className="btn btn-g" onClick={()=>setSchoolWiz({step:"search",query:"",results:null,school:null,numPeriods:7,periods:[],currentPeriod:0})}>Import from School</button><button className="btn btn-p" onClick={()=>setAddingC(true)}>＋ Add Manually</button></div>
               </div>
             ):(
               <div className="sched-layout">
@@ -4566,23 +1961,23 @@ async function run(){
                 {!info.next&&<div style={{textAlign:"center",marginTop:12,fontSize:".8rem",color:"#F59E0B",fontWeight:700}}>🌟 Legendary status achieved!</div>}
               </div>
               <div className="bstat-row">
-                <div className="stat"><div className="sacc" style={{background:"#f59e0b"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>⭐{game.points}</div><div className="stat-l">Points</div></div>
-                <div className="stat"><div className="sacc" style={{background:"#ea580c"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>🔥{game.streak}</div><div className="stat-l">Streak</div></div>
+                <div className="stat"><div className="sacc" style={{background:"#f59e0b"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>{game.points}</div><div className="stat-l">Points</div></div>
+                <div className="stat"><div className="sacc" style={{background:"#ea580c"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>{game.streak}</div><div className="stat-l">Streak</div></div>
                 <div className="stat"><div className="sacc" style={{background:"#8b5cf6"}}/><div className="stat-n" style={{fontSize:"1.4rem"}}>{st}/5</div><div className="stat-l">Stage</div></div>
               </div>
               <div className="quest-card">
                 <div className="quest-title">📋 Daily Quest</div>
                 <div className="quest-text">Complete 3 assignments today to {game.streak>0?"extend your "+game.streak+"-day streak!":"start your streak!"}</div>
                 <div className="quest-pips">
-                  {[0,1,2].map(n=><div key={n} className={"quest-pip"+(todayCnt>n?" lit":"")}>{todayCnt>n?"✓":"📝"}</div>)}
-                  <div style={{marginLeft:10,fontSize:".78rem",color:"var(--text2)",fontWeight:600}}>{todayCnt>=3?<span style={{color:"#F59E0B"}}>+{Math.round(10+game.streak*4)} ⭐ earned!</span>:<span>{3-todayCnt} more</span>}</div>
+                  {[0,1,2].map(n=><div key={n} className={"quest-pip"+(todayCnt>n?" lit":"")}>{todayCnt>n?"✓":"○"}</div>)}
+                  <div style={{marginLeft:10,fontSize:".78rem",color:"var(--text2)",fontWeight:600}}>{todayCnt>=3?<span style={{color:"#F59E0B"}}>+{Math.round(10+game.streak*4)} pts earned!</span>:<span>{3-todayCnt} more</span>}</div>
                 </div>
               </div>
               <div className="pts-how">
                 <div style={{fontSize:".68rem",fontWeight:800,color:"var(--text3)",textTransform:"uppercase",letterSpacing:".07em",marginBottom:10}}>How Points Work</div>
-                <div className="pts-how-row"><span>✅ Complete an assignment</span><span className="pts-how-amt">+15 ⭐</span></div>
+                <div className="pts-how-row"><span>Complete an assignment</span><span className="pts-how-amt">+15 pts</span></div>
                 <div style={{height:1,background:"var(--border)",margin:"6px 0"}}/>
-                <div className="pts-how-row"><span>🔥 Daily streak bonus (3 per day)</span><span className="pts-how-amt">+{Math.round(10+game.streak*4)} ⭐</span></div>
+                <div className="pts-how-row"><span>Daily streak bonus (3 per day)</span><span className="pts-how-amt">+{Math.round(10+game.streak*4)} pts</span></div>
                 <div style={{height:1,background:"var(--border)",margin:"6px 0"}}/>
                 <div style={{fontSize:".72rem",color:"var(--text4)",lineHeight:1.5}}>Higher streaks = bigger bonuses!</div>
               </div>
@@ -4844,9 +2239,9 @@ async function run(){
                     <div className="shop-cat">{item.cat}</div>
                     <div className="shop-desc">{item.desc}</div>
                     {owned?(
-                      <button className={"btn btn-sm"+(equipped?" btn-p":" btn-g")} style={{width:"100%",justifyContent:"center"}} onClick={()=>equipItem(item.id)}>{equipped?"✓ Equipped":"Equip"}</button>
+                      <button className={"btn btn-sm"+(equipped?" btn-p":" btn-g")} style={{width:"100%",justifyContent:"center"}} onClick={()=>handleEquipItem(item.id)}>{equipped?"✓ Equipped":"Equip"}</button>
                     ):(
-                      <button className="btn btn-sm btn-p" style={{width:"100%",justifyContent:"center",background:ok?"var(--accent)":"var(--bg3)",color:ok?"#fff":"var(--text4)",cursor:ok?"pointer":"not-allowed"}} onClick={()=>buyItem(item.id)} disabled={!ok}>{ok?"Buy — ⭐"+item.price:"Need ⭐"+item.price}</button>
+                      <button className="btn btn-sm btn-p" style={{width:"100%",justifyContent:"center",background:ok?"var(--accent)":"var(--bg3)",color:ok?"#fff":"var(--text4)",cursor:ok?"pointer":"not-allowed"}} onClick={()=>handleBuyItem(item.id)} disabled={!ok}>{ok?"Buy — "+item.price+" pts":"Need "+item.price+" pts"}</button>
                     )}
                   </div>
                 );
@@ -5677,7 +3072,7 @@ async function run(){
                   setCanvasToken(tok);
                   setCanvasSync(s=>({...s,everSucceeded:true}));
                   setShowCanvasSetup(false);
-                  syncCanvas(tok,canvasBaseUrl);
+                  handleSyncCanvas(tok,canvasBaseUrl);
                 }}>
                 Connect & Sync →
               </button>
