@@ -243,7 +243,7 @@ async function callGeminiStream(prompt, systemPrompt="You are a helpful study as
     ...history.map(m=>({role:m.role==="ai"?"model":"user", parts:[{text:m.text}]})),
     {role:"user", parts:[{text:prompt}]}
   ];
-  const model = "gemini-2.5-flash";
+  const model = "gemini-2.5-flash-lite";
   try{
     const controller = new AbortController();
     const timeout = setTimeout(()=>controller.abort(), 30000);
@@ -1778,7 +1778,7 @@ function AITab({assignments, classes}){
           console.log("API Key present:", !!GEMINI_KEY);
           
           // Call Gemini Vision API
-          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${GEMINI_KEY}`,{
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,{
             method:"POST",
             headers:{"Content-Type":"application/json"},
             body:JSON.stringify({
