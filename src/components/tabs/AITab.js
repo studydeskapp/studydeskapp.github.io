@@ -15,21 +15,29 @@ function AITab({ assignments, classes }) {
   const [loading, setLoading] = useState(false);
 
   // Homework helper state
-  const [homeworkStep, setHomeworkStep] = useState('upload'); // 'upload' | 'analyzing' | 'explanation' | 'check' | 'checking' | 'done'
+  const [homeworkStep, setHomeworkStep] = useState('upload'); // 'upload' | 'analyzing' | 'selectProblems' | 'explanation' | 'check' | 'checking' | 'done'
   const [hasUploadedPhoto, setHasUploadedPhoto] = useState(false);
-  const [uploadedImage, setUploadedImage] = useState(null);       // base64 of question image
-  const [homeworkExplanation, setHomeworkExplanation] = useState(''); // AI explanation of how to do it
-  const [answerImage, setAnswerImage] = useState(null);            // base64 of student's answer
-  const [answerFeedback, setAnswerFeedback] = useState('');        // AI feedback on answer
-  const [homeworkMessages, setHomeworkMessages] = useState([]);    // follow-up chat
+  const [uploadedImage, setUploadedImage] = useState(null);
+  const [homeworkExplanation, setHomeworkExplanation] = useState('');
+  const [answerImage, setAnswerImage] = useState(null);
+  const [answerFeedback, setAnswerFeedback] = useState('');
+  const [homeworkMessages, setHomeworkMessages] = useState([]);
   const [homeworkInput, setHomeworkInput] = useState('');
   const [homeworkLoading, setHomeworkLoading] = useState(false);
+
+  // NEW: Problem selector state
+  const [detectedProblems, setDetectedProblems] = useState([]); // e.g. ['1a','1b','2','3']
+  const [selectedProblems, setSelectedProblems] = useState(new Set());
+  const [detectingProblems, setDetectingProblems] = useState(false);
+
+  // NEW: Unrelated image state
+  const [answerRejected, setAnswerRejected] = useState(false);
+  const [answerRejectionMsg, setAnswerRejectionMsg] = useState('');
 
   // Phone upload state
   const [uploadId, setUploadId] = useState(null);
   const [showQR, setShowQR] = useState(false);
   const [checkingUploads, setCheckingUploads] = useState(false);
-  // which upload slot is the QR for: 'question' | 'answer'
   const [qrSlot, setQrSlot] = useState('question');
 
   // Flashcards state
@@ -50,24 +58,16 @@ function AITab({ assignments, classes }) {
   // ── Markdown + KaTeX renderer ─────────────────────────────────────────────────
   const renderMarkdown = (text) => {
     if (!text) return '';
-
-    // Protect code blocks
     const codeBlocks = [];
     let p = text.replace(/```[\s\S]*?```/g, (m) => { codeBlocks.push(m); return `%%CB${codeBlocks.length - 1}%%`; });
-
-    // Display math $$...$$
     p = p.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
       try { return `<div style="text-align:center;margin:12px 0;overflow-x:auto;">${window.katex.renderToString(math.trim(), { displayMode: true, throwOnError: false })}</div>`; }
       catch { return `<code>$$${math}$$</code>`; }
     });
-
-    // Inline math $...$
     p = p.replace(/\$([^\n$]+?)\$/g, (_, math) => {
       try { return window.katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }); }
       catch { return `<code>$${math}$</code>`; }
     });
-
-    // Standard markdown
     p = p
       .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -82,19 +82,14 @@ function AITab({ assignments, classes }) {
       .replace(/^\d+\.\s(.*)$/gm, '<li style="margin:4px 0;margin-left:8px;">$1</li>')
       .replace(/\n\n/g, '</p><p style="margin:8px 0;">')
       .replace(/\n/g, '<br/>');
-
-    // Wrap <li> runs in <ul>
     p = p.replace(/(<li[^>]*>[\s\S]*?<\/li>(<br\/>)?)+/g, (m) => {
       const clean = m.replace(/<br\/>/g, '');
       return `<ul style="margin:8px 0;padding-left:20px;">${clean}</ul>`;
     });
-
-    // Restore code blocks
     p = p.replace(/%%CB(\d+)%%/g, (_, i) => {
       const code = codeBlocks[parseInt(i)].replace(/^```\w*\n?/, '').replace(/```$/, '');
       return `<pre style="background:var(--bg3);padding:12px;border-radius:8px;overflow-x:auto;font-family:monospace;font-size:.82rem;margin:8px 0;"><code>${code}</code></pre>`;
     });
-
     return `<span>${p}</span>`;
   };
 
@@ -103,7 +98,6 @@ function AITab({ assignments, classes }) {
     const b64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
     const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
-
     const res = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,
       {
@@ -116,11 +110,9 @@ function AITab({ assignments, classes }) {
       }
     );
     if (!res.ok) throw new Error(`Gemini vision error: ${res.status}`);
-
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let accumulated = '';
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -138,8 +130,26 @@ function AITab({ assignments, classes }) {
     return accumulated;
   };
 
-
-
+  // ── NEW: Gemini vision non-streaming (for JSON responses) ────────────────────
+  const callGeminiWithImage = async (prompt, base64Image) => {
+    const b64 = base64Image.replace(/^data:image\/\w+;base64,/, '');
+    const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
+    const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+    const res = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }, { inline_data: { mime_type: mimeType, data: b64 } }] }],
+          generationConfig: { maxOutputTokens: 1024 }
+        })
+      }
+    );
+    if (!res.ok) throw new Error(`Gemini vision error: ${res.status}`);
+    const data = await res.json();
+    return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  };
 
   // ── Reset homework helper ────────────────────────────────────────────────────
   const resetHomework = () => {
@@ -154,25 +164,85 @@ function AITab({ assignments, classes }) {
     setHomeworkLoading(false);
     setShowQR(false);
     setCheckingUploads(false);
+    setDetectedProblems([]);
+    setSelectedProblems(new Set());
+    setDetectingProblems(false);
+    setAnswerRejected(false);
+    setAnswerRejectionMsg('');
   };
 
-  // ── Step 1: Handle question image upload → auto-analyze (streaming) ───────────
+  // ── NEW: Detect problems in homework image ────────────────────────────────────
+  const detectProblemsInImage = async (imageData) => {
+    setDetectingProblems(true);
+    try {
+      const response = await callGeminiWithImage(
+        `Look at this homework image carefully. List ALL the problem/question identifiers you can see (e.g. "1a", "1b", "2", "3a", "Problem 4", etc.).
+
+Return ONLY a JSON array of strings, nothing else. Examples:
+- ["1a", "1b", "1c", "2", "3"]
+- ["Problem 1", "Problem 2a", "Problem 2b"]
+- ["Q1", "Q2", "Q3"]
+
+If there is only one problem with no sub-parts, return ["1"].
+Return ONLY the JSON array, no other text.`,
+        imageData
+      );
+      const clean = response.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      const parsed = JSON.parse(clean);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed;
+      }
+    } catch (err) {
+      console.error('Problem detection failed:', err);
+    }
+    return [];
+  };
+
+  // ── Step 1: Handle question image upload ─────────────────────────────────────
   const processQuestionImage = async (imageData) => {
     setUploadedImage(imageData);
     setHasUploadedPhoto(true);
     setHomeworkStep('analyzing');
     setHomeworkExplanation('');
+    setAnswerRejected(false);
 
     try {
-      // Move to explanation step immediately so streaming text shows as it arrives
-      setHomeworkStep('explanation');
+      // Detect problems first
+      const problems = await detectProblemsInImage(imageData);
+      setDetectingProblems(false);
+
+      if (problems.length > 1) {
+        // Multiple problems — show selector
+        setDetectedProblems(problems);
+        setSelectedProblems(new Set(problems)); // all selected by default
+        setHomeworkStep('selectProblems');
+      } else {
+        // Single problem or detection failed — proceed directly
+        await analyzeHomework(imageData, []);
+      }
+    } catch (err) {
+      setDetectingProblems(false);
+      await analyzeHomework(imageData, []);
+    }
+  };
+
+  // ── Analyze homework with optional problem filter ─────────────────────────────
+  const analyzeHomework = async (imageData, problemsToFocus) => {
+    setHomeworkStep('explanation');
+    setHomeworkExplanation('');
+
+    const focusClause = problemsToFocus.length > 0
+      ? `\n\nThe student wants to focus on these specific problems/parts: ${problemsToFocus.join(', ')}. Focus your explanation primarily on these, but you may briefly mention others.`
+      : '';
+
+    try {
       await callGeminiWithImageStream(
         `You are a helpful homework tutor. Look at this homework image carefully.
 
 1. Identify exactly what type of homework this is (subject, assignment type).
 2. Explain clearly and step-by-step HOW to do this homework / solve these problems.
 3. Give helpful tips or strategies the student should use.
-4. Do NOT give the direct answers — teach the student how to approach it.
+4. Do NOT give the direct answers — teach the student how to approach it.${focusClause}
 
 Use clear markdown formatting with headers, numbered steps, and math notation where relevant.`,
         imageData,
@@ -189,6 +259,17 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
     }
   };
 
+  const handleProblemSelectionConfirm = () => {
+    const selected = Array.from(selectedProblems);
+    analyzeHomework(uploadedImage, selected);
+  };
+
+  const toggleProblemSelection = (problem) => {
+    const next = new Set(selectedProblems);
+    next.has(problem) ? next.delete(problem) : next.add(problem);
+    setSelectedProblems(next);
+  };
+
   const handleQuestionFileUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -197,14 +278,74 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
     reader.readAsDataURL(file);
   };
 
+  // ── NEW: Check if answer image is relevant to homework ───────────────────────
+  const checkAnswerRelevance = async (answerImageData, homeworkImageData) => {
+    try {
+      const b64Answer = answerImageData.replace(/^data:image\/\w+;base64,/, '');
+      const mimeMatchA = answerImageData.match(/^data:(image\/\w+);base64,/);
+      const mimeTypeA = mimeMatchA ? mimeMatchA[1] : 'image/jpeg';
+
+      const b64Homework = homeworkImageData.replace(/^data:image\/\w+;base64,/, '');
+      const mimeMatchH = homeworkImageData.match(/^data:(image\/\w+);base64,/);
+      const mimeTypeH = mimeMatchH ? mimeMatchH[1] : 'image/jpeg';
+
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [
+                { text: `I have two images. The FIRST image is a student's homework assignment. The SECOND image is supposed to be the student's completed work/answers for that same homework.
+
+Are these two images related? Does the second image appear to show work, answers, or solutions that could plausibly be for the homework shown in the first image?
+
+Answer with ONLY a JSON object like this:
+{"related": true, "reason": "brief reason"}
+or
+{"related": false, "reason": "brief reason explaining what the second image shows instead"}
+
+Return ONLY the JSON, nothing else.` },
+                { inline_data: { mime_type: mimeTypeH, data: b64Homework } },
+                { inline_data: { mime_type: mimeTypeA, data: b64Answer } }
+              ]
+            }],
+            generationConfig: { maxOutputTokens: 256 }
+          })
+        }
+      );
+      if (!res.ok) return { related: true }; // fail open
+      const data = await res.json();
+      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const clean = text.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+      return JSON.parse(clean);
+    } catch (err) {
+      return { related: true }; // fail open if check errors
+    }
+  };
+
   // ── Step 2: Handle answer image upload → check answer (streaming) ─────────────
   const processAnswerImage = async (imageData) => {
     setAnswerImage(imageData);
+    setAnswerRejected(false);
+    setAnswerRejectionMsg('');
     setHomeworkStep('checking');
     setAnswerFeedback('');
 
+    // NEW: Relevance check
+    if (uploadedImage) {
+      const relevance = await checkAnswerRelevance(imageData, uploadedImage);
+      if (!relevance.related) {
+        setAnswerRejected(true);
+        setAnswerRejectionMsg(relevance.reason || "This image doesn't appear to be related to your homework.");
+        setHomeworkStep('explanation'); // go back to let them re-upload
+        setAnswerImage(null);
+        return;
+      }
+    }
+
     try {
-      // Move to done immediately so streaming feedback shows as it arrives
       setHomeworkStep('done');
       setHomeworkMessages([
         { role: 'ai', text: "I've reviewed your work above! Feel free to ask me any follow-up questions. 💬" }
@@ -255,7 +396,6 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
 
   useEffect(() => {
     if (!uploadId || !checkingUploads) return;
-
     const checkInterval = setInterval(async () => {
       try {
         const response = await fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`);
@@ -279,12 +419,10 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
         console.log('Checking for upload...', err.message);
       }
     }, 2000);
-
     const timeout = setTimeout(() => {
       setCheckingUploads(false);
       clearInterval(checkInterval);
     }, 5 * 60 * 1000);
-
     return () => { clearInterval(checkInterval); clearTimeout(timeout); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadId, checkingUploads]);
@@ -295,22 +433,17 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
   // ── Follow-up chat ───────────────────────────────────────────────────────────
   const handleHomeworkSend = async () => {
     if (!homeworkInput.trim() || homeworkLoading) return;
-
     const userMessage = homeworkInput.trim();
     setHomeworkInput('');
     setHomeworkMessages(prev => [...prev, { role: 'user', text: userMessage }]);
     setHomeworkLoading(true);
-
     const aiMessageIndex = homeworkMessages.length + 1;
     setHomeworkMessages(prev => [...prev, { role: 'ai', text: '' }]);
-
     try {
       const context = `You are a homework tutor. The student has already received an explanation of their homework and feedback on their answer. 
 Help them with any remaining questions. Be educational, specific, and encouraging.
 Use markdown formatting.`;
-
       const history = homeworkMessages.slice(-6);
-
       await callGeminiStream(userMessage, context,
         (streamedText) => {
           setHomeworkMessages(prev => {
@@ -332,22 +465,18 @@ Use markdown formatting.`;
         return msgs;
       });
     }
-
     setHomeworkLoading(false);
   };
 
   // ── Chat ─────────────────────────────────────────────────────────────────────
   const handleChatSend = async () => {
     if (!input.trim() || loading) return;
-
     const userMessage = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
     setLoading(true);
-
     const aiMessageIndex = messages.length + 1;
     setMessages(prev => [...prev, { role: 'ai', text: '' }]);
-
     try {
       const context = `You are a helpful AI study assistant. Help with general study questions, learning strategies, and academic advice.
 
@@ -356,9 +485,7 @@ Current student context:
 - Taking ${classes.length} classes: ${classes.map(c => c.name).join(', ')}
 
 Provide helpful, encouraging responses about studying and academics. Use markdown formatting for better readability.`;
-
       const history = messages.slice(-6);
-
       await callGeminiStream(userMessage, context,
         (streamedText) => {
           setMessages(prev => {
@@ -380,7 +507,6 @@ Provide helpful, encouraging responses about studying and academics. Use markdow
         return msgs;
       });
     }
-
     setLoading(false);
   };
 
@@ -390,76 +516,46 @@ Provide helpful, encouraging responses about studying and academics. Use markdow
     setFlashcardLoading(true);
     setFlashcards([]);
     setFlippedCards(new Set());
-
     try {
       const context = `Create exactly 6 study flashcards for: ${flashcardTopic}
-
 You are an expert educator. Make questions that test understanding, not just memorization.
-
 Format as JSON array:
 [
   {"question": "What is the quadratic formula?", "answer": "x = (-b ± √(b²-4ac)) / 2a"},
   ...
 ]
-
 Return ONLY the JSON array with exactly 6 flashcards. No other text.`;
-
       const response = await callGemini(context);
       let cards = [];
-
       try {
         const clean = response.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
         const parsed = JSON.parse(clean);
         if (Array.isArray(parsed) && parsed.length > 0) cards = parsed.slice(0, 6);
       } catch (_) {}
-
-      // Fallback parsing if JSON fails
       if (cards.length === 0) {
         const lines = response.split('\n').map(line => line.trim()).filter(line => line.length > 0);
         let currentCard = {};
-
         for (const line of lines) {
           if (line.match(/^(\d+\.|\*|\-|Q:|Question:)/i) || line.includes('?')) {
-            if (currentCard.question && currentCard.answer) {
-              cards.push(currentCard);
-              currentCard = {};
-            }
+            if (currentCard.question && currentCard.answer) { cards.push(currentCard); currentCard = {}; }
             currentCard.question = line.replace(/^(\d+\.|\*|\-|Q:|Question:)\s*/i, '').trim();
           } else if (line.match(/^(A:|Answer:)/i) || (currentCard.question && !currentCard.answer && line.length > 10)) {
             currentCard.answer = line.replace(/^(A:|Answer:)\s*/i, '').trim();
           }
         }
-        if (currentCard.question && currentCard.answer) {
-          cards.push(currentCard);
-        }
+        if (currentCard.question && currentCard.answer) cards.push(currentCard);
       }
-
-      // If still no cards, create topic-specific fallbacks
       if (cards.length === 0) {
-        const topic = flashcardTopic.toLowerCase();
-        if (topic.includes('algebra')) {
-          cards = [
-            {question: `What are the key concepts in ${flashcardTopic}?`, answer: 'Key concepts include quadratic equations, polynomials, functions, graphing, and systems of equations.'},
-            {question: 'What is the quadratic formula?', answer: 'x = (-b ± √(b²-4ac)) / 2a'},
-            {question: 'How do you factor a quadratic expression?', answer: 'Look for two numbers that multiply to give ac and add to give b, then use grouping or the quadratic formula.'},
-            {question: 'What is the vertex form of a parabola?', answer: 'y = a(x - h)² + k, where (h, k) is the vertex'},
-            {question: 'How do you solve a system of equations?', answer: 'Use substitution, elimination, or graphing methods to find where the equations intersect.'},
-            {question: 'What is the difference between a function and a relation?', answer: 'A function has exactly one output for each input, while a relation can have multiple outputs for one input.'}
-          ];
-        } else {
-          cards = [
-            {question: `What is ${flashcardTopic}?`, answer: `${flashcardTopic} is an important topic that requires study and understanding.`},
-            {question: `Why is ${flashcardTopic} important?`, answer: `Understanding ${flashcardTopic} helps build foundational knowledge in this subject area.`},
-            {question: `What are the main concepts in ${flashcardTopic}?`, answer: `The main concepts include key definitions, principles, and applications related to ${flashcardTopic}.`}
-          ];
-        }
+        cards = [
+          {question: `What is ${flashcardTopic}?`, answer: `${flashcardTopic} is an important topic that requires study and understanding.`},
+          {question: `Why is ${flashcardTopic} important?`, answer: `Understanding ${flashcardTopic} helps build foundational knowledge in this subject area.`},
+          {question: `What are the main concepts in ${flashcardTopic}?`, answer: `The main concepts include key definitions, principles, and applications related to ${flashcardTopic}.`}
+        ];
       }
-
       setFlashcards(cards.slice(0, 6));
     } catch (err) {
       setFlashcards([{ question: `Study topic: ${flashcardTopic}`, answer: "Sorry, couldn't generate flashcards right now. Please try again." }]);
     }
-
     setFlashcardLoading(false);
     setFlashcardTopic('');
   };
@@ -475,7 +571,6 @@ Return ONLY the JSON array with exactly 6 flashcards. No other text.`;
     if (!writingText.trim() || writingLoading) return;
     setWritingLoading(true);
     setWritingFeedback('');
-
     try {
       const context = `Please provide detailed feedback on this writing. Focus on:
 1. Grammar and mechanics
@@ -483,16 +578,13 @@ Return ONLY the JSON array with exactly 6 flashcards. No other text.`;
 3. Content and arguments
 4. Style and tone
 5. Specific suggestions for improvement
-
 Be constructive and encouraging. Use markdown formatting.`;
-
       await callGeminiStream(`Writing to review:\n${writingText}`, context,
         (streamedText) => setWritingFeedback(streamedText)
       );
     } catch (err) {
       setWritingFeedback("Sorry, I couldn't analyze your writing right now. Please try again.");
     }
-
     setWritingLoading(false);
   };
 
@@ -501,7 +593,6 @@ Be constructive and encouraging. Use markdown formatting.`;
     if (insightsLoading) return;
     setInsightsLoading(true);
     setInsights('');
-
     try {
       const summary = assignments.map(a =>
         `${a.title} (${a.subject}) - Due: ${a.dueDate || 'No date'} - Progress: ${a.progress}%`
@@ -511,27 +602,21 @@ Be constructive and encouraging. Use markdown formatting.`;
         ? Math.round(graded.reduce((s, a) => s + a.grade, 0) / graded.length) : null;
       const overdue = assignments.filter(a => a.progress < 100 && a.dueDate && new Date(a.dueDate) < new Date());
       const completed = assignments.filter(a => a.progress >= 100);
-
       const context = `Analyze this student's academic performance:
-
 ASSIGNMENTS (${assignments.length} total):
 ${summary}
-
 METRICS:
 - Completed: ${completed.length}/${assignments.length}
 - Overdue: ${overdue.length}
 - Avg grade: ${avgGrade || 'N/A'}%
 - Classes: ${classes.map(c => c.name).join(', ')}
-
 Provide insights on study patterns, subject performance, areas to improve, and next steps. Use markdown.`;
-
       await callGeminiStream('Please analyze my academic performance.', context,
         (streamedText) => setInsights(streamedText)
       );
     } catch (err) {
       setInsights("Sorry, I couldn't generate insights right now. Please try again.");
     }
-
     setInsightsLoading(false);
   };
 
@@ -636,7 +721,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
       {aiMode === 'homework' && (
         <div style={{ flex:1, display:'flex', flexDirection:'column', gap:16, overflow:'auto' }}>
 
-          {/* ── Step 1: Upload question ── */}
+          {/* Step 1: Upload */}
           {homeworkStep === 'upload' && (
             <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:24, textAlign:'center' }}>
               <div style={{ fontSize:'2.5rem', marginBottom:12 }}>📸</div>
@@ -644,17 +729,12 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               <div style={{ fontSize:'.85rem', color:'var(--text3)', marginBottom:20, lineHeight:1.6 }}>
                 Take a photo of your homework or worksheet and I'll explain exactly how to do it — step by step.
               </div>
-              <UploadButtons
-                slot="question"
-                onFile={handleQuestionFileUpload}
-                onCamera={handleQuestionFileUpload}
-                onPhone={() => handlePhoneUpload('question')}
-              />
+              <UploadButtons slot="question" onFile={handleQuestionFileUpload} onCamera={handleQuestionFileUpload} onPhone={() => handlePhoneUpload('question')} />
               <QRModal />
             </div>
           )}
 
-          {/* ── Step 1b: Analyzing ── */}
+          {/* Step 1b: Analyzing */}
           {homeworkStep === 'analyzing' && (
             <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:24, textAlign:'center' }}>
               {uploadedImage && (
@@ -662,15 +742,74 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                   style={{ width:'100%', maxWidth:400, borderRadius:8, border:'1px solid var(--border)', marginBottom:16 }} />
               )}
               <div style={{ fontSize:'1.5rem', marginBottom:8 }}>🔍</div>
-              <div style={{ fontWeight:600, color:'var(--text)', marginBottom:4 }}>Analyzing your homework...</div>
-              <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Gemini is reading your image and preparing an explanation.</div>
+              <div style={{ fontWeight:600, color:'var(--text)', marginBottom:4 }}>Scanning your homework...</div>
+              <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Detecting problems and questions in your image.</div>
             </div>
           )}
 
-          {/* ── Step 2: Show explanation ── */}
+          {/* ── NEW: Step 1c: Problem Selector ── */}
+          {homeworkStep === 'selectProblems' && (
+            <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:24 }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
+                <div>
+                  <div style={{ fontWeight:700, fontSize:'1rem', color:'var(--text)', marginBottom:4 }}>📋 Which problems do you need help with?</div>
+                  <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Select the ones you want explained. All are selected by default.</div>
+                </div>
+                <button className="btn btn-g btn-sm" onClick={resetHomework}>↩ Start Over</button>
+              </div>
+
+              {uploadedImage && (
+                <img src={uploadedImage} alt="Your homework"
+                  style={{ width:'100%', maxWidth:400, borderRadius:8, border:'1px solid var(--border)', marginBottom:16, display:'block', margin:'0 auto 16px' }} />
+              )}
+
+              <div style={{ display:'flex', flexWrap:'wrap', gap:10, marginBottom:20 }}>
+                {detectedProblems.map((problem) => {
+                  const isSelected = selectedProblems.has(problem);
+                  return (
+                    <button
+                      key={problem}
+                      onClick={() => toggleProblemSelection(problem)}
+                      style={{
+                        padding:'8px 16px', borderRadius:8, fontWeight:600, fontSize:'.85rem', cursor:'pointer',
+                        border: isSelected ? '2px solid var(--accent)' : '2px solid var(--border)',
+                        background: isSelected ? 'var(--accent)' : 'var(--bg2)',
+                        color: isSelected ? '#fff' : 'var(--text)',
+                        transition:'all 0.15s', fontFamily:"'Plus Jakarta Sans', sans-serif"
+                      }}>
+                      {problem}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ display:'flex', gap:8, alignItems:'center', flexWrap:'wrap' }}>
+                <button
+                  className="btn btn-p"
+                  onClick={handleProblemSelectionConfirm}
+                  disabled={selectedProblems.size === 0}>
+                  ✨ Explain Selected ({selectedProblems.size})
+                </button>
+                <button
+                  className="btn btn-g"
+                  onClick={() => {
+                    setSelectedProblems(new Set(detectedProblems));
+                  }}>
+                  Select All
+                </button>
+                <button
+                  className="btn btn-g"
+                  onClick={() => analyzeHomework(uploadedImage, [])}>
+                  Explain Everything
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Steps 2+: Show explanation etc */}
           {(homeworkStep === 'explanation' || homeworkStep === 'check' || homeworkStep === 'checking' || homeworkStep === 'done') && (
             <>
-              {/* Homework image + re-upload */}
+              {/* Homework image */}
               <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:16 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
                   <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem' }}>📄 Your Homework</div>
@@ -708,13 +847,32 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                 </div>
               </div>
 
-              {/* ── Check Your Answer section ── */}
+              {/* Check Your Answer section */}
               {homeworkStep === 'explanation' && (
                 <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20 }}>
                   <div style={{ fontWeight:700, fontSize:'.95rem', color:'var(--text)', marginBottom:6 }}>✅ Check Your Answer</div>
-                  <div style={{ fontSize:'.85rem', color:'var(--text3)', marginBottom:16, lineHeight:1.5 }}>
+                  <div style={{ fontSize:'.85rem', color:'var(--text3)', marginBottom: answerRejected ? 12 : 16, lineHeight:1.5 }}>
                     Done with your homework? Upload a photo of your completed work and I'll tell you if it's correct.
                   </div>
+
+                  {/* ── NEW: Rejection banner ── */}
+                  {answerRejected && (
+                    <div style={{
+                      background:'#fef2f2', border:'1.5px solid #fca5a5', borderRadius:10,
+                      padding:'12px 16px', marginBottom:16, display:'flex', gap:10, alignItems:'flex-start'
+                    }}>
+                      <span style={{ fontSize:'1.1rem', flexShrink:0 }}>⚠️</span>
+                      <div>
+                        <div style={{ fontWeight:700, color:'#dc2626', fontSize:'.85rem', marginBottom:4 }}>
+                          That image doesn't match your homework
+                        </div>
+                        <div style={{ fontSize:'.82rem', color:'#b91c1c', lineHeight:1.5 }}>
+                          {answerRejectionMsg} Please upload a photo of your <strong>actual completed work</strong> for this homework assignment.
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
                   <UploadButtons
                     slot="answer"
                     onFile={handleAnswerFileUpload}
@@ -741,7 +899,6 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               {/* Answer feedback */}
               {homeworkStep === 'done' && answerFeedback && (
                 <>
-                  {/* Student's answer image */}
                   <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:16 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
                       <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem' }}>📝 Your Answer</div>
@@ -758,7 +915,6 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                     )}
                   </div>
 
-                  {/* Feedback card */}
                   <div style={{ background:'var(--card)', border:'2px solid #16a34a', borderRadius:16, padding:20 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
                       <div style={{ width:36, height:36, borderRadius:'50%', background:'#16a34a', display:'flex',
@@ -766,7 +922,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:700, color:'var(--text)', fontSize:'.95rem' }}>Answer Feedback</div>
                         <div style={{ fontSize:'.75rem', color:'var(--text3)' }}>
-                          {answerFeedback ? 'Here\'s how you did' : 'Reviewing your work...'}
+                          {answerFeedback ? "Here's how you did" : 'Reviewing your work...'}
                         </div>
                       </div>
                       {!answerFeedback && (
@@ -830,7 +986,6 @@ Provide insights on study patterns, subject performance, areas to improve, and n
             </div>
             <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>💡 Tip: Be specific for better flashcards</div>
           </div>
-
           {flashcards.length > 0 && (
             <div style={{ flex:1 }}>
               <div style={{ fontSize:'.9rem', fontWeight:600, color:'var(--text)', marginBottom:16 }}>
@@ -845,7 +1000,6 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                         minHeight:200, maxHeight:250, cursor:'pointer', position:'relative',
                         transformStyle:'preserve-3d', transition:'transform 0.6s',
                         transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)', overflow:'hidden' }}>
-                      {/* Front */}
                       <div style={{ position:'absolute', width:'100%', height:'100%', backfaceVisibility:'hidden',
                         display:'flex', flexDirection:'column', justifyContent:'center', padding:20,
                         borderRadius:12, boxSizing:'border-box' }}>
@@ -857,7 +1011,6 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                         </div>
                         <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12 }}>Click to reveal answer</div>
                       </div>
-                      {/* Back */}
                       <div style={{ position:'absolute', width:'100%', height:'100%', backfaceVisibility:'hidden',
                         transform:'rotateY(180deg)', display:'flex', flexDirection:'column', justifyContent:'center',
                         padding:20, borderRadius:12, background:'var(--card)', boxSizing:'border-box' }}>
