@@ -2100,22 +2100,50 @@ function PhoneUploadPage({uploadId}){
     if(!file) return;
     
     setUploading(true);
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      const imageData = ev.target.result;
-      setPreview(imageData);
+    
+    // Compress the image before uploading
+    const img = new Image();
+    img.onload = async () => {
+      // Create canvas to resize/compress
+      const canvas = document.createElement('canvas');
+      let width = img.width;
+      let height = img.height;
+      
+      // Resize if too large (max 1200px on longest side)
+      const maxSize = 1200;
+      if(width > maxSize || height > maxSize){
+        if(width > height){
+          height = (height / width) * maxSize;
+          width = maxSize;
+        } else {
+          width = (width / height) * maxSize;
+          height = maxSize;
+        }
+      }
+      
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      ctx.drawImage(img, 0, 0, width, height);
+      
+      // Convert to JPEG with compression (quality 0.7 = ~70% quality)
+      const compressedData = canvas.toDataURL('image/jpeg', 0.7);
+      setPreview(compressedData);
+      
+      // Check size (base64 is ~1.37x the actual size)
+      const sizeInBytes = compressedData.length * 0.75; // rough estimate
+      console.log("Compressed image size:", Math.round(sizeInBytes / 1024), "KB");
       
       try{
         console.log("Uploading to Firestore with ID:", uploadId);
         
-        // Save to Firestore so the PC can pick it up
-        // Use POST to create the document
+        // Save to Firestore
         const response = await fetch(`${FB_FS}/uploads?documentId=${uploadId}&key=${FB_KEY}`, {
           method:"POST",
           headers:{"Content-Type":"application/json"},
           body: JSON.stringify({
             fields: {
-              image: {stringValue: imageData},
+              image: {stringValue: compressedData},
               timestamp: {integerValue: String(Date.now())}
             }
           })
@@ -2126,7 +2154,7 @@ function PhoneUploadPage({uploadId}){
         if(!response.ok){
           const errorText = await response.text();
           console.error("Upload error response:", errorText);
-          throw new Error(`Upload failed: ${response.status} - ${errorText}`);
+          throw new Error(`Upload failed: ${response.status}`);
         }
         
         console.log("Upload successful!");
@@ -2135,9 +2163,18 @@ function PhoneUploadPage({uploadId}){
       }catch(err){
         console.error("Upload error:", err);
         setUploading(false);
-        alert("Upload failed: " + err.message + "\n\nMake sure you're connected to the internet and Firestore rules allow uploads.");
+        alert("Upload failed: " + err.message + "\n\nTry taking a smaller photo or reducing quality.");
       }
     };
+    
+    img.onerror = () => {
+      setUploading(false);
+      alert("Failed to load image. Please try again.");
+    };
+    
+    // Load the image
+    const reader = new FileReader();
+    reader.onload = (e) => { img.src = e.target.result; };
     reader.readAsDataURL(file);
   }
 
