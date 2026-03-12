@@ -297,43 +297,41 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: 'IMAGE 1 - This is the HOMEWORK ASSIGNMENT the student needs to complete:' },
+                { text: 'Here is the HOMEWORK ASSIGNMENT (Image A):' },
                 { inline_data: { mime_type: mimeTypeH, data: b64Homework } },
-                { text: 'IMAGE 2 - This is what the student uploaded as their COMPLETED ANSWER:' },
+                { text: 'Here is what the student uploaded as their completed work (Image B):' },
                 { inline_data: { mime_type: mimeTypeA, data: b64Answer } },
-                { text: `Look carefully at both images above.
-
-IMAGE 1 is the homework assignment. What subject is it? What type of problems does it contain?
-IMAGE 2 is the student's supposed answer. What does it actually show?
-
-Are these two images related — does IMAGE 2 show student work or answers that are clearly for the same assignment as IMAGE 1?
-
-Examples of RELATED (return true):
-- IMAGE 1 is a math worksheet, IMAGE 2 is handwritten math work
-- IMAGE 1 is an essay prompt, IMAGE 2 is a written essay
-
-Examples of NOT RELATED (return false):
-- IMAGE 1 is a math worksheet, IMAGE 2 is a chemistry diagram
-- IMAGE 1 is probability problems, IMAGE 2 is a pH scale or unrelated subject
-- IMAGE 2 is completely blank, random, or from a totally different subject
-
-Return ONLY this JSON, nothing else:
-{"related": true, "reason": "one sentence explanation"}
-or
-{"related": false, "reason": "one sentence explaining what IMAGE 2 actually shows and why it doesn't match"}` }
+                { text: 'Describe Image A in one sentence. Describe Image B in one sentence. Then answer: is Image B a student attempt to complete the homework in Image A, or is it something completely unrelated (different subject, app screenshot, diagram from another topic, etc)? STRICT RULE: if the subjects differ at all (e.g. math vs chemistry, probability vs pH scale, worksheet vs app logo), return related false. Respond ONLY with JSON: {"imageA":"...","imageB":"...","related":true,"reason":"..."} or {"imageA":"...","imageB":"...","related":false,"reason":"..."}' }
               ]
             }],
-            generationConfig: { maxOutputTokens: 300 }
+            generationConfig: { maxOutputTokens: 400 }
           })
         }
       );
-      if (!res.ok) return { related: true }; // fail open
+
+      if (!res.ok) {
+        console.error('Relevance check HTTP error:', res.status);
+        return { related: false, reason: 'Could not verify your image. Please upload your actual completed homework.' };
+      }
+
       const data = await res.json();
-      const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      const clean = text.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-      return JSON.parse(clean);
+      const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      console.log('Relevance check raw response:', rawText);
+
+      // Robustly extract JSON from anywhere in the response
+      const jsonMatch = rawText.match(/\{[\s\S]*?"related"\s*:\s*(true|false)[\s\S]*?\}/);
+      if (!jsonMatch) {
+        console.error('No JSON found in relevance response:', rawText);
+        return { related: false, reason: "Couldn't verify your image matches the homework. Please upload your actual completed work." };
+      }
+
+      const parsed = JSON.parse(jsonMatch[0]);
+      console.log('Relevance result:', parsed);
+      return parsed;
+
     } catch (err) {
-      return { related: true }; // fail open if check errors
+      console.error('Relevance check error:', err);
+      return { related: false, reason: "Couldn't verify your image. Please try uploading again." };
     }
   };
 
