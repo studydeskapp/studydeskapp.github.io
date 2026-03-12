@@ -21,7 +21,7 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
       body:JSON.stringify({
         system_instruction:{parts:[{text:systemPrompt}]},
         contents,
-        generationConfig:{maxOutputTokens:2048,temperature:0.7}
+        generationConfig:{maxOutputTokens:4096,temperature:0.7}
       })
     });
     clearTimeout(timeout);
@@ -41,13 +41,30 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
     let buffer = "";
     while(true){
       const {done,value} = await reader.read();
-      if(done) break;
+      if(done) {
+        // Process any remaining buffer content
+        if(buffer.trim()){
+          const lines = buffer.split("\n");
+          for(const line of lines){
+            if(!line.startsWith("data: ")) continue;
+            const json = line.slice(6).trim();
+            if(json === "[DONE]") break; // Stop at completion marker
+            try{
+              const parsed = JSON.parse(json);
+              const delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
+              if(delta){ full+=delta; onChunk(full); }
+            }catch(e){}
+          }
+        }
+        break;
+      }
       buffer += decoder.decode(value,{stream:true});
       const lines = buffer.split("\n");
-      buffer = lines.pop();
+      buffer = lines.pop() || "";
       for(const line of lines){
         if(!line.startsWith("data: ")) continue;
         const json = line.slice(6).trim();
+        if(json === "[DONE]") break; // Stop at completion marker
         try{
           const parsed = JSON.parse(json);
           const delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
@@ -55,6 +72,8 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
         }catch(e){}
       }
     }
+    // Clean up any trailing whitespace or artifacts
+    full = full.trim();
     return full || "Sorry, I couldn't get a response.";
   }catch(e){
     if(e.name==="AbortError") return "Request timed out. Please try again.";
