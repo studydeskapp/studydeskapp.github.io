@@ -297,21 +297,33 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
           body: JSON.stringify({
             contents: [{
               parts: [
-                { text: `I have two images. The FIRST image is a student's homework assignment. The SECOND image is supposed to be the student's completed work/answers for that same homework.
-
-Are these two images related? Does the second image appear to show work, answers, or solutions that could plausibly be for the homework shown in the first image?
-
-Answer with ONLY a JSON object like this:
-{"related": true, "reason": "brief reason"}
-or
-{"related": false, "reason": "brief reason explaining what the second image shows instead"}
-
-Return ONLY the JSON, nothing else.` },
+                { text: 'IMAGE 1 - This is the HOMEWORK ASSIGNMENT the student needs to complete:' },
                 { inline_data: { mime_type: mimeTypeH, data: b64Homework } },
-                { inline_data: { mime_type: mimeTypeA, data: b64Answer } }
+                { text: 'IMAGE 2 - This is what the student uploaded as their COMPLETED ANSWER:' },
+                { inline_data: { mime_type: mimeTypeA, data: b64Answer } },
+                { text: `Look carefully at both images above.
+
+IMAGE 1 is the homework assignment. What subject is it? What type of problems does it contain?
+IMAGE 2 is the student's supposed answer. What does it actually show?
+
+Are these two images related — does IMAGE 2 show student work or answers that are clearly for the same assignment as IMAGE 1?
+
+Examples of RELATED (return true):
+- IMAGE 1 is a math worksheet, IMAGE 2 is handwritten math work
+- IMAGE 1 is an essay prompt, IMAGE 2 is a written essay
+
+Examples of NOT RELATED (return false):
+- IMAGE 1 is a math worksheet, IMAGE 2 is a chemistry diagram
+- IMAGE 1 is probability problems, IMAGE 2 is a pH scale or unrelated subject
+- IMAGE 2 is completely blank, random, or from a totally different subject
+
+Return ONLY this JSON, nothing else:
+{"related": true, "reason": "one sentence explanation"}
+or
+{"related": false, "reason": "one sentence explaining what IMAGE 2 actually shows and why it doesn't match"}` }
               ]
             }],
-            generationConfig: { maxOutputTokens: 256 }
+            generationConfig: { maxOutputTokens: 300 }
           })
         }
       );
