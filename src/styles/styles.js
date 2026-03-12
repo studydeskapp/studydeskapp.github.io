@@ -512,3 +512,229 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .prompt-body{font-size:.82rem;color:var(--text2);line-height:1.6;text-align:center;margin-bottom:20px}
 .prompt-body b{color:var(--text)}
 `;
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   SHOP ANIMATIONS & PARTICLE EFFECTS
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* Rarity badge */
+.shop-rarity {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  font-size: .58rem;
+  font-weight: 700;
+  padding: 3px 8px;
+  border-radius: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* Icon wrapper for animations */
+.shop-icon-wrapper {
+  position: relative;
+  display: inline-block;
+  margin-bottom: 8px;
+}
+
+/* Animated icon effects */
+.shop-icon-animated {
+  animation: shop-icon-float 3s ease-in-out infinite;
+  display: inline-block;
+}
+
+@keyframes shop-icon-float {
+  0%, 100% { transform: translateY(0px) rotate(0deg); }
+  25% { transform: translateY(-8px) rotate(2deg); }
+  50% { transform: translateY(-4px) rotate(-2deg); }
+  75% { transform: translateY(-8px) rotate(1deg); }
+}
+
+/* Particle system */
+.shop-particles {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+
+.particle {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #fbbf24, #f59e0b, #ec4899, #8b5cf6, #3b82f6);
+  animation: particle-orbit 2s ease-in-out infinite;
+  animation-delay: var(--delay);
+  transform-origin: center;
+  opacity: 0;
+}
+
+@keyframes particle-orbit {
+  0% {
+    transform: rotate(var(--angle)) translateX(0px) scale(0);
+    opacity: 0;
+  }
+  20% {
+    opacity: 1;
+  }
+  50% {
+    transform: rotate(var(--angle)) translateX(40px) scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: rotate(var(--angle)) translateX(60px) scale(0);
+    opacity: 0;
+  }
+}
+
+/* Rainbow aura effect */
+.animated-item.equipped .shop-icon-wrapper::before {
+  content: '';
+  position: absolute;
+  top: -10px;
+  left: -10px;
+  right: -10px;
+  bottom: -10px;
+  background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
+  background-size: 400% 400%;
+  border-radius: 50%;
+  opacity: 0.3;
+  animation: rainbow-rotate 3s linear infinite;
+  z-index: -1;
+  filter: blur(8px);
+}
+
+@keyframes rainbow-rotate {
+  0% { background-position: 0% 50%; }
+  50% { background-position: 100% 50%; }
+  100% { background-position: 0% 50%; }
+}
+
+/* Glow effect for legendary items */
+.shop-card[style*="legendary"] {
+  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
+}
+
+.shop-card[style*="mythic"] {
+  box-shadow: 0 0 25px rgba(225, 29, 72, 0.4);
+  animation: mythic-pulse 2s ease-in-out infinite;
+}
+
+@keyframes mythic-pulse {
+  0%, 100% { box-shadow: 0 0 25px rgba(225, 29, 72, 0.4); }
+  50% { box-shadow: 0 0 35px rgba(225, 29, 72, 0.6); }
+}
+
+/* Sparkle effect for equipped items */
+.shop-card.equipped .shop-icon-wrapper::after {
+  content: '✨';
+  position: absolute;
+  top: -5px;
+  right: -5px;
+  font-size: 1.2rem;
+  animation: sparkle-twinkle 1.5s ease-in-out infinite;
+}
+
+@keyframes sparkle-twinkle {
+  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
+  50% { opacity: 0.5; transform: scale(1.2) rotate(180deg); }
+}
+
+/* Cape flutter animation */
+.shop-icon-animated[style*="🦸"],
+.shop-icon-animated[style*="🐉"],
+.shop-icon-animated[style*="🔥"] {
+  animation: cape-flutter 2s ease-in-out infinite;
+}
+
+@keyframes cape-flutter {
+  0%, 100% { transform: translateY(0px) rotate(0deg) scaleX(1); }
+  25% { transform: translateY(-5px) rotate(-3deg) scaleX(0.98); }
+  50% { transform: translateY(-8px) rotate(0deg) scaleX(1); }
+  75% { transform: translateY(-5px) rotate(3deg) scaleX(0.98); }
+}
+
+/* Crown shine effect */
+.shop-icon-animated[style*="👑"] {
+  animation: crown-shine 3s ease-in-out infinite;
+  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6));
+}
+
+@keyframes crown-shine {
+  0%, 100% { filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6)) brightness(1); }
+  50% { filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.9)) brightness(1.2); }
+}
+
+/* Laser eyes effect */
+.shop-icon-animated[style*="👁️"] {
+  animation: laser-pulse 1.5s ease-in-out infinite;
+  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.8));
+}
+
+@keyframes laser-pulse {
+  0%, 100% { filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.8)); }
+  50% { filter: drop-shadow(0 0 20px rgba(239, 68, 68, 1)); }
+}
+
+/* Wings flutter */
+.shop-icon-animated[style*="🦋"],
+.shop-icon-animated[style*="🚀"] {
+  animation: wings-flutter 1.5s ease-in-out infinite;
+}
+
+@keyframes wings-flutter {
+  0%, 100% { transform: translateY(0px) scaleY(1); }
+  25% { transform: translateY(-6px) scaleY(0.95); }
+  50% { transform: translateY(-10px) scaleY(1); }
+  75% { transform: translateY(-6px) scaleY(0.95); }
+}
+
+/* Fire/Lightning aura */
+.shop-icon-animated[style*="⚡"],
+.shop-icon-animated[style*="🔥"] {
+  animation: energy-pulse 1s ease-in-out infinite;
+}
+
+@keyframes energy-pulse {
+  0%, 100% { 
+    filter: drop-shadow(0 0 8px currentColor) brightness(1);
+    transform: scale(1);
+  }
+  50% { 
+    filter: drop-shadow(0 0 16px currentColor) brightness(1.3);
+    transform: scale(1.05);
+  }
+}
+
+/* Galaxy/Cosmic effects */
+.shop-icon-animated[style*="🌌"],
+.shop-icon-animated[style*="🌠"] {
+  animation: cosmic-rotate 4s linear infinite;
+  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8));
+}
+
+@keyframes cosmic-rotate {
+  0% { transform: rotate(0deg); filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8)); }
+  50% { filter: drop-shadow(0 0 20px rgba(139, 92, 246, 1)); }
+  100% { transform: rotate(360deg); filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8)); }
+}
+
+/* Hover effects for shop cards */
+.shop-card:hover .shop-icon-animated {
+  animation-duration: 1.5s;
+  transform: scale(1.1);
+}
+
+.shop-card.equipped {
+  animation: equipped-glow 2s ease-in-out infinite;
+}
+
+@keyframes equipped-glow {
+  0%, 100% { box-shadow: 0 0 0 3px var(--sh2); }
+  50% { box-shadow: 0 0 0 3px var(--sh2), 0 0 20px var(--accent); }
+}
+`;
