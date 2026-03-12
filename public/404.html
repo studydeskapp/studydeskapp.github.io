@@ -4,14 +4,10 @@
   <meta charset="utf-8">
   <title>StudyDesk</title>
   <script>
-    // GitHub Pages serves this for any unmatched route.
-    // If someone visits /admin, redirect to /#/admin so the React app can handle it.
-    var path = window.location.pathname;
-    if (path === '/admin' || path.endsWith('/admin')) {
-      window.location.replace('/#/admin');
-    } else {
-      window.location.replace('/');
-    }
+    // Single Page Application redirect
+    // Store the path and redirect to index.html, which will handle the routing
+    sessionStorage.setItem('redirectPath', window.location.pathname + window.location.search);
+    window.location.replace('/index.html');
   </script>
 </head>
 <body></body>
