@@ -1632,6 +1632,13 @@ function AITab({assignments, classes}){
   const [phoneUploadUrl, setPhoneUploadUrl] = useState(null);
   const [uploadId, setUploadId] = useState(null);
   const [checkingUpload, setCheckingUpload] = useState(false);
+  const [hwWorkImage, setHwWorkImage] = useState(null);
+  const [hwWorkPreview, setHwWorkPreview] = useState(null);
+  const [hwFeedback, setHwFeedback] = useState("");
+  const [hwFeedbackLoading, setHwFeedbackLoading] = useState(false);
+  const [hwFollowUp, setHwFollowUp] = useState("");
+  const [hwFollowUpResponse, setHwFollowUpResponse] = useState("");
+  const [hwFollowUpLoading, setHwFollowUpLoading] = useState(false);
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
   const uploadPollInterval = useRef(null);
@@ -1827,8 +1834,102 @@ function AITab({assignments, classes}){
     setQrCode(null);
     setPhoneUploadUrl(null);
     setUploadId(null);
+    setHwWorkImage(null);
+    setHwWorkPreview(null);
+    setHwFeedback("");
+    setHwFollowUp("");
+    setHwFollowUpResponse("");
     stopPollingForUpload();
     stopCamera();
+  }
+
+  function handleWorkUpload(e){
+    const file = e.target.files?.[0];
+    if(!file) return;
+    setHwWorkImage(file);
+    const reader = new FileReader();
+    reader.onload = (ev) => setHwWorkPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  }
+
+  async function checkWork(){
+    if(!hwWorkImage||hwFeedbackLoading) return;
+    setHwFeedbackLoading(true);
+    setHwFeedback("");
+    
+    try{
+      const reader = new FileReader();
+      reader.onload = async (e) => {
+        try{
+          const base64 = e.target.result.split(',')[1];
+          
+          const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,{
+            method:"POST",
+            headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({
+              contents:[{
+                parts:[
+                  {text:`You are a helpful homework tutor reviewing a student's work. Compare their work to the correct solution below and provide constructive feedback. Point out what they did right and what needs to be fixed. Be encouraging but specific about errors.\n\nCorrect solution:\n${hwSolution}\n\nNow review the student's work in the image:`},
+                  {inline_data:{mime_type:"image/jpeg",data:base64}}
+                ]
+              }]
+            })
+          });
+          
+          if(!response.ok){
+            throw new Error(`API error: ${response.status}`);
+          }
+          
+          const data = await response.json();
+          const feedback = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't analyze your work. Please try again.";
+          setHwFeedback(feedback);
+          setHwFeedbackLoading(false);
+        }catch(err){
+          console.error("Feedback error:", err);
+          setHwFeedback("Error analyzing your work: " + err.message);
+          setHwFeedbackLoading(false);
+        }
+      };
+      reader.readAsDataURL(hwWorkImage);
+    }catch(e){
+      console.error("Reader error:", e);
+      setHwFeedback("Error reading image: " + e.message);
+      setHwFeedbackLoading(false);
+    }
+  }
+
+  async function askFollowUp(){
+    if(!hwFollowUp.trim()||hwFollowUpLoading) return;
+    setHwFollowUpLoading(true);
+    setHwFollowUpResponse("");
+    
+    try{
+      const context = `Original problem solution:\n${hwSolution}\n\n${hwFeedback?"Student's work feedback:\n"+hwFeedback+"\n\n":""}Student's follow-up question: ${hwFollowUp}`;
+      
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_KEY}`,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({
+          contents:[{
+            parts:[{text:context}]
+          }],
+          generationConfig:{maxOutputTokens:1024,temperature:0.7}
+        })
+      });
+      
+      if(!response.ok){
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      const answer = data.candidates?.[0]?.content?.parts?.[0]?.text || "Sorry, I couldn't answer that. Please try again.";
+      setHwFollowUpResponse(answer);
+    }catch(err){
+      console.error("Follow-up error:", err);
+      setHwFollowUpResponse("Error: " + err.message);
+    }
+    
+    setHwFollowUpLoading(false);
   }
 
   // Cleanup polling on unmount
@@ -2028,9 +2129,71 @@ Give: 1) Overall assessment 2) Which subjects need attention 3) Specific study t
                 <button className="btn btn-g" onClick={resetHomework} style={{width:"100%"}}>Submit Another Problem</button>
               </div>
               
-              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
+              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,marginBottom:16}}>
                 <div className="sec-lbl" style={{marginBottom:12}}>📚 Solution & Explanation</div>
                 <div style={{fontSize:".83rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwSolution)}}/>
+              </div>
+
+              {/* Check Your Work */}
+              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20,marginBottom:16}}>
+                <div className="sec-lbl" style={{marginBottom:12}}>✅ Check Your Work</div>
+                <div style={{fontSize:".82rem",color:"var(--text3)",marginBottom:14,lineHeight:1.6}}>
+                  Upload a photo of your work and I'll compare it to the solution above, pointing out what's correct and what needs fixing.
+                </div>
+                
+                {!hwWorkPreview?(
+                  <label style={{display:"flex",flexDirection:"column",alignItems:"center",gap:10,padding:"24px 16px",border:"2px dashed var(--border)",borderRadius:12,cursor:"pointer",background:"var(--bg3)"}}>
+                    <input type="file" accept="image/*" style={{display:"none"}} onChange={handleWorkUpload}/>
+                    <div style={{fontSize:"2rem"}}>📸</div>
+                    <div style={{fontSize:".85rem",fontWeight:600,color:"var(--text)"}}>Upload Your Work</div>
+                    <div style={{fontSize:".75rem",color:"var(--text3)"}}>Take a photo or select from your device</div>
+                  </label>
+                ):(
+                  <div>
+                    <div style={{marginBottom:12,borderRadius:12,overflow:"hidden",border:"1.5px solid var(--border)"}}>
+                      <img src={hwWorkPreview} alt="Your work" style={{width:"100%",display:"block"}}/>
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button className="btn btn-g" onClick={()=>{setHwWorkImage(null);setHwWorkPreview(null);setHwFeedback("");}} style={{flex:1}}>Change Photo</button>
+                      <button className="btn btn-p" onClick={checkWork} disabled={hwFeedbackLoading} style={{flex:2}}>
+                        {hwFeedbackLoading?"✨ Checking...":"🔍 Check My Work"}
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {hwFeedback&&(
+                  <div style={{marginTop:16,padding:"14px 16px",background:"var(--bg3)",borderRadius:12,border:"1.5px solid var(--border)"}}>
+                    <div style={{fontWeight:700,fontSize:".85rem",color:"var(--text)",marginBottom:8}}>📝 Feedback on Your Work</div>
+                    <div style={{fontSize:".82rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwFeedback)}}/>
+                  </div>
+                )}
+              </div>
+
+              {/* Follow-up Questions */}
+              <div style={{background:"var(--card)",borderRadius:18,border:"1.5px solid var(--border)",padding:20}}>
+                <div className="sec-lbl" style={{marginBottom:12}}>💬 Ask a Follow-up Question</div>
+                <div style={{fontSize:".82rem",color:"var(--text3)",marginBottom:14,lineHeight:1.6}}>
+                  Still confused? Ask me anything about this problem!
+                </div>
+                <textarea 
+                  className="finp" 
+                  rows={3} 
+                  style={{resize:"vertical",fontFamily:"inherit",marginBottom:10}} 
+                  placeholder="e.g., Why did we use this formula? Can you explain step 3 more?"
+                  value={hwFollowUp}
+                  onChange={e=>setHwFollowUp(e.target.value)}
+                />
+                <button className="btn btn-p" onClick={askFollowUp} disabled={hwFollowUpLoading||!hwFollowUp.trim()} style={{width:"100%"}}>
+                  {hwFollowUpLoading?"✨ Thinking...":"💡 Ask Question"}
+                </button>
+
+                {hwFollowUpResponse&&(
+                  <div style={{marginTop:16,padding:"14px 16px",background:"var(--bg3)",borderRadius:12,border:"1.5px solid var(--border)"}}>
+                    <div style={{fontWeight:700,fontSize:".85rem",color:"var(--text)",marginBottom:8}}>💡 Answer</div>
+                    <div style={{fontSize:".82rem",lineHeight:1.7,color:"var(--text)"}} dangerouslySetInnerHTML={{__html:renderMarkdown(hwFollowUpResponse)}}/>
+                  </div>
+                )}
               </div>
             </div>
           )}
