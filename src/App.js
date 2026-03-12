@@ -165,11 +165,7 @@ export default function StudyDesk() {
     window.addEventListener("resize",handler);
     return()=>window.removeEventListener("resize",handler);
   },[]);
-  useEffect(()=>{
-    if(isLocalhost) return;
-    fetch(CF_PROXY,{mode:"no-cors",signal:AbortSignal.timeout(5000)})
-      .catch(()=>setProxyBlocked(true));
-  },[]);
+  // Proxy test removed - will detect blocking when actually needed
   
   function handleLogoClick(){
     logoClicks.current+=1;

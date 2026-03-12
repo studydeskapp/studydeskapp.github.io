@@ -8,8 +8,7 @@ import {
   fbCheckEmailVerified, 
   fbDeleteAccount, 
   fbSetSession,
-  fbIncrementStat,
-  FB_KEY 
+  fbIncrementStat
 } from '../../utils/firebase';
 
 function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
@@ -135,30 +134,10 @@ function AuthScreen({onAuth, adminMode=false, adminEmail=""}){
   async function handleGoogle(){
     setLoading(true); setErr("");
     try{
-      const result = await fbGoogleSignIn();
-      // Exchange Google ID token with Firebase signInWithIdp
-      const r = await fetch(`https://identitytoolkit.googleapis.com/v1/accounts:signInWithIdp?key=${FB_KEY}`,{
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({
-          requestUri:window.location.origin,
-          postBody:`id_token=${result.idToken}&providerId=google.com`,
-          returnSecureToken:true,
-          returnIdpCredential:true
-        })
-      });
-      const d = await r.json();
-      if(d.error) throw new Error(d.error.message);
-      const u={
-        uid:d.localId,
-        email:d.email,
-        displayName:d.displayName||null,
-        idToken:d.idToken,
-        refreshToken:d.refreshToken,
-        tokenExpiry: Date.now() + (parseInt(d.expiresIn) * 1000),
-        photoURL:d.photoUrl||null
-      };
-      fbSetSession(u);
-      onAuth(u);
+      const user = await fbGoogleSignIn();
+      // fbGoogleSignIn now returns a complete Firebase user object
+      fbSetSession(user);
+      onAuth(user);
     } catch(e){
       if(e.message!=="Popup closed"&&e.message!=="No credential returned"){
         setErr(e.message||"Google sign-in failed.");
