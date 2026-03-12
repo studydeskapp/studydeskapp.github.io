@@ -568,7 +568,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .main-wrap{margin-left:260px;min-height:100vh;height:100vh;height:100dvh;overflow-y:auto;display:flex;flex-direction:column}
   .main-inner{max-width:1080px;margin:0 auto;width:100%;padding:0 32px 32px;flex:1;padding-top:max(env(safe-area-inset-top),20px);padding-left:max(env(safe-area-inset-left),32px);padding-right:max(env(safe-area-inset-right),32px)}
   .app.has-sidebar .tabs{display:none}
-  .app.has-sidebar .hdr{padding:max(env(safe-area-inset-top),20px) 0 16px;margin-bottom:20px;gap:8px}
+  .app.has-sidebar .hdr{padding:max(env(safe-area-inset-top),20px) 0 16px;margin-bottom:20px;gap:8px;margin-left:32px}
   .app.has-sidebar .hdr-title{font-size:1.5rem}
   .app.has-sidebar .hdr-sub{font-size:.7rem;margin-top:2px}
   .app.has-sidebar .hdr-r{gap:6px;flex-shrink:0}
