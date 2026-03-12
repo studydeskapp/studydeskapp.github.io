@@ -2279,16 +2279,20 @@ export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Core data (persisted to Firestore)
   
-  // Restore path from 404.html redirect
+  // Restore path from 404.html redirect - must run BEFORE route detection
+  const [pathRestored, setPathRestored] = useState(false);
+  
   useEffect(()=>{
-    const savedPath = sessionStorage.getItem('spa-path');
-    if(savedPath){
-      sessionStorage.removeItem('spa-path');
-      window.history.replaceState(null, '', savedPath);
-      // Force a re-render by updating a dummy state or just reload
-      window.location.reload();
+    if(!pathRestored){
+      const savedPath = sessionStorage.getItem('spa-path');
+      if(savedPath){
+        console.log("Restoring path:", savedPath);
+        sessionStorage.removeItem('spa-path');
+        window.history.replaceState(null, '', savedPath);
+      }
+      setPathRestored(true);
     }
-  },[]);
+  },[pathRestored]);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
@@ -2354,7 +2358,14 @@ export default function StudyDesk() {
   }
   // /admin route detection
   const ADMIN_EMAIL = "asgoyal1@stu.naperville203.org";
-  const isAdminRoute = window.location.pathname === "/admin" || new URLSearchParams(window.location.search).get("admin")==="1";
+  const [currentPath, setCurrentPath] = useState(window.location.pathname);
+  
+  // Re-check pathname after mount in case it was updated
+  useEffect(()=>{
+    setCurrentPath(window.location.pathname);
+  },[]);
+  
+  const isAdminRoute = currentPath === "/admin" || new URLSearchParams(window.location.search).get("admin")==="1";
   
   // /upload/:id route detection for phone uploads
   const uploadMatch = window.location.pathname.match(/^\/upload\/([a-zA-Z0-9]+)$/);
