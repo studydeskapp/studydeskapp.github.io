@@ -9,7 +9,11 @@ function AssignmentsTab({
   classes, 
   setSubjMode, 
   setAddingA, 
-  ACard 
+  ACard,
+  sortBy,
+  setSortBy,
+  sortOrder,
+  setSortOrder
 }) {
   const pending = sortedA.filter(a => a.progress < 100);
   const done = sortedA.filter(a => a.progress >= 100);
@@ -31,6 +35,31 @@ function AssignmentsTab({
           </button>
         ))}
       </div>}
+      {/* Sort Controls */}
+      <div style={{display:"flex",gap:8,marginBottom:16,flexWrap:"wrap",alignItems:"center"}}>
+        <span style={{fontSize:".75rem",color:"var(--text3)",fontWeight:600}}>Sort by:</span>
+        <button 
+          className="btn btn-sm" 
+          onClick={()=>setSortBy("date")}
+          style={sortBy==="date"?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}
+        >
+          📅 Date
+        </button>
+        <button 
+          className="btn btn-sm" 
+          onClick={()=>setSortBy("priority")}
+          style={sortBy==="priority"?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}
+        >
+          ⚡ Priority
+        </button>
+        <button 
+          className="btn btn-sm" 
+          onClick={()=>setSortOrder(sortOrder==="asc"?"desc":"asc")}
+          title={sortBy==="date"?(sortOrder==="asc"?"Soonest first":"Farthest first"):(sortOrder==="asc"?"High to Low":"Low to High")}
+        >
+          {sortOrder==="asc"?"↑":"↓"}
+        </button>
+      </div>
       {pending.length>0&&(
         <div style={{marginBottom:22}}>
           <div className="sec-lbl">Pending — {pending.length}</div>

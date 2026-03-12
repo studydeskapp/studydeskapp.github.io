@@ -38,7 +38,7 @@
 // ║           └─ MOBILE BOTTOM NAV                                              ║
 // ╚══════════════════════════════════════════════════════════════════════════════╝
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 
 // ── Extracted Modules ────────────────────────────────────────────────────────────
 import { css } from './styles/styles';
@@ -75,6 +75,7 @@ import TimerTab from './components/tabs/TimerTab';
 import BuddyTab from './components/tabs/BuddyTab';
 import ShopTab from './components/tabs/ShopTab';
 import AITab from './components/tabs/AITab';
+import AnalyticsTab from './components/tabs/AnalyticsTab';
 
 // ── Service Modules ──────────────────────────────────────────────────────────────
 import { handleComplete, buyItem, equipItem, addFloat, launchConfetti, checkUnknown } from './services/gameLogic';
@@ -85,6 +86,9 @@ import {
   importFromSlides, extractDocId, fetchViaProxy, confirmImport 
 } from './services/importLogic';
 import { fetchLeaderboard } from './services/leaderboardLogic';
+import { getBuddyQuote, getBuddyMood, getBuddyReaction, getBuddyTip } from './services/buddyLogic';
+import { getSmartRecommendations, getTimeBasedSuggestion } from './services/smartPriority';
+import { checkAndCreateFromTemplates, createTemplateFromAssignment, validateTemplate, getTemplatePreview } from './services/templateLogic';
 
 // ── Local Constants (not extracted) ─────────────────────────────────────────────
 const IS_PREVIEW = false;
@@ -93,7 +97,7 @@ const isLocalhost = window.location.hostname === "localhost" || window.location.
 const ADMIN_PASS = "studydesk2026";
 const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY;
 const STORAGE_KEY = "hw-tracker-v1";
-const APP_VERSION = "1.4.0";
+const APP_VERSION = "1.7.0";
 
 
 export default function StudyDesk() {
@@ -117,6 +121,7 @@ export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
+  const [chats, setChats] = useState([]);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — UI / Navigation
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -208,6 +213,24 @@ export default function StudyDesk() {
   // Animation handlers moved to service
   const [schedPrompt, setSchedPrompt] = useState(null);
   const [subjMode, setSubjMode] = useState("select");
+  
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Templates & Smart Features
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  const [templates, setTemplates] = useState([]);
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [editingTemplate, setEditingTemplate] = useState(null);
+  const [buddyReaction, setBuddyReaction] = useState(null);
+  const [lastBuddyQuote, setLastBuddyQuote] = useState(null);
+  const [showSmartSuggestions, setShowSmartSuggestions] = useState(false);
+  
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  // STATE — Assignment Detail View & Sorting
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  const [selectedAssignment, setSelectedAssignment] = useState(null);
+  const [editingAssignment, setEditingAssignment] = useState(false);
+  const [sortBy, setSortBy] = useState("date"); // date | priority
+  const [sortOrder, setSortOrder] = useState("asc"); // asc | desc
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Import wizard (Canvas paste, doc, agenda)
@@ -248,6 +271,11 @@ export default function StudyDesk() {
   const emptyCF = {name:"",days:[],startTime:"09:00",endTime:"10:00",room:"",color:SUBJECT_COLORS[0]};
   const [af, setAf] = useState(emptyAF);
   const [cf, setCf] = useState(emptyCF);
+  
+  // Memoize subject lists to prevent flickering when typing in add assignment modal
+  const schSubs = useMemo(()=>[...new Set(classes.map(c=>c.name))],[classes]);
+  const prevSubs = useMemo(()=>[...new Set(assignments.map(a=>a.subject).filter(Boolean))].filter(s=>!schSubs.includes(s)),[assignments,schSubs]);
+  const allSubs = useMemo(()=>[...schSubs,...prevSubs],[schSubs,prevSubs]);
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // REFS
@@ -272,7 +300,7 @@ export default function StudyDesk() {
         setUser(validUser);
         return fbLoadData(validUser.uid, validUser.idToken);
       }).then(d=>{
-        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url);}}
+        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url)};if(d.t)setTemplates(d.t);if(d.chats)setChats(d.chats);}
         saveReady.current=true;
         setLoaded(true);
         const seenVersion=localStorage.getItem("studydesk-seen-version");
@@ -300,7 +328,7 @@ export default function StudyDesk() {
         if (validUser !== user) {
           setUser(validUser); // Update user state if token was refreshed
         }
-        await fbSaveData(validUser.uid, validUser.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl}});
+        await fbSaveData(validUser.uid, validUser.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl},t:templates,chats:chats});
       } catch (error) {
         console.warn("Save failed:", error);
         if (error.message.includes("Session expired")) {
@@ -309,7 +337,7 @@ export default function StudyDesk() {
       }
     },800); // debounce 800ms
     return()=>clearTimeout(t);
-  },[assignments,classes,game,canvasBaseUrl,loaded,user]);
+  },[assignments,classes,game,canvasBaseUrl,templates,chats,loaded,user]);
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // EFFECTS — localStorage persistence (dark mode, Canvas token/URL)
@@ -332,13 +360,13 @@ export default function StudyDesk() {
       }
       if(e.key==="j"||e.key==="J"){
         e.preventDefault();
-        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai"];
+        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai","analytics"];
         const idx=tabs.indexOf(tab);
         if(idx<tabs.length-1) setTab(tabs[idx+1]);
       }
       if(e.key==="k"||e.key==="K"){
         e.preventDefault();
-        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai"];
+        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai","analytics"];
         const idx=tabs.indexOf(tab);
         if(idx>0) setTab(tabs[idx-1]);
       }
@@ -369,6 +397,39 @@ export default function StudyDesk() {
     const t=setInterval(updatePresence, 60000);
     return()=>clearInterval(t);
   },[user]);
+
+  // Check templates daily and create assignments
+  useEffect(()=>{
+    if(!loaded || templates.length === 0) return;
+    
+    // Check once per day
+    const lastCheck = localStorage.getItem('sd-template-check');
+    const today = new Date().toISOString().split('T')[0];
+    
+    if(lastCheck !== today){
+      const created = checkAndCreateFromTemplates(templates, assignments, setAssignments);
+      if(created.length > 0){
+        console.log(`Created ${created.length} assignments from templates`);
+        // Show buddy reaction
+        setBuddyReaction(getBuddyReaction('login'));
+      }
+      localStorage.setItem('sd-template-check', today);
+    }
+  },[loaded, templates, assignments]);
+
+  // Show buddy quote on login
+  useEffect(()=>{
+    if(!user || !loaded) return;
+    
+    const lastQuote = localStorage.getItem('sd-last-buddy-quote');
+    const now = new Date().getTime();
+    
+    // Show quote if more than 4 hours since last one
+    if(!lastQuote || (now - parseInt(lastQuote)) > 4 * 60 * 60 * 1000){
+      setBuddyReaction(getBuddyReaction('login'));
+      localStorage.setItem('sd-last-buddy-quote', now.toString());
+    }
+  },[user, loaded]);
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // CANVAS SYNC
@@ -509,9 +570,28 @@ export default function StudyDesk() {
   }
 
   // Import handlers
-  const handleConfirmImport = () => confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, () => resetImport(setImportUrl, setPasteText, setCanvasPaste, setImportResult, setImportStep, setCanvasStatus, setAgendaUrl, setFetchStatus, setAgendaStep, setAgendaDocText, setAgendaSlideLinks, setAgendaSlideTexts));
-  const handleImportFromCanvasPaste = () => importFromCanvasPaste(canvasPaste, setImporting, setImportResult);
-  const handleImportFromCanvasAPI = () => importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult);
+  const handleConfirmImport = () => {
+    confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, resetImport);
+    setTab("assignments"); // Switch to assignments tab after import
+  };
+  const handleImportFromCanvasPaste = () => {
+    try {
+      importFromCanvasPaste(canvasPaste, setImporting, setImportResult);
+    } catch(error) {
+      console.error("Canvas paste import error:", error);
+      setImportResult({ error: error.message || "Failed to import from Canvas" });
+      setImporting(false);
+    }
+  };
+  const handleImportFromCanvasAPI = () => {
+    try {
+      importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult);
+    } catch(error) {
+      console.error("Canvas API import error:", error);
+      setImportResult({ error: error.message || "Failed to import from Canvas API" });
+      setImporting(false);
+    }
+  };
   const handleImportFromSlides = () => importFromSlides(pasteText, setImporting, setImportResult);
 
   const todayStr = new Date().toISOString().split("T")[0];
@@ -522,7 +602,13 @@ export default function StudyDesk() {
   // Game logic handlers
   const handleAddFloat = (pts, streak) => addFloat(pts, streak, setFloats);
   const handleLaunchConfetti = (originEl) => launchConfetti(originEl, setConfetti);
-  const handleComplete = (prev, next) => handleComplete(prev, next, user, setGame, handleAddFloat);
+  const handleCompleteAssignment = (prev, next) => {
+    try {
+      handleComplete(prev, next, user, setGame, handleAddFloat);
+    } catch(error) {
+      console.error("Error completing assignment:", error);
+    }
+  };
   const handleBuyItem = (id) => buyItem(id, game, setGame);
   const handleEquipItem = (id) => equipItem(id, game, setGame);
 
@@ -903,9 +989,41 @@ async function run(){
   }
 
 
-  function addAssignment(){if(!af.title||!af.subject)return;const na={...af,id:Date.now().toString()};setAssignments(p=>[...p,na]);checkUnknown([na]);setAf(emptyAF);setAddingA(false);if(user)fbIncrementStat("totalAssignments",1,user.idToken);}
+  function addAssignment(){
+    if(!af.title||!af.subject) {
+      console.warn("Cannot add assignment: missing title or subject", af);
+      return;
+    }
+    try {
+      const na={...af,id:Date.now().toString(),createdAt:new Date().toISOString()};
+      console.log("Adding assignment:", na);
+      setAssignments(p=>[...p,na]);
+      checkUnknown([na], classes, setSchedPrompt);
+      setAf(emptyAF);
+      setAddingA(false);
+      setSubjMode("select");
+      setTab("assignments");
+      if(user) fbIncrementStat("totalAssignments",1,user.idToken);
+      console.log("Assignment added successfully");
+    } catch(error) {
+      console.error("Error adding assignment:", error);
+      alert("Failed to add assignment: " + error.message);
+    }
+  }
   function delAssignment(id){setAssignments(p=>p.filter(x=>x.id!==id));}
-  function updateA(id,patch){setAssignments(prev=>{const a=prev.find(x=>x.id===id);if(a&&patch.progress!==undefined)handleComplete(a.progress,patch.progress);return prev.map(x=>x.id===id?{...x,...patch}:x);});}
+  function updateA(id,patch){
+    setAssignments(prev=>{
+      const a=prev.find(x=>x.id===id);
+      if(a&&patch.progress!==undefined){
+        handleCompleteAssignment(a.progress,patch.progress);
+        // Add completedAt timestamp when marking as complete
+        if(patch.progress===100&&a.progress<100){
+          patch={...patch,completedAt:new Date().toISOString()};
+        }
+      }
+      return prev.map(x=>x.id===id?{...x,...patch}:x);
+    });
+  }
   function addClass(){if(!cf.name)return;setClasses(p=>[...p,{...cf,id:Date.now().toString()}]);setCf(emptyCF);setAddingC(false);if(user)fbIncrementStat("totalClasses",1,user.idToken);}
 
   // Hardcoded bell schedules for known schools (keyed by NCESSCH)
@@ -1217,7 +1335,24 @@ async function run(){
   const filteredA=filter==="all"?assignments:assignments.filter(a=>a.subject===filter);
   // If the active filter subject no longer has any assignments, reset to "all"
   if(filter!=="all"&&!subjects.includes(filter)) setFilter("all");
-  const sortedA=[...filteredA].sort((a,b)=>{if(!a.dueDate)return 1;if(!b.dueDate)return -1;return new Date(a.dueDate)-new Date(b.dueDate);});
+  // Sort assignments based on sortBy and sortOrder
+  const sortedA = useMemo(() => {
+    const sorted = [...filteredA].sort((a, b) => {
+      if (sortBy === "date") {
+        if (!a.dueDate) return 1;
+        if (!b.dueDate) return -1;
+        const dateCompare = new Date(a.dueDate) - new Date(b.dueDate);
+        return sortOrder === "asc" ? dateCompare : -dateCompare;
+      } else if (sortBy === "priority") {
+        const priorityOrder = { high: 3, medium: 2, low: 1 };
+        const aPriority = priorityOrder[a.priority] || 2;
+        const bPriority = priorityOrder[b.priority] || 2;
+        return sortOrder === "asc" ? bPriority - aPriority : aPriority - bPriority; // asc = high→low
+      }
+      return 0;
+    });
+    return sorted;
+  }, [filteredA, sortBy, sortOrder]);
 
   function ACard({a,compact}){
     const color=subjectColor(a.subject,classes);
@@ -1237,7 +1372,11 @@ async function run(){
     // Grade color
     const gradeColor=!a.grade?null:a.grade>=90?"#16a34a":a.grade>=80?"#2563eb":a.grade>=70?"#d97706":"#dc2626";
     return(
-      <div className={"acard"+(ov?" ov":"")} style={{opacity:done?.6:1}}>
+      <div className={"acard"+(ov?" ov":"")} style={{opacity:done?.6:1,cursor:"pointer"}} onClick={(e)=>{
+        // Don't open detail if clicking on buttons
+        if(e.target.closest('button')) return;
+        setSelectedAssignment(a);
+      }}>
         <div className="stripe" style={{background:color,opacity:done?.5:1}}/>
         <div className="amain">
           <div className="atitle" style={{textDecoration:done?"line-through":"none",opacity:done?.7:1}}>{a.title}</div>
@@ -1247,12 +1386,12 @@ async function run(){
             {dueText&&<span className="dbadge" style={{color:dueColor}}>{dueText}</span>}
             {a.grade!=null&&<span style={{fontSize:".7rem",fontWeight:800,color:gradeColor,background:darkMode?"rgba(0,0,0,.3)":"rgba(0,0,0,.06)",padding:"2px 7px",borderRadius:6}}>{a.grade}%{a.gradeRaw&&<span style={{fontWeight:400,opacity:.7}}> ({a.gradeRaw})</span>}</span>}
           </div>
-          {!compact&&<div className="qbtns">{[0,25,50,75,100].map(v=><button key={v} className={"qbtn"+(a.progress===v?" on":"")} onClick={()=>updateA(a.id,{progress:v})}>{v}%</button>)}</div>}
+          {!compact&&<div className="qbtns">{[0,25,50,75,100].map(v=><button key={v} className={"qbtn"+(a.progress===v?" on":"")} onClick={(e)=>{e.stopPropagation();updateA(a.id,{progress:v});}}>{v}%</button>)}</div>}
         </div>
         {!compact&&<div className="pbar-wrap"><div className="pbar-track"><div className="pbar-fill" style={{width:a.progress+"%",background:done?"#16a34a":color}}/></div><div className="plabel">{a.progress}%</div></div>}
-        {!done&&<button ref={submitRef} className={"submit-btn"+(compact?" compact":"")} onClick={()=>{handleLaunchConfetti(submitRef.current);updateA(a.id,{progress:100});}}>✓ Submit</button>}
+        {!done&&<button ref={submitRef} className={"submit-btn"+(compact?" compact":"")} onClick={(e)=>{e.stopPropagation();handleLaunchConfetti(submitRef.current);updateA(a.id,{progress:100});}}>✓ Submit</button>}
         {done&&<span className={"submit-btn done"+(compact?" compact":"")}>✓ Done</span>}
-        <button className="ibtn" onClick={()=>delAssignment(a.id)}>✕</button>
+        <button className="ibtn" onClick={(e)=>{e.stopPropagation();delAssignment(a.id);}}>✕</button>
       </div>
     );
   }
@@ -1366,6 +1505,7 @@ async function run(){
     ["buddy","Buddy",<svg key="b" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>],
     ["shop","Shop",<svg key="sh" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>],
     ["ai","AI",<svg key="ai" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg>],
+    ["analytics","Analytics",<svg key="an" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>],
   ];
 
   return(
@@ -1587,6 +1727,10 @@ async function run(){
             setSubjMode={setSubjMode}
             setAddingA={setAddingA}
             ACard={ACard}
+            sortBy={sortBy}
+            setSortBy={setSortBy}
+            sortOrder={sortOrder}
+            setSortOrder={setSortOrder}
           />
         )}
 
@@ -1608,7 +1752,9 @@ async function run(){
           />
         )}
 
-        {tab==="ai"&&<AITab assignments={assignments} classes={classes}/>}
+        {tab==="ai"&&<AITab assignments={assignments} classes={classes} chats={chats} setChats={setChats}/>}
+
+        {tab==="analytics"&&<AnalyticsTab assignments={assignments} classes={classes} game={game} timerSessions={timerSessions}/>}
 
         {tab==="buddy"&&(
           <BuddyTab
@@ -1721,11 +1867,7 @@ async function run(){
       )}
 
       {/* ADD ASSIGNMENT */}
-      {addingA&&(()=>{
-        const schSubs=[...new Set(classes.map(c=>c.name))];
-        const prevSubs=[...new Set(assignments.map(a=>a.subject).filter(Boolean))].filter(s=>!schSubs.includes(s));
-        const allSubs=[...schSubs,...prevSubs];
-        return(
+      {addingA&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&(setAddingA(false),setAf(emptyAF),setSubjMode("select"))}>
           <div className="modal" style={{display:"flex",flexDirection:"column"}}>
             <div className="modal-t">New Assignment</div>
@@ -1774,8 +1916,95 @@ async function run(){
             </div>
           </div>
         </div>
-        );
-      })()}
+      )}
+
+      {/* ASSIGNMENT DETAIL MODAL */}
+      {selectedAssignment&&(
+        <div className="overlay" onClick={e=>e.target===e.currentTarget&&(setSelectedAssignment(null),setEditingAssignment(false))}>
+          <div className="modal" style={{display:"flex",flexDirection:"column",maxWidth:600}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+              <div className="modal-t">Assignment Details</div>
+              {!editingAssignment&&<button className="btn btn-sm btn-g" onClick={()=>setEditingAssignment(true)} title="Edit">✏️ Edit</button>}
+              {editingAssignment&&<button className="btn btn-sm btn-p" onClick={()=>{updateA(selectedAssignment.id,selectedAssignment);setEditingAssignment(false);}} title="Save">💾 Save</button>}
+            </div>
+            <div style={{flex:1,overflowY:"auto"}}>
+              {!editingAssignment?(
+                <>
+                  <div className="fg"><label className="flbl">Title</label>
+                    <div style={{padding:"10px 0",fontSize:"1.05rem",fontWeight:600,color:"var(--text)"}}>{selectedAssignment.title}</div>
+                  </div>
+                  <div className="frow">
+                    <div className="fg"><label className="flbl">Subject</label>
+                      <div style={{padding:"10px 0",color:"var(--text2)"}}>{selectedAssignment.subject||"—"}</div>
+                    </div>
+                    <div className="fg"><label className="flbl">Priority</label>
+                      <div style={{padding:"10px 0",color:"var(--text2)"}}>{PRIORITY[selectedAssignment.priority]?.label||"Medium"}</div>
+                    </div>
+                  </div>
+                  <div className="frow">
+                    <div className="fg"><label className="flbl">Due Date</label>
+                      <div style={{padding:"10px 0",color:"var(--text2)"}}>{selectedAssignment.dueDate?fmtDate(selectedAssignment.dueDate):"No date"}</div>
+                    </div>
+                    <div className="fg"><label className="flbl">Progress</label>
+                      <div style={{padding:"10px 0",color:"var(--text2)"}}>{selectedAssignment.progress}%</div>
+                    </div>
+                  </div>
+                  {selectedAssignment.grade!=null&&(
+                    <div className="fg"><label className="flbl">Grade</label>
+                      <div style={{padding:"10px 0",color:"var(--text2)",fontWeight:700}}>{selectedAssignment.grade}% {selectedAssignment.gradeRaw&&<span style={{fontWeight:400,opacity:.7}}>({selectedAssignment.gradeRaw})</span>}</div>
+                    </div>
+                  )}
+                  {selectedAssignment.notes&&(
+                    <div className="fg"><label className="flbl">Notes</label>
+                      <div style={{padding:"10px 0",color:"var(--text2)",whiteSpace:"pre-wrap"}}>{selectedAssignment.notes}</div>
+                    </div>
+                  )}
+                  {/* Source Links */}
+                  {(selectedAssignment.canvasUrl||selectedAssignment.slidesUrl||selectedAssignment.agendaDocUrl)&&(
+                    <div className="fg"><label className="flbl">Source Links</label>
+                      <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
+                        {selectedAssignment.canvasUrl&&<a href={selectedAssignment.canvasUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>🎓 View on Canvas</a>}
+                        {selectedAssignment.slidesUrl&&<a href={selectedAssignment.slidesUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>📊 View Slides</a>}
+                        {selectedAssignment.agendaDocUrl&&<a href={selectedAssignment.agendaDocUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>📄 View Agenda Doc</a>}
+                        {selectedAssignment.agendaSlideUrl&&<a href={selectedAssignment.agendaSlideUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>📑 View Specific Slide</a>}
+                      </div>
+                    </div>
+                  )}
+                </>
+              ):(
+                <>
+                  <div className="fg"><label className="flbl">Title *</label>
+                    <input className="finp" value={selectedAssignment.title} onChange={e=>setSelectedAssignment({...selectedAssignment,title:e.target.value})}/>
+                  </div>
+                  <div className="fg"><label className="flbl">Subject *</label>
+                    <input className="finp" value={selectedAssignment.subject} onChange={e=>setSelectedAssignment({...selectedAssignment,subject:e.target.value})}/>
+                  </div>
+                  <div className="frow">
+                    <div className="fg"><label className="flbl">Due Date</label>
+                      <input className="finp" type="date" value={selectedAssignment.dueDate||""} onChange={e=>setSelectedAssignment({...selectedAssignment,dueDate:e.target.value})}/>
+                    </div>
+                    <div className="fg"><label className="flbl">Priority</label>
+                      <select className="fsel" value={selectedAssignment.priority} onChange={e=>setSelectedAssignment({...selectedAssignment,priority:e.target.value})}>
+                        <option value="high">🔴 High</option><option value="medium">🟡 Medium</option><option value="low">🟢 Low</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="fg"><label className="flbl">Progress — {selectedAssignment.progress}%</label>
+                    <input className="range" type="range" min="0" max="100" step="5" value={selectedAssignment.progress} onChange={e=>setSelectedAssignment({...selectedAssignment,progress:+e.target.value})}/>
+                  </div>
+                  <div className="fg"><label className="flbl">Notes</label>
+                    <textarea className="ftxt" value={selectedAssignment.notes||""} onChange={e=>setSelectedAssignment({...selectedAssignment,notes:e.target.value})} style={{minHeight:72}}/>
+                  </div>
+                </>
+              )}
+            </div>
+            <div className="mactions" style={{borderTop:"1.5px solid var(--border)",paddingTop:14,marginTop:6,flexShrink:0}}>
+              <button className="btn btn-g" onClick={()=>{setSelectedAssignment(null);setEditingAssignment(false);}}>Close</button>
+              {editingAssignment&&<button className="btn btn-p" onClick={()=>{updateA(selectedAssignment.id,selectedAssignment);setEditingAssignment(false);setSelectedAssignment(null);}}>Save & Close</button>}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ADD CLASS */}
       {/* SCHOOL WIZARD */}

@@ -148,6 +148,10 @@ export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhos
         const submitted = item.submissions?.submitted || false;
         const score = item.submissions?.score ?? null;
         const pointsPossible = item.plannable?.points_possible ?? null;
+        // Build Canvas URL if we have course_id and plannable_id
+        const canvasUrl = item.course_id && item.plannable_id 
+          ? `${canvasBaseUrl}/courses/${item.course_id}/assignments/${item.plannable_id}`
+          : null;
         return {
           canvasId: String(item.plannable_id || ""),
           title: item.plannable?.title || item.plannable_type,
@@ -157,6 +161,7 @@ export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhos
           progress: submitted ? 100 : 0,
           notes: pointsPossible ? `${pointsPossible} pts` : "",
           pointsPossible,
+          ...(canvasUrl ? { canvasUrl } : {}),
           ...(score !== null && pointsPossible ? { grade: Math.round((score / pointsPossible) * 100), gradeRaw: `${score}/${pointsPossible}` } : {})
         };
       });
@@ -208,6 +213,7 @@ export async function fetchViaProxy(url) {
 // ── Import Confirmation Logic ──────────────────────────────────────────────────
 export function confirmImport(importResult, user, setAssignments, classes, setSchedPrompt, setImportOpen, resetImportFn) {
   const incoming = importResult?.assignments;
+  const source = importResult?.source; // "canvas" | "slides" | "agenda"
 
   // Guard: nothing to import
   if (!incoming || !Array.isArray(incoming) || incoming.length === 0) {
@@ -241,9 +247,14 @@ export function confirmImport(importResult, user, setAssignments, classes, setSc
           progress: Math.max(ex.progress ?? 0, a.progress ?? 0),
           ...(a.grade != null ? { grade: a.grade, gradeRaw: a.gradeRaw } : {}),
           ...(a.pointsPossible != null ? { pointsPossible: a.pointsPossible } : {}),
+          // Add source URLs
+          ...(source === "canvas" && a.canvasUrl ? { canvasUrl: a.canvasUrl } : {}),
+          ...(source === "slides" && a.slidesUrl ? { slidesUrl: a.slidesUrl } : {}),
+          ...(source === "agenda" && a.agendaDocUrl ? { agendaDocUrl: a.agendaDocUrl } : {}),
+          ...(source === "agenda" && a.agendaSlideUrl ? { agendaSlideUrl: a.agendaSlideUrl } : {}),
         } : ex);
       } else {
-        // New assignment — give it a stable unique id
+        // New assignment — give it a stable unique id and add source URLs
         toAdd.push({
           progress: 0,
           priority: 'medium',
@@ -252,6 +263,12 @@ export function confirmImport(importResult, user, setAssignments, classes, setSc
           dueDate: '',
           ...a,
           id: `${Date.now()}_${Math.random().toString(36).slice(2)}_${toAdd.length}`,
+          createdAt: new Date().toISOString(),
+          // Add source URLs based on import source
+          ...(source === "canvas" && a.canvasUrl ? { canvasUrl: a.canvasUrl } : {}),
+          ...(source === "slides" && a.slidesUrl ? { slidesUrl: a.slidesUrl } : {}),
+          ...(source === "agenda" && a.agendaDocUrl ? { agendaDocUrl: a.agendaDocUrl } : {}),
+          ...(source === "agenda" && a.agendaSlideUrl ? { agendaSlideUrl: a.agendaSlideUrl } : {}),
         });
       }
     }
@@ -271,5 +288,7 @@ export function confirmImport(importResult, user, setAssignments, classes, setSc
   });
 
   setImportOpen(false);
-  resetImportFn();
+  if (typeof resetImportFn === 'function') {
+    resetImportFn();
+  }
 }

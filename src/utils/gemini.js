@@ -3,18 +3,18 @@
 // │  Functions for interacting with Google's Gemini AI API.                     │
 // └──────────────────────────────────────────────────────────────────────────────┘
 
-const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY;
+const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY || "AIzaSyBas4QTuwJM4rJE4S_1xlPOoTg05GBQNpE";
 
 export async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[]){
   const contents = [
     ...history.map(m=>({role:m.role==="ai"?"model":"user", parts:[{text:m.text}]})),
     {role:"user", parts:[{text:prompt}]}
   ];
-  const model = "gemini-2.5-flash-lite";
+  const model = "gemini-2.5-flash";
   try{
     const controller = new AbortController();
     const timeout = setTimeout(()=>controller.abort(), 30000);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,{
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${process.env.REACT_APP_GEMINI_KEY}`,{
       method:"POST",
       signal:controller.signal,
       headers:{"Content-Type":"application/json"},
@@ -33,6 +33,7 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
         const secs = numMatch ? Math.ceil(parseInt(numMatch[1])) + 2 : 60;
         return `⏳ Rate limited — you've hit the 20 requests/min limit. Please wait about ${secs} seconds and try again.`;
       }
+      console.error("Gemini API error:", e);
       return "Error: "+msg;
     }
     const reader = res.body.getReader();
@@ -53,7 +54,7 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
               const parsed = JSON.parse(json);
               const delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
               if(delta){ full+=delta; onChunk(full); }
-            }catch(e){}
+            }catch(e){console.error("Parse error:", e);}
           }
         }
         break;
@@ -69,13 +70,15 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
           const parsed = JSON.parse(json);
           const delta = parsed.candidates?.[0]?.content?.parts?.[0]?.text;
           if(delta){ full+=delta; onChunk(full); await new Promise(r=>setTimeout(r,18)); }
-        }catch(e){}
+        }catch(e){console.error("Parse error:", e);}
       }
     }
     // Clean up any trailing whitespace or artifacts
     full = full.trim();
+    if(!full) console.warn("Empty response from Gemini");
     return full || "Sorry, I couldn't get a response.";
   }catch(e){
+    console.error("Gemini stream error:", e);
     if(e.name==="AbortError") return "Request timed out. Please try again.";
     return "Network error: "+e.message;
   }

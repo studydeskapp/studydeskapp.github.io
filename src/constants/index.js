@@ -1,7 +1,126 @@
 export const STORAGE_KEY = "hw-tracker-v1";
-export const APP_VERSION = "1.4.0";
+export const APP_VERSION = "1.6.0";
 
 export const RELEASES = [
+  {
+    version: "1.6.0",
+    date: "12 March 2026",
+    title: "Smart Features & Analytics",
+    changes: [
+      "📊 New Analytics Tab - comprehensive stats with beautiful charts",
+      "📈 Completion tracking by day with bar charts",
+      "📚 Performance breakdown by subject with completion rates",
+      "🎯 Grade distribution visualization",
+      "📅 Current workload analysis by priority",
+      "🤖 Smart Prioritization - AI suggests which assignment to work on next",
+      "💡 Contextual recommendations based on due dates, grades, and difficulty",
+      "⏰ Time-based suggestions (morning focus, evening review, etc.)",
+      "🔄 Assignment Templates - create recurring assignments automatically",
+      "📝 Weekly, biweekly, monthly, or custom recurrence patterns",
+      "✨ Templates auto-create assignments on schedule",
+      "🐣 Buddy Interactions - your buddy now reacts to your actions!",
+      "💬 Motivational quotes and contextual tips",
+      "😊 Mood changes based on your progress and streak",
+      "🎉 Celebrates completions and milestones with you",
+      "📊 Key metrics dashboard - completion rate, avg grade, streak, overdue count",
+      "🎨 Beautiful gradient cards and smooth animations throughout",
+    ]
+  },
+  {
+    version: "1.5.1",
+    date: "12 March 2026",
+    title: "AI Response Truncation Detection",
+    changes: [
+      "⚠️ Detects when AI homework explanations get cut off due to length",
+      "📊 Shows warning banner when response is truncated",
+      "💡 Suggests selecting fewer problems or uploading clearer image",
+      "🔄 Quick 'Start Over' button to retry with different selection",
+      "🎯 Works for both homework explanations and answer feedback",
+      "🔍 Checks for MAX_TOKENS finish reason and incomplete sentences",
+      "✨ Helps students get complete explanations for their work",
+    ]
+  },
+  {
+    version: "1.5.0",
+    date: "12 March 2026",
+    title: "Mobile UI Overhaul",
+    changes: [
+      "📱 Completely redesigned mobile interface with modern iOS-inspired design",
+      "✨ Smooth animations and transitions throughout - cards fade in with stagger effect",
+      "🎨 Gradient status pills with subtle shadows for depth",
+      "🔘 Larger tap targets (48px minimum) for better touch accuracy",
+      "🎯 Modern bottom navigation with animated active states",
+      "💫 Bottom sheet modals with smooth slide-up animation",
+      "🌊 Frosted glass effect on header and bottom nav with backdrop blur",
+      "📦 Refined card shadows and borders for better visual hierarchy",
+      "🎭 Active states on all interactive elements with scale animations",
+      "🚀 Improved FAB (floating action button) with better positioning",
+      "📐 Better spacing and padding throughout for breathing room",
+      "🎪 Staggered card animations - each card animates in sequence",
+      "💅 Polished input fields with focus states and proper sizing",
+      "🎨 Enhanced status pills with gradient backgrounds",
+    ]
+  },
+  {
+    version: "1.4.4",
+    date: "12 March 2026",
+    title: "Schedule Display Fix",
+    changes: [
+      "🔧 Fixed duplicate class display in admin panel - classes with different times now grouped together",
+      "📅 Classes with multiple time slots (e.g., different times for Mon/Fri vs Tue/Thu) now show all schedules under one entry",
+      "✨ Improved class count accuracy throughout the app",
+      "🏫 Schedule tab already handled this correctly, now admin panel matches",
+    ]
+  },
+  {
+    version: "1.4.3",
+    date: "12 March 2026",
+    title: "Enhanced Admin Dashboard",
+    changes: [
+      "🎨 Completely redesigned admin panel with modern gradient cards and smooth animations",
+      "👤 Click any user to view their full profile with detailed stats",
+      "📊 User detail view shows assignments (pending & completed), classes, grades, and game progress",
+      "🔍 Search users by email or display name",
+      "📈 Enhanced stat cards with gradient backgrounds and hover effects",
+      "🟢 Online users now clickable to view their profiles",
+      "💾 View user's Canvas URL, account creation date, and last seen timestamp",
+      "📝 See all user assignments with progress, grades, and completion status",
+      "🏫 View user's class schedule with times and room numbers",
+      "🎮 Game progress section showing points, streak, daily count, and owned items",
+      "✨ Improved UI with better spacing, colors, and visual hierarchy",
+      "🔐 Enhanced password gate with better styling",
+    ]
+  },
+  {
+    version: "1.4.2",
+    date: "12 March 2026",
+    title: "Assignment Details & Sorting",
+    changes: [
+      "🔍 Click any assignment to view full details in a modal",
+      "✏️ Edit assignments directly from the detail view with the Edit button",
+      "🔗 Source links for imported assignments - Canvas, Google Slides, and Agenda docs",
+      "📊 Sort assignments by date (soonest→farthest or vice versa) or priority (high→low or low→high)",
+      "🎯 Sort controls appear above assignment list for easy access",
+      "💾 Assignment edits save automatically when you close the detail modal",
+      "🖱️ Click anywhere on an assignment card to open details (buttons still work as before)",
+    ]
+  },
+  {
+    version: "1.4.1",
+    date: "12 March 2026",
+    title: "Critical Bug Fixes",
+    changes: [
+      "🐛 Fixed assignment list flickering when typing in add assignment modal",
+      "✅ Add assignment modal now properly closes and switches to assignments tab",
+      "🔧 Fixed submit button crash (white screen) - added proper error handling",
+      "📥 Fixed Canvas import button - now works correctly with pasted data",
+      "✨ Fixed 'Add to Tracker' button - assignments now properly added after import",
+      "🤖 Fixed AI chat empty responses - updated to use correct Gemini model",
+      "🎯 Import now automatically switches to assignments tab after completion",
+      "🛡️ Added comprehensive error handling throughout import and game logic",
+      "📝 Better console logging for debugging import and AI issues",
+    ]
+  },
   {
     version: "1.4.0",
     date: "11 March 2026",

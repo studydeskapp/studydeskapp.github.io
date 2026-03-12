@@ -302,23 +302,181 @@ export async function fbGetAdminStats(idToken) {
     const gi=f=>parseInt(f?.integerValue||f?.doubleValue||0);
     const twoMin=new Date(Date.now()-2*60*1000);
     const allP=(pSnap.documents||[]);
+    
+    // Create a map of uid -> presence data for easy lookup
+    const presenceMap = {};
+    allP.forEach(p => {
+      const uid = p.name.split("/").pop();
+      const fields = p.fields || {};
+      presenceMap[uid] = {
+        email: fields.email?.stringValue || "",
+        displayName: fields.displayName?.stringValue || "",
+        lastSeen: fields.lastSeen?.timestampValue || "",
+      };
+    });
+    
     const online=allP.filter(p=>{const ls=p.fields?.lastSeen?.timestampValue;return ls&&new Date(ls)>twoMin;})
-      .map(p=>({email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||"",lastSeen:p.fields?.lastSeen?.timestampValue}));
-    const allUsers=(uSnap.documents||[]).map(u=>({uid:u.name.split("/").pop(),email:u.fields?.email?.stringValue||"",displayName:u.fields?.displayName?.stringValue||""}));
+      .map(p=>{
+        const uid = p.name.split("/").pop();
+        return {
+          uid,
+          email:p.fields?.email?.stringValue||"",
+          displayName:p.fields?.displayName?.stringValue||"",
+          lastSeen:p.fields?.lastSeen?.timestampValue
+        };
+      });
+    
+    // Parse all user documents with their full data
+    const allUsers=(uSnap.documents||[]).map(u=>{
+      const uid = u.name.split("/").pop();
+      const fields = u.fields || {};
+      
+      // Get email and displayName from presence data
+      const presenceData = presenceMap[uid] || {};
+      
+      // Try to parse the data field if it exists
+      let userData = { a: [], c: [], g: {} };
+      try {
+        const raw = fields.data?.stringValue;
+        if (raw) {
+          userData = JSON.parse(raw);
+        }
+      } catch (e) {
+        console.warn("Failed to parse user data for", uid);
+      }
+      
+      return {
+        uid,
+        email: presenceData.email || fields.email?.stringValue || "",
+        displayName: presenceData.displayName || fields.displayName?.stringValue || "",
+        fullData: userData, // Store the full parsed data
+        createTime: u.createTime || "",
+      };
+    });
+    
     const totalUsersReal = Math.max(gi(g.totalUsers), allUsers.length, allP.length);
     const today = new Date().toISOString().split("T")[0];
     const newToday = allP.filter(p=>{
       const ls=p.fields?.lastSeen?.timestampValue;
       return ls&&ls.startsWith(today);
     }).length;
+    
     return{
       totalUsers:totalUsersReal,
-      onlineNow:online.length,onlineUsers:online,
-      totalAssignments:gi(g.totalAssignments),totalSubmitted:gi(g.totalSubmitted),
-      totalClasses:gi(g.totalClasses),totalPoints:gi(g.totalPoints),
+      onlineNow:online.length,
+      onlineUsers:online,
+      totalAssignments:gi(g.totalAssignments),
+      totalSubmitted:gi(g.totalSubmitted),
+      totalClasses:gi(g.totalClasses),
+      totalPoints:gi(g.totalPoints),
       newUsersToday:newToday,
-      allUsers: allUsers.length > 0 ? allUsers :
-        allP.map(p=>({uid:p.name.split("/").pop(),email:p.fields?.email?.stringValue||"",displayName:p.fields?.displayName?.stringValue||""})),
+      allUsers,
+      allPresence: allP, // Include all presence data
     };
   }catch(e){console.warn("Admin error",e);return null;}
+}
+
+export async function fbGetUserData(uid, idToken) {
+  try {
+    console.log("Fetching user data for:", uid);
+    
+    // Try direct document access (works for own data)
+    const directFetch = await fetch(`${FB_FS}/users/${uid}`, {
+      headers: { "Authorization": `Bearer ${idToken}` }
+    });
+    
+    if (!directFetch.ok) {
+      console.warn("Cannot fetch user data - access denied. Use cached data from admin stats instead.");
+      return null;
+    }
+    
+    const userData = await directFetch.json();
+    
+    // Fetch presence data
+    let presenceData = null;
+    try {
+      const presenceFetch = await fetch(`${FB_FS}/presence/${uid}`, {
+        headers: { "Authorization": `Bearer ${idToken}` }
+      });
+      if (presenceFetch.ok) {
+        presenceData = await presenceFetch.json();
+      }
+    } catch (e) {
+      console.warn("Presence data not available");
+    }
+
+    if (!userData?.fields) {
+      console.warn("No user data found for uid:", uid);
+      return null;
+    }
+
+    // Parse the JSON string stored in the data field
+    const raw = userData.fields?.data?.stringValue;
+    if (!raw) {
+      console.warn("No data stringValue found for uid:", uid);
+      const pf = presenceData?.fields || {};
+      return {
+        uid,
+        email: pf.email?.stringValue || "",
+        displayName: pf.displayName?.stringValue || "",
+        lastSeen: pf.lastSeen?.timestampValue || "",
+        createdAt: userData.createTime || "",
+        assignments: [],
+        classes: [],
+        game: { points: 0, streak: 0, lastStreakDate: "", dailyCount: 0, owned: [] },
+        canvasUrl: "",
+      };
+    }
+
+    const data = JSON.parse(raw);
+    const pf = presenceData?.fields || {};
+    
+    // Parse assignments
+    const assignments = (data.a || []).map(a => ({
+      id: a.id || "",
+      title: a.title || "",
+      subject: a.subject || "",
+      dueDate: a.dueDate || "",
+      priority: a.priority || "medium",
+      progress: a.progress || 0,
+      notes: a.notes || "",
+      grade: a.grade != null ? a.grade : null,
+      gradeRaw: a.gradeRaw || null,
+    }));
+
+    // Parse classes
+    const classes = (data.c || []).map(c => ({
+      name: c.name || "",
+      room: c.room || "",
+      startTime: c.startTime || "",
+      endTime: c.endTime || "",
+      days: c.days || [],
+      color: c.color || "#6366f1",
+    }));
+
+    // Parse game data
+    const game = data.g || {};
+    const gameData = {
+      points: game.points || 0,
+      streak: game.streak || 0,
+      lastStreakDate: game.lastStreakDate || "",
+      dailyCount: game.dailyCount || 0,
+      owned: game.owned || [],
+    };
+
+    return {
+      uid,
+      email: pf.email?.stringValue || "",
+      displayName: pf.displayName?.stringValue || "",
+      lastSeen: pf.lastSeen?.timestampValue || "",
+      createdAt: userData.createTime || "",
+      assignments,
+      classes,
+      game: gameData,
+      canvasUrl: data.cv?.url || "",
+    };
+  } catch (e) {
+    console.error("Error fetching user data:", e);
+    return null;
+  }
 }

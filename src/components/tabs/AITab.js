@@ -1,18 +1,21 @@
 import React, { useState, useEffect } from 'react';
 import { callGemini, callGeminiStream } from '../../utils/gemini';
 import { FB_FS, FB_KEY } from '../../utils/firebase';
+import { createNewChat, generateChatTitle, getTimeAgo, getLastMessage, sortChatsByRecent, searchChats } from '../../services/chatLogic';
 
-const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY;
+const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY || "AIzaSyBas4QTuwJM4rJE4S_1xlPOoTg05GBQNpE";
 
-function AITab({ assignments, classes }) {
+function AITab({ assignments, classes, chats, setChats }) {
   const [aiMode, setAiMode] = useState('chat');
 
   // Chat mode state
-  const [messages, setMessages] = useState([
-    { role: 'ai', text: "Hi! I'm your AI study assistant. Ask me anything about studying! 🎓" }
-  ]);
+  const [currentChatId, setCurrentChatId] = useState(null);
+  const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showChatList, setShowChatList] = useState(true); // Show sidebar by default
+  const [chatSearchQuery, setChatSearchQuery] = useState('');
+  const titleGeneratedRef = React.useRef(new Set()); // Track which chats have had titles generated
 
   // Homework helper state
   const [homeworkStep, setHomeworkStep] = useState('upload'); // 'upload' | 'analyzing' | 'selectProblems' | 'explanation' | 'check' | 'checking' | 'done'
@@ -33,6 +36,9 @@ function AITab({ assignments, classes }) {
   // NEW: Unrelated image state
   const [answerRejected, setAnswerRejected] = useState(false);
   const [answerRejectionMsg, setAnswerRejectionMsg] = useState('');
+
+  // NEW: Truncation detection state
+  const [responseTruncated, setResponseTruncated] = useState(false);
 
   // Phone upload state
   const [uploadId, setUploadId] = useState(null);
@@ -113,6 +119,7 @@ function AITab({ assignments, classes }) {
     const reader = res.body.getReader();
     const decoder = new TextDecoder();
     let accumulated = '';
+    let finishReason = null;
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -122,12 +129,23 @@ function AITab({ assignments, classes }) {
         const data = line.slice(6).trim();
         if (data === '[DONE]') break;
         try {
-          const piece = JSON.parse(data).candidates?.[0]?.content?.parts?.[0]?.text || '';
+          const parsed = JSON.parse(data);
+          const piece = parsed.candidates?.[0]?.content?.parts?.[0]?.text || '';
           if (piece) { accumulated += piece; onChunk(accumulated); }
+          // Check finish reason to detect truncation
+          if (parsed.candidates?.[0]?.finishReason) {
+            finishReason = parsed.candidates[0].finishReason;
+          }
         } catch (_) {}
       }
     }
-    return accumulated;
+    
+    // Detect truncation: check if response was cut off
+    const isTruncated = finishReason === 'MAX_TOKENS' || 
+                        finishReason === 'SAFETY' ||
+                        (accumulated.length > 100 && !accumulated.trim().match(/[.!?]$/));
+    
+    return { text: accumulated, truncated: isTruncated };
   };
 
   // ── NEW: Gemini vision non-streaming (for JSON responses) ────────────────────
@@ -169,6 +187,7 @@ function AITab({ assignments, classes }) {
     setDetectingProblems(false);
     setAnswerRejected(false);
     setAnswerRejectionMsg('');
+    setResponseTruncated(false);
   };
 
   // ── NEW: Detect problems in homework image ────────────────────────────────────
@@ -230,13 +249,14 @@ Return ONLY the JSON array, no other text.`,
   const analyzeHomework = async (imageData, problemsToFocus) => {
     setHomeworkStep('explanation');
     setHomeworkExplanation('');
+    setResponseTruncated(false);
 
     const focusClause = problemsToFocus.length > 0
       ? `\n\nThe student wants to focus on these specific problems/parts: ${problemsToFocus.join(', ')}. Focus your explanation primarily on these, but you may briefly mention others.`
       : '';
 
     try {
-      await callGeminiWithImageStream(
+      const result = await callGeminiWithImageStream(
         `You are a helpful homework tutor. Look at this homework image carefully.
 
 1. Identify exactly what type of homework this is (subject, assignment type).
@@ -254,6 +274,11 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
           }, 50);
         }
       );
+      
+      // Check if response was truncated
+      if (result.truncated) {
+        setResponseTruncated(true);
+      }
     } catch (err) {
       setHomeworkExplanation('Sorry, I had trouble analyzing your homework image. Please try again.');
     }
@@ -462,6 +487,7 @@ Respond ONLY with JSON: {"related": true, "reason": "..."} or {"related": false,
     setAnswerRejectionMsg('');
     setHomeworkStep('checking');
     setAnswerFeedback('');
+    setResponseTruncated(false);
 
     // NEW: Relevance check
     if (uploadedImage) {
@@ -478,9 +504,9 @@ Respond ONLY with JSON: {"related": true, "reason": "..."} or {"related": false,
     try {
       setHomeworkStep('done');
       setHomeworkMessages([
-        { role: 'ai', text: "I've reviewed your work above! Feel free to ask me any follow-up questions. 💬" }
+        { role: 'ai', text: "I've reviewed your work above! Feel free to ask me any follow-up questions." }
       ]);
-      await callGeminiWithImageStream(
+      const result = await callGeminiWithImageStream(
         `You are a helpful homework tutor. The student has submitted their completed work.
 
 Look at this image carefully and provide:
@@ -499,6 +525,11 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
           }, 50);
         }
       );
+      
+      // Check if response was truncated
+      if (result.truncated) {
+        setResponseTruncated(true);
+      }
     } catch (err) {
       setAnswerFeedback('Sorry, I had trouble reviewing your answer. Please try again.');
     }
@@ -653,9 +684,126 @@ RULES:
     setHomeworkLoading(false);
   };
 
+  // ── Chat Management ──────────────────────────────────────────────────────────
+  // Load current chat on mount or when switching chats
+  useEffect(() => {
+    if (!currentChatId && chats.length > 0) {
+      // Load most recent chat
+      const sorted = sortChatsByRecent(chats);
+      setCurrentChatId(sorted[0].id);
+      setMessages(sorted[0].messages || []);
+    } else if (currentChatId) {
+      const chat = chats.find(c => c.id === currentChatId);
+      if (chat) {
+        setMessages(chat.messages || []);
+      }
+    } else if (chats.length === 0) {
+      // No chats exist, create first chat automatically
+      const firstChat = createNewChat();
+      setChats([firstChat]);
+      setCurrentChatId(firstChat.id);
+      setMessages([
+        { role: 'ai', text: "Hi! I'm your AI study assistant. Ask me anything about studying!" }
+      ]);
+    }
+  }, [currentChatId, chats]);
+
+  // Save messages to current chat
+  useEffect(() => {
+    if (!currentChatId || messages.length === 0) return;
+    
+    // Update chat with new messages (use functional update to avoid dependency on chats)
+    setChats(prevChats => {
+      const chat = prevChats.find(c => c.id === currentChatId);
+      if (!chat) return prevChats;
+      
+      // Check if messages actually changed to prevent unnecessary updates
+      const messagesChanged = JSON.stringify(chat.messages) !== JSON.stringify(messages);
+      if (!messagesChanged) return prevChats;
+      
+      return prevChats.map(c => 
+        c.id === currentChatId 
+          ? { ...c, messages, updatedAt: new Date().toISOString() }
+          : c
+      );
+    });
+    
+    // Generate title if this is a new chat with 2+ messages and we haven't generated one yet
+    setChats(prevChats => {
+      const chat = prevChats.find(c => c.id === currentChatId);
+      if (!chat) return prevChats;
+      
+      const needsTitle = chat.title === 'New Chat' && 
+                         messages.length >= 2 && 
+                         !titleGeneratedRef.current.has(currentChatId);
+      
+      if (needsTitle) {
+        titleGeneratedRef.current.add(currentChatId);
+        generateChatTitle(messages).then(title => {
+          setChats(prev => prev.map(c => 
+            c.id === currentChatId ? { ...c, title } : c
+          ));
+        });
+      }
+      
+      return prevChats;
+    });
+  }, [messages, currentChatId, setChats]);
+
+  const startNewChat = () => {
+    const newChat = createNewChat();
+    // Add welcome message to the new chat
+    newChat.messages = [
+      { role: 'ai', text: "Hi! I'm your AI study assistant. Ask me anything about studying!" }
+    ];
+    setChats(prev => [...prev, newChat]);
+    setCurrentChatId(newChat.id);
+    setMessages(newChat.messages);
+    // Keep sidebar open when creating new chat
+  };
+
+  const switchChat = (chatId) => {
+    setCurrentChatId(chatId);
+    // Keep sidebar open when switching chats
+  };
+
+  const deleteChat = (chatId, e) => {
+    e.stopPropagation();
+    setChats(prevChats => {
+      if (prevChats.length === 1) {
+        // Don't delete last chat, just clear it
+        titleGeneratedRef.current.delete(chatId); // Reset title generation flag
+        setMessages([{ role: 'ai', text: "Hi! I'm your AI study assistant. Ask me anything about studying!" }]);
+        return prevChats.map(c => 
+          c.id === chatId 
+            ? { ...c, messages: [{ role: 'ai', text: "Hi! I'm your AI study assistant. Ask me anything about studying!" }], title: 'New Chat' }
+            : c
+        );
+      } else {
+        titleGeneratedRef.current.delete(chatId); // Clean up ref
+        const filtered = prevChats.filter(c => c.id !== chatId);
+        if (currentChatId === chatId) {
+          const sorted = sortChatsByRecent(filtered);
+          setCurrentChatId(sorted[0].id);
+        }
+        return filtered;
+      }
+    });
+  };
+
+  const currentChat = chats.find(c => c.id === currentChatId);
+
   // ── Chat ─────────────────────────────────────────────────────────────────────
   const handleChatSend = async () => {
     if (!input.trim() || loading) return;
+    
+    // Create new chat if none exists
+    if (!currentChatId) {
+      const newChat = createNewChat();
+      newChat.messages = []; // Start with empty messages
+      setChats(prev => [...prev, newChat]);
+      setCurrentChatId(newChat.id);
+    }
     const userMessage = input.trim();
     setInput('');
     setMessages(prev => [...prev, { role: 'user', text: userMessage }]);
@@ -854,7 +1002,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
           Or visit: {window.location.origin}/upload/{uploadId}
         </div>
         {checkingUploads && (
-          <div style={{ fontSize:'.8rem', color:'var(--accent)', fontWeight:600, marginBottom:8 }}>⏳ Waiting for upload...</div>
+          <div style={{ fontSize:'.8rem', color:'var(--accent)', fontWeight:600, marginBottom:8 }}>Waiting for upload...</div>
         )}
         <button className="btn btn-g btn-sm" onClick={() => { setShowQR(false); setCheckingUploads(false); }}>Close</button>
       </div>
@@ -865,13 +1013,13 @@ Provide insights on study patterns, subject performance, areas to improve, and n
   return (
     <div style={{ height:'100%', display:'flex', flexDirection:'column' }}>
       <div className="sec-hd">
-        <div className="sec-t">🤖 AI Study Assistant</div>
+        <div className="sec-t">AI Study Assistant</div>
         <span style={{ fontSize:'.75rem', color:'var(--text3)', fontWeight:600 }}>Powered by Gemini AI</span>
       </div>
 
       {/* Mode tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
-        {[['chat','💬 Chat'],['homework','📝 Homework Helper'],['flashcards','🃏 Flashcards'],['writing','✍️ Writing'],['insights','📊 Insights']]
+        {[['chat','Chat'],['homework','Homework Helper'],['flashcards','Flashcards'],['writing','Writing'],['insights','Insights']]
           .map(([mode, label]) => (
             <button key={mode} className={`btn btn-sm ${aiMode === mode ? 'btn-p' : 'btn-g'}`}
               onClick={() => setAiMode(mode)}>{label}</button>
@@ -880,24 +1028,212 @@ Provide insights on study patterns, subject performance, areas to improve, and n
 
       {/* ── CHAT ── */}
       {aiMode === 'chat' && (
-        <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
-          <div className="chat-container" style={{ flex:1, background:'var(--card)', border:'1.5px solid var(--border)',
-            borderRadius:16, padding:20, marginBottom:16, overflow:'auto', display:'flex', flexDirection:'column' }}>
-            {messages.map((msg, i) => <ChatMessage key={i} msg={msg} isUser={msg.role === 'user'} />)}
-            {loading && <ThinkingBubble />}
+        <div style={{ flex:1, display:'flex', gap:12, overflow:'hidden', height:'100%' }}>
+          {/* Chat List Sidebar - Fixed position */}
+          <div style={{ 
+            width: showChatList ? '240px' : '0px',
+            transition: 'width 0.3s',
+            overflow: 'hidden',
+            display:'flex',
+            flexDirection:'column',
+            background:'var(--card)',
+            border:'1.5px solid var(--border)',
+            borderRadius:12,
+            flexShrink: 0
+          }}>
+            <div style={{ padding:'12px 12px 10px', borderBottom:'1.5px solid var(--border)' }}>
+              <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
+                <div style={{ fontWeight:700, fontSize:'.9rem', color:'var(--text)' }}>Chats</div>
+                <button 
+                  className="btn btn-sm btn-p"
+                  onClick={startNewChat}
+                  style={{ padding:'4px 10px', fontSize:'.8rem' }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M12 5v14M5 12h14"/>
+                  </svg>
+                </button>
+              </div>
+              <input
+                type="text"
+                placeholder="Search..."
+                value={chatSearchQuery}
+                onChange={e => setChatSearchQuery(e.target.value)}
+                style={{
+                  width:'100%',
+                  padding:'6px 10px',
+                  border:'1.5px solid var(--border)',
+                  borderRadius:6,
+                  background:'var(--bg2)',
+                  color:'var(--text)',
+                  fontSize:'.8rem',
+                  outline:'none'
+                }}
+              />
+            </div>
+            <div style={{ flex:1, overflow:'auto', padding:'6px' }}>
+              {sortChatsByRecent(searchChats(chats, chatSearchQuery)).map(chat => (
+                <div
+                  key={chat.id}
+                  onClick={() => switchChat(chat.id)}
+                  style={{
+                    padding:'10px',
+                    borderRadius:8,
+                    marginBottom:4,
+                    cursor:'pointer',
+                    background: currentChatId === chat.id ? 'var(--accent)' : 'transparent',
+                    color: currentChatId === chat.id ? '#fff' : 'var(--text)',
+                    transition:'all 0.2s',
+                    position:'relative'
+                  }}
+                  onMouseEnter={e => {
+                    if (currentChatId !== chat.id) {
+                      e.currentTarget.style.background = 'var(--bg3)';
+                    }
+                  }}
+                  onMouseLeave={e => {
+                    if (currentChatId !== chat.id) {
+                      e.currentTarget.style.background = 'transparent';
+                    }
+                  }}
+                >
+                  <div style={{ 
+                    display:'flex', 
+                    justifyContent:'space-between', 
+                    alignItems:'flex-start',
+                    marginBottom:3
+                  }}>
+                    <div style={{ 
+                      fontWeight:600, 
+                      fontSize:'.8rem',
+                      flex:1,
+                      overflow:'hidden',
+                      textOverflow:'ellipsis',
+                      whiteSpace:'nowrap',
+                      paddingRight:6
+                    }}>
+                      {chat.title}
+                    </div>
+                    <button
+                      onClick={(e) => deleteChat(chat.id, e)}
+                      style={{
+                        background:'none',
+                        border:'none',
+                        color: currentChatId === chat.id ? '#fff' : 'var(--text3)',
+                        cursor:'pointer',
+                        padding:0,
+                        opacity:0.6,
+                        transition:'opacity 0.2s'
+                      }}
+                      onMouseEnter={e => e.currentTarget.style.opacity = '1'}
+                      onMouseLeave={e => e.currentTarget.style.opacity = '0.6'}
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M18 6L6 18M6 6l12 12"/>
+                      </svg>
+                    </button>
+                  </div>
+                  <div style={{ 
+                    fontSize:'.7rem',
+                    opacity:0.8,
+                    overflow:'hidden',
+                    textOverflow:'ellipsis',
+                    whiteSpace:'nowrap',
+                    marginBottom:3
+                  }}>
+                    {getLastMessage(chat.messages || [])}
+                  </div>
+                  <div style={{ fontSize:'.65rem', opacity:0.7 }}>
+                    {getTimeAgo(chat.updatedAt)}
+                  </div>
+                </div>
+              ))}
+              {chats.length === 0 && (
+                <div style={{ 
+                  textAlign:'center', 
+                  padding:'30px 15px', 
+                  color:'var(--text3)',
+                  fontSize:'.8rem'
+                }}>
+                  No chats yet. Start a new conversation!
+                </div>
+              )}
+            </div>
           </div>
-          <div style={{ display:'flex', gap:8 }}>
-            <input type="text" value={input} onChange={e => setInput(e.target.value)}
-              onKeyDown={e => e.key === 'Enter' && handleChatSend()}
-              placeholder="Ask me anything about studying, learning strategies, or academics..."
-              style={{ flex:1, padding:'12px 16px', border:'1.5px solid var(--border)', borderRadius:12,
-                background:'var(--card)', color:'var(--text)', fontSize:'.85rem', outline:'none',
-                fontFamily:"'Plus Jakarta Sans', sans-serif" }} />
-            <button onClick={handleChatSend} disabled={!input.trim() || loading}
-              style={{ padding:'12px 20px', border:'none', borderRadius:12,
-                background: !input.trim() || loading ? 'var(--border)' : 'var(--accent)',
-                color:'#fff', fontWeight:600, cursor: !input.trim() || loading ? 'not-allowed' : 'pointer',
-                fontFamily:"'Plus Jakarta Sans', sans-serif" }}>Send</button>
+
+          {/* Chat Area */}
+          <div style={{ flex:1, display:'flex', flexDirection:'column', minWidth:0, overflow:'hidden' }}>
+            {/* Chat Header */}
+            <div style={{ 
+              padding:'10px 14px',
+              borderBottom:'1.5px solid var(--border)',
+              display:'flex',
+              alignItems:'center',
+              gap:10,
+              background:'var(--card)',
+              borderRadius:'12px 12px 0 0',
+              border:'1.5px solid var(--border)',
+              borderBottom:'none',
+              flexShrink: 0
+            }}>
+              <button
+                onClick={() => setShowChatList(!showChatList)}
+                className="btn btn-sm btn-g"
+                style={{ padding:'6px' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M3 12h18M3 6h18M3 18h18"/>
+                </svg>
+              </button>
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:600, fontSize:'.85rem', color:'var(--text)' }}>
+                  {currentChat?.title || 'New Chat'}
+                </div>
+                {currentChat && (
+                  <div style={{ fontSize:'.7rem', color:'var(--text3)' }}>
+                    {currentChat.messages.length} messages
+                  </div>
+                )}
+              </div>
+              <button
+                onClick={startNewChat}
+                className="btn btn-sm btn-g"
+                title="New Chat"
+                style={{ padding:'6px 10px', fontSize:'.8rem' }}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M12 5v14M5 12h14"/>
+                </svg>
+              </button>
+            </div>
+
+            {/* Messages */}
+            <div className="chat-container" style={{ flex:1, background:'var(--card)', border:'1.5px solid var(--border)',
+              borderTop:'none', borderRadius:'0 0 12px 12px', padding:16, marginBottom:12, overflow:'auto', display:'flex', flexDirection:'column' }}>
+              {messages && messages.length > 0 ? (
+                messages.map((msg, i) => <ChatMessage key={i} msg={msg} isUser={msg.role === 'user'} />)
+              ) : (
+                <div style={{ textAlign:'center', padding:'40px 20px', color:'var(--text3)' }}>
+                  Start a conversation by typing a message below!
+                </div>
+              )}
+              {loading && <ThinkingBubble />}
+            </div>
+
+            {/* Input */}
+            <div style={{ display:'flex', gap:8, flexShrink: 0 }}>
+              <input type="text" value={input} onChange={e => setInput(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleChatSend()}
+                placeholder="Ask me anything about studying, learning strategies, or academics..."
+                style={{ flex:1, padding:'10px 14px', border:'1.5px solid var(--border)', borderRadius:10,
+                  background:'var(--card)', color:'var(--text)', fontSize:'.85rem', outline:'none',
+                  fontFamily:"'Plus Jakarta Sans', sans-serif" }} />
+              <button onClick={handleChatSend} disabled={!input.trim() || loading}
+                style={{ padding:'10px 18px', border:'none', borderRadius:10,
+                  background: !input.trim() || loading ? 'var(--border)' : 'var(--accent)',
+                  color:'#fff', fontWeight:600, cursor: !input.trim() || loading ? 'not-allowed' : 'pointer',
+                  fontFamily:"'Plus Jakarta Sans', sans-serif" }}>Send</button>
+            </div>
           </div>
         </div>
       )}
@@ -909,7 +1245,12 @@ Provide insights on study patterns, subject performance, areas to improve, and n
           {/* Step 1: Upload */}
           {homeworkStep === 'upload' && (
             <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:24, textAlign:'center' }}>
-              <div style={{ fontSize:'2.5rem', marginBottom:12 }}>📸</div>
+              <div style={{ fontSize:'2.5rem', marginBottom:12 }}>
+                <svg width="60" height="60" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" style={{margin:'0 auto',display:'block'}}>
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+                  <circle cx="12" cy="13" r="4"/>
+                </svg>
+              </div>
               <div style={{ fontWeight:700, fontSize:'1.1rem', marginBottom:8, color:'var(--text)' }}>Upload Your Homework</div>
               <div style={{ fontSize:'.85rem', color:'var(--text3)', marginBottom:20, lineHeight:1.6 }}>
                 Take a photo of your homework or worksheet and I'll explain exactly how to do it — step by step.
@@ -926,7 +1267,12 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                 <img src={uploadedImage} alt="Your homework"
                   style={{ width:'100%', maxWidth:400, borderRadius:8, border:'1px solid var(--border)', marginBottom:16 }} />
               )}
-              <div style={{ fontSize:'1.5rem', marginBottom:8 }}>🔍</div>
+              <div style={{ fontSize:'1.5rem', marginBottom:8 }}>
+                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{margin:'0 auto',display:'block'}}>
+                  <circle cx="11" cy="11" r="8"/>
+                  <path d="m21 21-4.35-4.35"/>
+                </svg>
+              </div>
               <div style={{ fontWeight:600, color:'var(--text)', marginBottom:4 }}>Scanning your homework...</div>
               <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Detecting problems and questions in your image.</div>
             </div>
@@ -937,7 +1283,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
             <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:24 }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:16 }}>
                 <div>
-                  <div style={{ fontWeight:700, fontSize:'1rem', color:'var(--text)', marginBottom:4 }}>📋 Which problems do you need help with?</div>
+                  <div style={{ fontWeight:700, fontSize:'1rem', color:'var(--text)', marginBottom:4 }}>Which problems do you need help with?</div>
                   <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Select the ones you want explained. All are selected by default.</div>
                 </div>
                 <button className="btn btn-g btn-sm" onClick={resetHomework}>↩ Start Over</button>
@@ -973,7 +1319,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                   className="btn btn-p"
                   onClick={handleProblemSelectionConfirm}
                   disabled={selectedProblems.size === 0}>
-                  ✨ Explain Selected ({selectedProblems.size})
+                  Explain Selected ({selectedProblems.size})
                 </button>
                 <button
                   className="btn btn-g"
@@ -997,7 +1343,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               {/* Homework image */}
               <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:16 }}>
                 <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                  <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem' }}>📄 Your Homework</div>
+                  <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem' }}>Your Homework</div>
                   <button className="btn btn-g btn-sm" onClick={resetHomework}>↩ Start Over</button>
                 </div>
                 {uploadedImage && (
@@ -1022,6 +1368,40 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                       borderRadius:'50%', animation:'spin 0.8s linear infinite', flexShrink:0 }} />
                   )}
                 </div>
+                
+                {/* ── Truncation warning banner ── */}
+                {responseTruncated && (
+                  <div style={{
+                    background:'#fef3c7', border:'1.5px solid #fbbf24', borderRadius:10,
+                    padding:'12px 16px', marginBottom:16, display:'flex', gap:10, alignItems:'flex-start'
+                  }}>
+                    <span style={{ fontSize:'1.1rem', flexShrink:0 }}>⚠️</span>
+                    <div>
+                      <div style={{ fontWeight:700, color:'#d97706', fontSize:'.85rem', marginBottom:4 }}>
+                        Response was too long and got cut off
+                      </div>
+                      <div style={{ fontSize:'.82rem', color:'#b45309', lineHeight:1.5, marginBottom:8 }}>
+                        The explanation was too detailed for all the problems shown. Try selecting fewer problems or uploading a clearer image with fewer questions.
+                      </div>
+                      <button 
+                        className="btn btn-sm"
+                        onClick={resetHomework}
+                        style={{ 
+                          background:'#d97706', 
+                          color:'#fff', 
+                          border:'none', 
+                          padding:'6px 12px', 
+                          borderRadius:6, 
+                          fontSize:'.8rem',
+                          fontWeight:600,
+                          cursor:'pointer'
+                        }}>
+                        ↩ Start Over
+                      </button>
+                    </div>
+                  </div>
+                )}
+                
                 <div className="hw-explanation-scroll"
                   style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif" }}>
                   <div dangerouslySetInnerHTML={{ __html: renderMarkdown(homeworkExplanation) }} />
@@ -1034,7 +1414,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               {/* Check Your Answer section */}
               {homeworkStep === 'explanation' && (
                 <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20 }}>
-                  <div style={{ fontWeight:700, fontSize:'.95rem', color:'var(--text)', marginBottom:6 }}>✅ Check Your Answer</div>
+                  <div style={{ fontWeight:700, fontSize:'.95rem', color:'var(--text)', marginBottom:6 }}>Check Your Answer</div>
                   <div style={{ fontSize:'.85rem', color:'var(--text3)', marginBottom: answerRejected ? 12 : 16, lineHeight:1.5 }}>
                     Done with your homework? Upload a photo of your completed work and I'll tell you if it's correct.
                   </div>
@@ -1084,7 +1464,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                 <>
                   <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:16 }}>
                     <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>
-                      <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem' }}>📝 Your Answer</div>
+                      <div style={{ fontWeight:600, color:'var(--text)', fontSize:'.9rem' }}>Your Answer</div>
                       <div style={{ display:'flex', gap:8 }}>
                         <input type="file" accept="image/*" onChange={handleAnswerFileUpload} style={{ display:'none' }} id="re-answer-file" />
                         <label htmlFor="re-answer-file" className="btn btn-g btn-sm">📁 Re-upload</label>
@@ -1113,6 +1493,40 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                           borderRadius:'50%', animation:'spin 0.8s linear infinite', flexShrink:0 }} />
                       )}
                     </div>
+                    
+                    {/* ── Truncation warning banner ── */}
+                    {responseTruncated && (
+                      <div style={{
+                        background:'#fef3c7', border:'1.5px solid #fbbf24', borderRadius:10,
+                        padding:'12px 16px', marginBottom:16, display:'flex', gap:10, alignItems:'flex-start'
+                      }}>
+                        <span style={{ fontSize:'1.1rem', flexShrink:0 }}>⚠️</span>
+                        <div>
+                          <div style={{ fontWeight:700, color:'#d97706', fontSize:'.85rem', marginBottom:4 }}>
+                            Feedback was too long and got cut off
+                          </div>
+                          <div style={{ fontSize:'.82rem', color:'#b45309', lineHeight:1.5, marginBottom:8 }}>
+                            Your work had too many problems to review completely. Try uploading a clearer image with fewer questions, or ask specific follow-up questions below.
+                          </div>
+                          <button 
+                            className="btn btn-sm"
+                            onClick={resetHomework}
+                            style={{ 
+                              background:'#d97706', 
+                              color:'#fff', 
+                              border:'none', 
+                              padding:'6px 12px', 
+                              borderRadius:6, 
+                              fontSize:'.8rem',
+                              fontWeight:600,
+                              cursor:'pointer'
+                            }}>
+                            ↩ Start Over
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                    
                     <div className="hw-feedback-scroll"
                       style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif" }}>
                       <div dangerouslySetInnerHTML={{ __html: renderMarkdown(answerFeedback) }} />
@@ -1124,7 +1538,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
 
                   {/* Follow-up chat */}
                   <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20 }}>
-                    <div style={{ fontWeight:700, fontSize:'.95rem', color:'var(--text)', marginBottom:12 }}>💬 Follow-up Questions</div>
+                    <div style={{ fontWeight:700, fontSize:'.95rem', color:'var(--text)', marginBottom:12 }}>Follow-up Questions</div>
                     <div className="hw-followup-chat" style={{ maxHeight:300, overflow:'auto', marginBottom:12 }}>
                       {homeworkMessages.map((msg, i) => <ChatMessage key={i} msg={msg} isUser={msg.role === 'user'} />)}
                       {homeworkLoading && <ThinkingBubble />}
@@ -1154,7 +1568,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
       {aiMode === 'flashcards' && (
         <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
           <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, marginBottom:16 }}>
-            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>🃏 Create Flashcards</div>
+            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>Create Flashcards</div>
             <div style={{ display:'flex', gap:8, marginBottom:12 }}>
               <input type="text" value={flashcardTopic} onChange={e => setFlashcardTopic(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && generateFlashcards()}
@@ -1166,12 +1580,12 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                 {flashcardLoading ? 'Creating...' : 'Generate'}
               </button>
             </div>
-            <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>💡 Tip: Be specific for better flashcards</div>
+            <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Tip: Be specific for better flashcards</div>
           </div>
           {flashcards.length > 0 && (
             <div style={{ flex:1 }}>
               <div style={{ fontSize:'.9rem', fontWeight:600, color:'var(--text)', marginBottom:16 }}>
-                📚 Your Flashcards ({flashcards.length}) — Click to flip!
+                Your Flashcards ({flashcards.length}) — Click to flip!
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:16, marginBottom:16 }}>
                 {flashcards.map((card, index) => {
@@ -1221,7 +1635,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
       {aiMode === 'writing' && (
         <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
           <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, marginBottom:16 }}>
-            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>✍️ Writing Feedback</div>
+            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>Writing Feedback</div>
             <textarea value={writingText} onChange={e => setWritingText(e.target.value)}
               placeholder="Paste your writing here for detailed feedback on grammar, structure, and content..."
               style={{ width:'100%', minHeight:150, padding:12, border:'1.5px solid var(--border)', borderRadius:8,
@@ -1256,7 +1670,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
       {aiMode === 'insights' && (
         <div style={{ flex:1, display:'flex', flexDirection:'column' }}>
           <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, marginBottom:16 }}>
-            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>📊 Study Insights</div>
+            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>Study Insights</div>
             <div style={{ fontSize:'.85rem', color:'var(--text2)', marginBottom:16, lineHeight:1.5 }}>
               Get personalized insights based on your {assignments.length} assignments and {classes.length} classes.
             </div>

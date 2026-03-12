@@ -21,7 +21,7 @@ function GradesTab({ assignments, classes, expandedGradeClass, setExpandedGradeC
   return (
     <div>
       <div className="sec-hd">
-        <div className="sec-t">📊 Grades</div>
+        <div className="sec-t">Grades</div>
         <span style={{fontSize:".75rem",color:"var(--text3)",fontWeight:600}}>
           {graded.length} graded • {Object.keys(byClass).length} classes
         </span>
@@ -29,7 +29,13 @@ function GradesTab({ assignments, classes, expandedGradeClass, setExpandedGradeC
       
       {graded.length === 0 ? (
         <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
-          <div className="empty-i">📊</div>
+          <div className="empty-i">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
+              <path d="M18 20V10"/>
+              <path d="M12 20V4"/>
+              <path d="M6 20v-6"/>
+            </svg>
+          </div>
           <div className="empty-t">No grades yet</div>
           <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8}}>Grades will appear here when you add them to assignments or sync from Canvas</div>
         </div>

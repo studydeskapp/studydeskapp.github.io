@@ -1,3 +1,4 @@
+
 # 📚 StudyDesk
 
 > A smart homework tracker for high school students — built with React, Firebase, and Canvas API integration.

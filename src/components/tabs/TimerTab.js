@@ -202,7 +202,7 @@ function TimerTab({
       )}
       
       <div className="timer-tips" style={{background:"var(--bg2)",border:"1.5px solid var(--border2)",borderRadius:12,padding:16}}>
-        <div style={{fontWeight:600,marginBottom:8,color:"var(--text)"}}>🎯 Pomodoro Technique</div>
+        <div style={{fontWeight:600,marginBottom:8,color:"var(--text)"}}>Pomodoro Technique</div>
         <div style={{fontSize:".85rem",color:"var(--text3)",lineHeight:1.6}}>
           1. Work for {customFocus} minutes<br/>
           2. Take a {customShort}-minute break<br/>

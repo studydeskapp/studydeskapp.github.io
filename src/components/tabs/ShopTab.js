@@ -4,9 +4,9 @@ import { SHOP_ITEMS } from '../../constants';
 function ShopTab({ game, shopCat, setShopCat, equipItem, buyItem }) {
   return (
     <div>
-      <div className="sec-hd"><div className="sec-t">🛍️ Shop</div><div className="pts-pill">⭐ {game.points}</div></div>
+      <div className="sec-hd"><div className="sec-t">Shop</div><div className="pts-pill">⭐ {game.points}</div></div>
       <div className="shop-filter">
-        {[["all","✦ All"],["hat","🎩 Hats"],["face","👓 Face"],["body","🎀 Body"],["special","✨ Special"]].map(([cat,lbl])=>(
+        {[["all","All"],["hat","Hats"],["face","Face"],["body","Body"],["special","Special"]].map(([cat,lbl])=>(
           <button key={cat} className="sfbtn" onClick={()=>setShopCat(cat)} style={shopCat===cat?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}>{lbl}</button>
         ))}
       </div>
