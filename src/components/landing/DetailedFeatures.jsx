@@ -149,7 +149,7 @@ function DetailedFeatures({ darkMode }) {
                     <div className="import-icon">📝</div>
                     <div className="import-details">
                       <span>Biology Assignment #3</span>
-                      <small>From: BIO 101 - Spring 2024</small>
+                      <small>From: BIO 101 - Spring 2026</small>
                     </div>
                     <div className="import-status">✓</div>
                   </div>
@@ -157,7 +157,7 @@ function DetailedFeatures({ darkMode }) {
                     <div className="import-icon">📊</div>
                     <div className="import-details">
                       <span>Statistics Project</span>
-                      <small>From: MATH 201 - Spring 2024</small>
+                      <small>From: MATH 201 - Spring 2026</small>
                     </div>
                     <div className="import-status">✓</div>
                   </div>
@@ -165,7 +165,7 @@ function DetailedFeatures({ darkMode }) {
                     <div className="import-icon">📚</div>
                     <div className="import-details">
                       <span>Literature Analysis</span>
-                      <small>From: ENG 102 - Spring 2024</small>
+                      <small>From: ENG 102 - Spring 2026</small>
                     </div>
                     <div className="import-status">✓</div>
                   </div>
