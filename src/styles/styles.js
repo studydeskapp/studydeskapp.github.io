@@ -511,230 +511,142 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .prompt-title{font-family:'Fraunces',serif;font-size:1.1rem;font-weight:700;color:var(--text);margin-bottom:6px;text-align:center}
 .prompt-body{font-size:.82rem;color:var(--text2);line-height:1.6;text-align:center;margin-bottom:20px}
 .prompt-body b{color:var(--text)}
-`;
-
 
 /* ═══════════════════════════════════════════════════════════════════════════
    SHOP ANIMATIONS & PARTICLE EFFECTS
    ═══════════════════════════════════════════════════════════════════════════ */
+.shop-rarity{position:absolute;top:8px;left:8px;font-size:.58rem;font-weight:700;padding:3px 8px;border-radius:12px;text-transform:uppercase;letter-spacing:0.5px}
+.shop-icon-wrapper{position:relative;display:inline-block;margin-bottom:8px}
+.shop-icon-animated{animation:shop-icon-float 3s ease-in-out infinite;display:inline-block}
+@keyframes shop-icon-float{0%,100%{transform:translateY(0px) rotate(0deg)}25%{transform:translateY(-8px) rotate(2deg)}50%{transform:translateY(-4px) rotate(-2deg)}75%{transform:translateY(-8px) rotate(1deg)}}
+.shop-particles{position:absolute;top:50%;left:50%;width:100%;height:100%;pointer-events:none}
+.particle{position:absolute;width:6px;height:6px;border-radius:50%;background:linear-gradient(135deg,#fbbf24,#f59e0b,#ec4899,#8b5cf6,#3b82f6);animation:particle-orbit 2s ease-in-out infinite;animation-delay:var(--delay);transform-origin:center;opacity:0}
+@keyframes particle-orbit{0%{transform:rotate(var(--angle)) translateX(0px) scale(0);opacity:0}20%{opacity:1}50%{transform:rotate(var(--angle)) translateX(40px) scale(1);opacity:.8}100%{transform:rotate(var(--angle)) translateX(60px) scale(0);opacity:0}}
+.animated-item.equipped .shop-icon-wrapper::before{content:'';position:absolute;top:-10px;left:-10px;right:-10px;bottom:-10px;background:linear-gradient(45deg,#ff0000,#ff7f00,#ffff00,#00ff00,#0000ff,#4b0082,#9400d3);background-size:400% 400%;border-radius:50%;opacity:.3;animation:rainbow-rotate 3s linear infinite;z-index:-1;filter:blur(8px)}
+@keyframes rainbow-rotate{0%{background-position:0% 50%}50%{background-position:100% 50%}100%{background-position:0% 50%}}
+.shop-card.equipped .shop-icon-wrapper::after{content:'✨';position:absolute;top:-5px;right:-5px;font-size:1.2rem;animation:sparkle-twinkle 1.5s ease-in-out infinite}
+@keyframes sparkle-twinkle{0%,100%{opacity:1;transform:scale(1) rotate(0deg)}50%{opacity:.5;transform:scale(1.2) rotate(180deg)}}
+.shop-card.equipped{animation:equipped-glow 2s ease-in-out infinite}
+@keyframes equipped-glow{0%,100%{box-shadow:0 0 0 3px var(--sh2)}50%{box-shadow:0 0 0 3px var(--sh2),0 0 20px var(--accent)}}
+.shop-card:hover .shop-icon-animated{animation-duration:1.5s;transform:scale(1.1)}
 
-/* Rarity badge */
-.shop-rarity {
-  position: absolute;
-  top: 8px;
-  left: 8px;
-  font-size: .58rem;
-  font-weight: 700;
-  padding: 3px 8px;
-  border-radius: 12px;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
+/* ═══════════════════════════════════════════════════════════════════════════
+   BUDDY CREATURE ANIMATIONS
+   ═══════════════════════════════════════════════════════════════════════════ */
+/* Wings flutter animation */
+.buddy-wings{animation:buddy-wings-flutter 2.5s ease-in-out infinite}
+@keyframes buddy-wings-flutter{0%,100%{transform:scaleX(1)}25%{transform:scaleX(1.08) translateY(-2px)}50%{transform:scaleX(0.95) translateY(2px)}75%{transform:scaleX(1.05) translateY(-1px)}}
 
-/* Icon wrapper for animations */
-.shop-icon-wrapper {
-  position: relative;
-  display: inline-block;
-  margin-bottom: 8px;
-}
+/* Pulse animation for fire aura, jetpack flames */
+.buddy-pulse{animation:buddy-pulse 1.5s ease-in-out infinite;transform-origin:center;transform-box:fill-box}
+@keyframes buddy-pulse{0%,100%{opacity:1;transform:scale(1)}50%{opacity:0.6;transform:scale(1.15)}}
 
-/* Animated icon effects */
-.shop-icon-animated {
-  animation: shop-icon-float 3s ease-in-out infinite;
-  display: inline-block;
-}
+/* Flicker for lightning */
+.buddy-flicker{animation:buddy-flicker 0.3s ease-in-out infinite}
+@keyframes buddy-flicker{0%,100%{opacity:1}25%{opacity:0.4}50%{opacity:1}75%{opacity:0.6}}
 
-@keyframes shop-icon-float {
-  0%, 100% { transform: translateY(0px) rotate(0deg); }
-  25% { transform: translateY(-8px) rotate(2deg); }
-  50% { transform: translateY(-4px) rotate(-2deg); }
-  75% { transform: translateY(-8px) rotate(1deg); }
-}
+/* Rotate for galaxy aura */
+.buddy-rotate{animation:buddy-rotate 20s linear infinite}
+@keyframes buddy-rotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
-/* Particle system */
-.shop-particles {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 100%;
-  height: 100%;
-  pointer-events: none;
-}
+/* Twinkle for stars and sparkles */
+.buddy-twinkle{animation:buddy-twinkle 2s ease-in-out infinite;animation-delay:var(--delay,0s)}
+@keyframes buddy-twinkle{0%,100%{opacity:0.8;transform:scale(1)}50%{opacity:0.3;transform:scale(0.7)}}
 
-.particle {
-  position: absolute;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #fbbf24, #f59e0b, #ec4899, #8b5cf6, #3b82f6);
-  animation: particle-orbit 2s ease-in-out infinite;
-  animation-delay: var(--delay);
-  transform-origin: center;
-  opacity: 0;
-}
+/* Float for hearts and floating items */
+.buddy-float{animation:buddy-float 3s ease-in-out infinite;animation-delay:var(--delay,0s)}
+@keyframes buddy-float{0%,100%{transform:translateY(0px)}50%{transform:translateY(-12px)}}
 
-@keyframes particle-orbit {
-  0% {
-    transform: rotate(var(--angle)) translateX(0px) scale(0);
-    opacity: 0;
-  }
-  20% {
-    opacity: 1;
-  }
-  50% {
-    transform: rotate(var(--angle)) translateX(40px) scale(1);
-    opacity: 0.8;
-  }
-  100% {
-    transform: rotate(var(--angle)) translateX(60px) scale(0);
-    opacity: 0;
-  }
-}
+/* Cape flutter - more dramatic */
+.buddy-cape-flutter{animation:buddy-cape-flutter 2s ease-in-out infinite}
+@keyframes buddy-cape-flutter{0%,100%{transform:translateX(0) rotate(0deg)}25%{transform:translateX(-3px) rotate(-2deg)}50%{transform:translateX(2px) rotate(1deg)}75%{transform:translateX(-2px) rotate(-1deg)}}
 
-/* Rainbow aura effect */
-.animated-item.equipped .shop-icon-wrapper::before {
-  content: '';
-  position: absolute;
-  top: -10px;
-  left: -10px;
-  right: -10px;
-  bottom: -10px;
-  background: linear-gradient(45deg, #ff0000, #ff7f00, #ffff00, #00ff00, #0000ff, #4b0082, #9400d3);
-  background-size: 400% 400%;
-  border-radius: 50%;
-  opacity: 0.3;
-  animation: rainbow-rotate 3s linear infinite;
-  z-index: -1;
-  filter: blur(8px);
-}
+/* Shine for crown */
+.buddy-shine{animation:buddy-shine 3s ease-in-out infinite}
+@keyframes buddy-shine{0%,100%{filter:brightness(1)}50%{filter:brightness(1.3) drop-shadow(0 0 8px rgba(255,215,0,0.6))}}
 
-@keyframes rainbow-rotate {
-  0% { background-position: 0% 50%; }
-  50% { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
+/* Glow for halo */
+.buddy-glow{animation:buddy-glow 2s ease-in-out infinite}
+@keyframes buddy-glow{0%,100%{opacity:0.75;filter:drop-shadow(0 0 8px rgba(255,215,0,0.5))}50%{opacity:1;filter:drop-shadow(0 0 16px rgba(255,215,0,0.8))}}
 
-/* Glow effect for legendary items */
-.shop-card[style*="legendary"] {
-  box-shadow: 0 0 20px rgba(245, 158, 11, 0.3);
-}
+/* Rainbow animation */
+.buddy-rainbow{animation:buddy-rainbow-shift 3s linear infinite}
+@keyframes buddy-rainbow-shift{0%{filter:hue-rotate(0deg)}100%{filter:hue-rotate(360deg)}}
 
-.shop-card[style*="mythic"] {
-  box-shadow: 0 0 25px rgba(225, 29, 72, 0.4);
-  animation: mythic-pulse 2s ease-in-out infinite;
-}
+/* Fire aura pulse */
+.buddy-fire-aura{animation:buddy-fire-pulse 2s ease-in-out infinite}
+@keyframes buddy-fire-pulse{0%,100%{transform:scale(1);opacity:0.3}50%{transform:scale(1.1);opacity:0.5}}
 
-@keyframes mythic-pulse {
-  0%, 100% { box-shadow: 0 0 25px rgba(225, 29, 72, 0.4); }
-  50% { box-shadow: 0 0 35px rgba(225, 29, 72, 0.6); }
-}
+/* Lightning flicker group */
+.buddy-lightning{animation:buddy-lightning-group 0.5s ease-in-out infinite}
+@keyframes buddy-lightning-group{0%,100%{opacity:1}10%{opacity:0.3}20%{opacity:1}30%{opacity:0.5}40%,60%{opacity:1}70%{opacity:0.4}80%,100%{opacity:1}}
 
-/* Sparkle effect for equipped items */
-.shop-card.equipped .shop-icon-wrapper::after {
-  content: '✨';
-  position: absolute;
-  top: -5px;
-  right: -5px;
-  font-size: 1.2rem;
-  animation: sparkle-twinkle 1.5s ease-in-out infinite;
-}
+/* Galaxy rotation with stars */
+.buddy-galaxy{animation:buddy-galaxy-spin 30s linear infinite}
+@keyframes buddy-galaxy-spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
-@keyframes sparkle-twinkle {
-  0%, 100% { opacity: 1; transform: scale(1) rotate(0deg); }
-  50% { opacity: 0.5; transform: scale(1.2) rotate(180deg); }
-}
+/* Sparkles group animation */
+.buddy-sparkles text{animation:buddy-sparkle-pop 1.5s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.2s)}
+@keyframes buddy-sparkle-pop{0%,100%{opacity:0.8;transform:scale(1) rotate(0deg)}50%{opacity:1;transform:scale(1.3) rotate(180deg)}}
 
-/* Cape flutter animation */
-.shop-icon-animated[style*="🦸"],
-.shop-icon-animated[style*="🐉"],
-.shop-icon-animated[style*="🔥"] {
-  animation: cape-flutter 2s ease-in-out infinite;
-}
+/* Hearts floating up */
+.buddy-hearts text{animation:buddy-heart-float 3s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.3s)}
+@keyframes buddy-heart-float{0%{opacity:0;transform:translateY(0px) scale(0.8)}20%{opacity:1}80%{opacity:1}100%{opacity:0;transform:translateY(-40px) scale(1.2)}}
 
-@keyframes cape-flutter {
-  0%, 100% { transform: translateY(0px) rotate(0deg) scaleX(1); }
-  25% { transform: translateY(-5px) rotate(-3deg) scaleX(0.98); }
-  50% { transform: translateY(-8px) rotate(0deg) scaleX(1); }
-  75% { transform: translateY(-5px) rotate(3deg) scaleX(0.98); }
-}
+/* Stars twinkling */
+.buddy-stars text{animation:buddy-star-twinkle 2s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.25s)}
+@keyframes buddy-star-twinkle{0%,100%{opacity:0.8;transform:scale(1) rotate(0deg)}50%{opacity:0.3;transform:scale(0.6) rotate(180deg)}}
 
-/* Crown shine effect */
-.shop-icon-animated[style*="👑"] {
-  animation: crown-shine 3s ease-in-out infinite;
-  filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6));
-}
+/* Snow falling */
+.buddy-snow text{animation:buddy-snow-fall 4s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.15s)}
+@keyframes buddy-snow-fall{0%{opacity:0;transform:translateY(-20px) rotate(0deg)}20%{opacity:0.7}80%{opacity:0.7}100%{opacity:0;transform:translateY(60px) rotate(360deg)}}
 
-@keyframes crown-shine {
-  0%, 100% { filter: drop-shadow(0 0 8px rgba(251, 191, 36, 0.6)) brightness(1); }
-  50% { filter: drop-shadow(0 0 15px rgba(251, 191, 36, 0.9)) brightness(1.2); }
-}
+/* Leaves swirling */
+.buddy-leaves text{animation:buddy-leaf-swirl 5s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.2s)}
+@keyframes buddy-leaf-swirl{0%{transform:translate(0,0) rotate(0deg)}25%{transform:translate(10px,-15px) rotate(90deg)}50%{transform:translate(-5px,10px) rotate(180deg)}75%{transform:translate(8px,-8px) rotate(270deg)}100%{transform:translate(0,0) rotate(360deg)}}
 
-/* Laser eyes effect */
-.shop-icon-animated[style*="👁️"] {
-  animation: laser-pulse 1.5s ease-in-out infinite;
-  filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.8));
-}
+/* Bubbles floating */
+.buddy-bubbles circle{animation:buddy-bubble-float 4s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.25s)}
+@keyframes buddy-bubble-float{0%{opacity:0;transform:translateY(20px) scale(0.5)}20%{opacity:0.6}80%{opacity:0.6}100%{opacity:0;transform:translateY(-60px) scale(1.2)}}
 
-@keyframes laser-pulse {
-  0%, 100% { filter: drop-shadow(0 0 10px rgba(239, 68, 68, 0.8)); }
-  50% { filter: drop-shadow(0 0 20px rgba(239, 68, 68, 1)); }
-}
+/* Music notes bouncing */
+.buddy-music text{animation:buddy-music-bounce 2.5s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.3s)}
+@keyframes buddy-music-bounce{0%,100%{transform:translateY(0) rotate(0deg)}25%{transform:translateY(-15px) rotate(-10deg)}50%{transform:translateY(0) rotate(0deg)}75%{transform:translateY(-10px) rotate(10deg)}}
 
-/* Wings flutter */
-.shop-icon-animated[style*="🦋"],
-.shop-icon-animated[style*="🚀"] {
-  animation: wings-flutter 1.5s ease-in-out infinite;
-}
+/* Aurora waves */
+.buddy-aurora path{animation:buddy-aurora-wave 3s ease-in-out infinite}
+@keyframes buddy-aurora-wave{0%,100%{opacity:0.4;stroke-width:8}50%{opacity:0.7;stroke-width:12}}
 
-@keyframes wings-flutter {
-  0%, 100% { transform: translateY(0px) scaleY(1); }
-  25% { transform: translateY(-6px) scaleY(0.95); }
-  50% { transform: translateY(-10px) scaleY(1); }
-  75% { transform: translateY(-6px) scaleY(0.95); }
-}
+/* Crown glow pulse */
+.buddy-crown-glow{animation:buddy-crown-pulse 2s ease-in-out infinite}
+@keyframes buddy-crown-pulse{0%,100%{filter:drop-shadow(0 0 10px rgba(255,215,0,0.6))}50%{filter:drop-shadow(0 0 20px rgba(255,215,0,0.9))}}
 
-/* Fire/Lightning aura */
-.shop-icon-animated[style*="⚡"],
-.shop-icon-animated[style*="🔥"] {
-  animation: energy-pulse 1s ease-in-out infinite;
-}
+/* Angel glow radiance */
+.buddy-angel-glow circle{animation:buddy-angel-radiance 3s ease-in-out infinite}
+@keyframes buddy-angel-radiance{0%,100%{opacity:0.15;transform:scale(1)}50%{opacity:0.3;transform:scale(1.1)}}
 
-@keyframes energy-pulse {
-  0%, 100% { 
-    filter: drop-shadow(0 0 8px currentColor) brightness(1);
-    transform: scale(1);
-  }
-  50% { 
-    filter: drop-shadow(0 0 16px currentColor) brightness(1.3);
-    transform: scale(1.05);
-  }
-}
+/* Demon flames flicker */
+.buddy-demon-flames{animation:buddy-demon-flicker 0.4s ease-in-out infinite}
+@keyframes buddy-demon-flicker{0%,100%{opacity:1}25%{opacity:0.7}50%{opacity:1}75%{opacity:0.8}}
 
-/* Galaxy/Cosmic effects */
-.shop-icon-animated[style*="🌌"],
-.shop-icon-animated[style*="🌠"] {
-  animation: cosmic-rotate 4s linear infinite;
-  filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8));
-}
+/* Sakura petals falling */
+.buddy-sakura text{animation:buddy-sakura-fall 5s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.2s)}
+@keyframes buddy-sakura-fall{0%{opacity:0;transform:translateY(-30px) translateX(0) rotate(0deg)}20%{opacity:0.8}80%{opacity:0.8}100%{opacity:0;transform:translateY(80px) translateX(20px) rotate(180deg)}}
 
-@keyframes cosmic-rotate {
-  0% { transform: rotate(0deg); filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8)); }
-  50% { filter: drop-shadow(0 0 20px rgba(139, 92, 246, 1)); }
-  100% { transform: rotate(360deg); filter: drop-shadow(0 0 12px rgba(139, 92, 246, 0.8)); }
-}
+/* Confetti spinning */
+.buddy-confetti rect{animation:buddy-confetti-spin 2s ease-in-out infinite;animation-delay:calc(var(--i,0) * 0.1s)}
+@keyframes buddy-confetti-spin{0%{transform:rotate(0deg) scale(1)}50%{transform:rotate(180deg) scale(1.3)}100%{transform:rotate(360deg) scale(1)}}
 
-/* Hover effects for shop cards */
-.shop-card:hover .shop-icon-animated {
-  animation-duration: 1.5s;
-  transform: scale(1.1);
-}
+/* Magic circle rotation */
+.buddy-magic-circle circle{animation:buddy-magic-rotate 8s linear infinite}
+@keyframes buddy-magic-rotate{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}
 
-.shop-card.equipped {
-  animation: equipped-glow 2s ease-in-out infinite;
-}
+/* Time warp ripple */
+.buddy-time-warp circle{animation:buddy-time-ripple 2s ease-out infinite}
+@keyframes buddy-time-ripple{0%{opacity:0.5;transform:scale(0.8)}100%{opacity:0;transform:scale(1.3)}}
 
-@keyframes equipped-glow {
-  0%, 100% { box-shadow: 0 0 0 3px var(--sh2); }
-  50% { box-shadow: 0 0 0 3px var(--sh2), 0 0 20px var(--accent); }
-}
+/* Particles rising from bottom to top */
+.buddy-particle-rise{animation:buddy-particle-rise 4s ease-in infinite;animation-delay:var(--delay,0s)}
+@keyframes buddy-particle-rise{0%{opacity:0;transform:translateY(0) translateX(0)}10%{opacity:0.7}90%{opacity:0.7}100%{opacity:0;transform:translateY(-180px) translateX(var(--drift,0px))}}
 `;
+
