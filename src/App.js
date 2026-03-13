@@ -65,6 +65,7 @@ import BuddyCreature from './components/shared/BuddyCreature';
 import PhoneUploadPage from './components/shared/PhoneUploadPage';
 import Header from './components/shared/Header';
 import { CopyBtn, FetcherCopyBox } from './components/shared/UtilityComponents';
+import Router from './components/landing/Router';
 
 // ── Tab Components ───────────────────────────────────────────────────────────────
 import DashboardTab from './components/tabs/DashboardTab';
@@ -161,6 +162,8 @@ export default function StudyDesk() {
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [user, setUser] = useState(null);
   const [adminOpen, setAdminOpen] = useState(false);
+  const [showAuthScreen, setShowAuthScreen] = useState(false);
+  const [authMode, setAuthMode] = useState('signup'); // 'signin' or 'signup'
   const logoClicks = useRef(0);
   const logoTimer = useRef(null);
   const [proxyBlocked, setProxyBlocked] = useState(false);
@@ -430,6 +433,52 @@ export default function StudyDesk() {
       localStorage.setItem('sd-last-buddy-quote', now.toString());
     }
   },[user, loaded]);
+
+  // URL routing for tabs when logged in - sync URL to tab state on mount only
+  useEffect(() => {
+    if (!user) return;
+    
+    const path = window.location.pathname;
+    const tabRoutes = {
+      '/dashboard': 'dashboard',
+      '/assignments': 'assignments',
+      '/grades': 'grades',
+      '/schedule': 'schedule',
+      '/timer': 'timer',
+      '/buddy': 'buddy',
+      '/shop': 'shop',
+      '/ai': 'ai',
+      '/analytics': 'analytics'
+    };
+    
+    const matchedTab = tabRoutes[path] || tabRoutes[path + '/'];
+    if (matchedTab && matchedTab !== tab) {
+      setTab(matchedTab);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user]); // Only run on mount and when user changes
+
+  // Update URL when tab changes - sync tab state to URL
+  useEffect(() => {
+    if (!user) return;
+    
+    const tabPaths = {
+      'dashboard': '/dashboard',
+      'assignments': '/assignments',
+      'grades': '/grades',
+      'schedule': '/schedule',
+      'timer': '/timer',
+      'buddy': '/buddy',
+      'shop': '/shop',
+      'ai': '/ai',
+      'analytics': '/analytics'
+    };
+    
+    const newPath = tabPaths[tab];
+    if (newPath && window.location.pathname !== newPath) {
+      window.history.pushState({}, '', newPath);
+    }
+  }, [tab, user]);
 
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // CANVAS SYNC
@@ -1494,7 +1543,57 @@ async function run(){
     </div>
   );
 
-  if(!user) return <AuthScreen onAuth={u=>{setUser(u);fbLoadData(u.uid,u.idToken).then(d=>{if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}saveReady.current=true;setLoaded(true);const sv=localStorage.getItem("studydesk-seen-version");if(sv!==APP_VERSION)setShowReleases(true);});}}/>;
+  // Check for auth routes
+  const isSignInRoute = pathname === "/sign-in" || pathname === "/sign-in/";
+  const isSignUpRoute = pathname === "/sign-up" || pathname === "/sign-up/";
+  
+  if(!user) {
+    // Show auth screen if on auth route or if showAuthScreen is true
+    if(showAuthScreen || isSignInRoute || isSignUpRoute) {
+      // Set auth mode based on route
+      const mode = isSignInRoute ? 'signin' : 'signup';
+      
+      return (
+        <AuthScreen 
+          mode={mode}
+          onAuth={u => {
+            setUser(u);
+            fbLoadData(u.uid, u.idToken).then(d => {
+              if(d) {
+                setAssignments(d.a || []);
+                setClasses(d.c || []);
+                if(d.g) setGame(d.g);
+              }
+              saveReady.current = true;
+              setLoaded(true);
+              const sv = localStorage.getItem("studydesk-seen-version");
+              if(sv !== APP_VERSION) setShowReleases(true);
+              
+              // Redirect to /dashboard after successful login
+              window.history.pushState({}, '', '/dashboard');
+              setTab('dashboard');
+            });
+            setShowAuthScreen(false);
+          }}
+        />
+      );
+    }
+    
+    return (
+      <Router 
+        onSignIn={() => {
+          setAuthMode('signin');
+          setShowAuthScreen(true);
+        }}
+        onSignUp={() => {
+          setAuthMode('signup');
+          setShowAuthScreen(true);
+        }}
+        darkMode={darkMode}
+        onToggleDarkMode={() => setDarkMode(!darkMode)}
+      />
+    );
+  }
 
   const sidebarNav = [
     ["dashboard","Dashboard",<svg key="d" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>],
@@ -1568,7 +1667,7 @@ async function run(){
                       <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowSidebarUserMenu(false)} aria-hidden="true"/>
                       <div className="sidebar-user-menu" style={{position:"relative",zIndex:41}}>
                         <div className="sidebar-profile-email" style={{padding:"10px 14px",borderBottom:"1px solid rgba(255,255,255,.08)"}}>{user.email}</div>
-                        <button type="button" className="sidebar-signout" onClick={()=>{setShowSidebarUserMenu(false);fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;}}>
+                        <button type="button" className="sidebar-signout" onClick={()=>{setShowSidebarUserMenu(false);fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;window.location.href="/";}}>
                           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                           Sign out
                         </button>
@@ -1583,7 +1682,7 @@ async function run(){
                 <span className={"sidebar-dm-toggle"+(darkMode?" on":"")}><span className="sidebar-dm-knob"/></span>
               </button>
               {user&&(
-                <button type="button" className="sidebar-logout" onClick={()=>{fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;}}>
+                <button type="button" className="sidebar-logout" onClick={()=>{fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;window.location.href="/";}}>
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
                   <span>Logout</span>
                 </button>
