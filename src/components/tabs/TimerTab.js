@@ -25,14 +25,31 @@ function TimerTab({
   showCustomTimer,
   setShowCustomTimer
 }) {
+  const [showCustomModal, setShowCustomModal] = React.useState(false);
+  const [customWorkTime, setCustomWorkTime] = React.useState(25);
+  const [customWorkSessions, setCustomWorkSessions] = React.useState(1);
+  const [customBreakTime, setCustomBreakTime] = React.useState(5);
+  const [customBreakCount, setCustomBreakCount] = React.useState(0);
+  const [customLongBreakTime, setCustomLongBreakTime] = React.useState(15);
+  const [customAutoStart, setCustomAutoStart] = React.useState(false);
+
   const MODES = [
     {id:"pomodoro", label:"🍅 Focus", secs:customFocus*60},
     {id:"short", label:"☕ Short Break", secs:customShort*60},
     {id:"long", label:"🌴 Long Break", secs:customLong*60},
-    {id:"custom", label:"⚙️ Custom", secs:25*60}
+    {id:"custom", label:"⚙️ Custom", secs:customWorkTime*60}
   ];
 
   const currentMode = MODES.find(m => m.id === timerMode) || MODES[0];
+
+  const startCustomSession = () => {
+    setTimerMode("custom");
+    resetTimer(customWorkTime * 60);
+    setShowCustomModal(false);
+    if (customAutoStart) {
+      setTimeout(() => startTimer(customWorkTime * 60), 100);
+    }
+  };
 
   return (
     <div>
@@ -91,7 +108,7 @@ function TimerTab({
         </div>
         
         <div className="timer-modes" style={{display:"flex",gap:8,justifyContent:"center",marginBottom:20,flexWrap:"wrap"}}>
-          {MODES.map(mode => (
+          {MODES.filter(m => m.id !== 'custom').map(mode => (
             <button 
               key={mode.id}
               className={`btn btn-sm ${timerMode === mode.id ? 'btn-p' : 'btn-g'}`}
@@ -106,6 +123,13 @@ function TimerTab({
               {mode.label}
             </button>
           ))}
+          <button 
+            className={`btn btn-sm ${timerMode === 'custom' ? 'btn-p' : 'btn-g'}`}
+            onClick={() => setShowCustomModal(true)}
+            style={{minWidth:100}}
+          >
+            ⚙️ Custom
+          </button>
         </div>
         
         <div style={{display:"flex",gap:12,justifyContent:"center"}}>
@@ -216,6 +240,142 @@ function TimerTab({
           </div>
         )}
       </div>
+
+      {/* Custom Timer Modal */}
+      {showCustomModal && (
+        <div className="overlay" onClick={() => setShowCustomModal(false)}>
+          <div className="modal" onClick={(e) => e.stopPropagation()}>
+            <div className="modal-t">⚙️ Custom Timer Session</div>
+            
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:".8rem",fontWeight:600,color:"var(--text3)",marginBottom:6}}>
+                Work Time (minutes)
+              </label>
+              <input 
+                type="number" 
+                min="1" 
+                max="180" 
+                value={customWorkTime} 
+                onChange={(e) => setCustomWorkTime(Math.max(1, parseInt(e.target.value) || 25))}
+                className="finp"
+              />
+              <div style={{fontSize:".72rem",color:"var(--text4)",marginTop:4}}>
+                How long do you want to focus?
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:".8rem",fontWeight:600,color:"var(--text3)",marginBottom:6}}>
+                Number of Work Sessions
+              </label>
+              <input 
+                type="number" 
+                min="1" 
+                max="20" 
+                value={customWorkSessions} 
+                onChange={(e) => setCustomWorkSessions(Math.max(1, parseInt(e.target.value) || 1))}
+                className="finp"
+              />
+              <div style={{fontSize:".72rem",color:"var(--text4)",marginTop:4}}>
+                How many work sessions in a row?
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:".8rem",fontWeight:600,color:"var(--text3)",marginBottom:6}}>
+                Break Time (minutes)
+              </label>
+              <input 
+                type="number" 
+                min="0" 
+                max="60" 
+                value={customBreakTime} 
+                onChange={(e) => setCustomBreakTime(Math.max(0, parseInt(e.target.value) || 5))}
+                className="finp"
+              />
+              <div style={{fontSize:".72rem",color:"var(--text4)",marginTop:4}}>
+                Short break between work sessions (0 for no breaks)
+              </div>
+            </div>
+
+            <div style={{marginBottom:16}}>
+              <label style={{display:"block",fontSize:".8rem",fontWeight:600,color:"var(--text3)",marginBottom:6}}>
+                Number of Breaks
+              </label>
+              <input 
+                type="number" 
+                min="0" 
+                max={customWorkSessions - 1} 
+                value={customBreakCount} 
+                onChange={(e) => setCustomBreakCount(Math.max(0, Math.min(customWorkSessions - 1, parseInt(e.target.value) || 0)))}
+                className="finp"
+              />
+              <div style={{fontSize:".72rem",color:"var(--text4)",marginTop:4}}>
+                How many breaks? (max {customWorkSessions - 1} for {customWorkSessions} sessions)
+              </div>
+            </div>
+
+            {customBreakCount > 0 && customWorkSessions > 2 && (
+              <div style={{marginBottom:16}}>
+                <label style={{display:"block",fontSize:".8rem",fontWeight:600,color:"var(--text3)",marginBottom:6}}>
+                  Long Break Time (minutes)
+                </label>
+                <input 
+                  type="number" 
+                  min="0" 
+                  max="90" 
+                  value={customLongBreakTime} 
+                  onChange={(e) => setCustomLongBreakTime(Math.max(0, parseInt(e.target.value) || 15))}
+                  className="finp"
+                />
+                <div style={{fontSize:".72rem",color:"var(--text4)",marginTop:4}}>
+                  Longer break after every {Math.floor(customWorkSessions / 2)} sessions
+                </div>
+              </div>
+            )}
+
+            <div style={{marginBottom:20}}>
+              <label style={{display:"flex",alignItems:"center",gap:10,cursor:"pointer"}}>
+                <input 
+                  type="checkbox" 
+                  checked={customAutoStart} 
+                  onChange={(e) => setCustomAutoStart(e.target.checked)}
+                  style={{width:18,height:18}}
+                />
+                <span style={{fontSize:".85rem",color:"var(--text2)"}}>
+                  Auto-start timer immediately
+                </span>
+              </label>
+            </div>
+
+            <div style={{
+              background:"var(--bg3)",
+              border:"1.5px solid var(--border)",
+              borderRadius:12,
+              padding:14,
+              marginBottom:20,
+              fontSize:".82rem",
+              color:"var(--text2)",
+              lineHeight:1.6
+            }}>
+              <div style={{fontWeight:600,marginBottom:6,color:"var(--text)"}}>Session Summary:</div>
+              • {customWorkSessions} work session{customWorkSessions > 1 ? 's' : ''} of {customWorkTime} min each<br/>
+              {customBreakCount > 0 && `• ${customBreakCount} break${customBreakCount > 1 ? 's' : ''} of ${customBreakTime} min each`}<br/>
+              {customBreakCount > 0 && customWorkSessions > 2 && `• Long breaks of ${customLongBreakTime} min`}<br/>
+              • Total time: ~{customWorkSessions * customWorkTime + customBreakCount * customBreakTime} minutes
+            </div>
+
+            <div className="mactions">
+              <button className="btn btn-g" onClick={() => setShowCustomModal(false)}>
+                Cancel
+              </button>
+              <button className="btn btn-p" onClick={startCustomSession}>
+                Start Custom Session
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
