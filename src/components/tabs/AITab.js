@@ -574,34 +574,50 @@ Be encouraging, specific, and educational. Use markdown formatting and math nota
 
   useEffect(() => {
     if (!uploadId || !checkingUploads) return;
-    const checkInterval = setInterval(async () => {
-      try {
-        const response = await fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`);
-        if (response.ok) {
-          const data = await response.json();
-          const imageData = data.fields?.image?.stringValue;
-          if (imageData) {
-            setCheckingUploads(false);
-            setShowQR(false);
-            if (qrSlot === 'question') {
-              processQuestionImage(imageData);
-            } else {
-              processAnswerImage(imageData);
+    
+    // Wait 3 seconds before starting to poll (gives user time to scan QR)
+    const initialDelay = setTimeout(() => {
+      const checkInterval = setInterval(async () => {
+        try {
+          const response = await fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`);
+          if (response.ok) {
+            const data = await response.json();
+            const imageData = data.fields?.image?.stringValue;
+            if (imageData) {
+              setCheckingUploads(false);
+              setShowQR(false);
+              if (qrSlot === 'question') {
+                processQuestionImage(imageData);
+              } else {
+                processAnswerImage(imageData);
+              }
+              setTimeout(() => {
+                fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`, { method: 'DELETE' }).catch(() => {});
+              }, 5000);
             }
-            setTimeout(() => {
-              fetch(`${FB_FS}/uploads/${uploadId}?key=${FB_KEY}`, { method: 'DELETE' }).catch(() => {});
-            }, 5000);
+          } else if (response.status === 404) {
+            // Document doesn't exist yet, this is expected - don't log error
+          } else {
+            // Unexpected error status
+            console.warn('Upload check failed with status:', response.status);
+          }
+        } catch (err) {
+          // Only log network errors, not 404s
+          if (err.message && !err.message.includes('404')) {
+            console.log('Checking for upload...', err.message);
           }
         }
-      } catch (err) {
-        console.log('Checking for upload...', err.message);
-      }
-    }, 2000);
-    const timeout = setTimeout(() => {
-      setCheckingUploads(false);
-      clearInterval(checkInterval);
-    }, 5 * 60 * 1000);
-    return () => { clearInterval(checkInterval); clearTimeout(timeout); };
+      }, 3000); // Check every 3 seconds instead of 2
+      
+      const timeout = setTimeout(() => {
+        setCheckingUploads(false);
+        clearInterval(checkInterval);
+      }, 5 * 60 * 1000);
+      
+      return () => { clearInterval(checkInterval); clearTimeout(timeout); };
+    }, 3000); // Initial 3 second delay
+    
+    return () => { clearTimeout(initialDelay); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uploadId, checkingUploads]);
 
@@ -1012,10 +1028,10 @@ Provide insights on study patterns, subject performance, areas to improve, and n
   const QRModal = () => (
     showQR && uploadId ? (
       <div style={{ marginTop:20, padding:16, background:'var(--bg3)', borderRadius:12, textAlign:'center' }}>
-        <div style={{ fontWeight:600, marginBottom:8 }}>📱 Scan with your phone:</div>
+        <div style={{ fontWeight:600, marginBottom:8, color:'var(--text)' }}>Scan with your phone:</div>
         <img src={getQRCodeUrl(`${window.location.origin}/upload/${uploadId}`)} alt="QR Code"
           style={{ borderRadius:8, background:'#fff', padding:8 }} />
-        <div style={{ fontSize:'.8rem', color:'var(--text3)', margin:'8px 0' }}>
+        <div style={{ fontSize:'.8rem', color:'var(--text2)', margin:'8px 0' }}>
           Or visit: {window.location.origin}/upload/{uploadId}
         </div>
         {checkingUploads && (

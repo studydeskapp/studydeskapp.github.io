@@ -194,7 +194,7 @@ function ScheduleTab({ classes, setSchoolWiz, setAddingC, delClass }) {
         </div>
       )}
       
-      <style jsx>{`
+      <style>{`
         .sc-card:hover .schedule-delete-btn {
           opacity: 1 !important;
         }

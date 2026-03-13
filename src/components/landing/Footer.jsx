@@ -40,14 +40,13 @@ function Footer({ darkMode }) {
           
           {/* Quick Links */}
           <div className="footer-links">
-            <div className="footer-section">
-              <h4 className="footer-section-title">Quick Links</h4>
-              <ul className="footer-link-list">
-                <li><a href="/learn-more" className="footer-link">Features</a></li>
-                <li><a href="/contact" className="footer-link">Contact</a></li>
-                <li><a href="/help" className="footer-link">Help Center</a></li>
-              </ul>
-            </div>
+            <h4 className="footer-section-title">Quick Links</h4>
+            <ul className="footer-link-list">
+              <li><a href="/learn-more" className="footer-link">Features</a></li>
+              <li><a href="/release-notes" className="footer-link">Release Notes</a></li>
+              <li><a href="/contact" className="footer-link">Contact</a></li>
+              <li><a href="/help" className="footer-link">Help Center</a></li>
+            </ul>
           </div>
         </div>
         

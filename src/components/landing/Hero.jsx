@@ -6,10 +6,10 @@ function Hero({ onSignUp, onLearnMore, darkMode }) {
       <div className="hero-container">
         <div className="hero-content-centered">
           <h1 id="hero-heading" className="hero-title animate-on-scroll fade-up">
-            StudyDesk
+            Track your homework. Stay organized.
           </h1>
           <p className="hero-subtitle animate-on-scroll fade-up">
-            Smart homework tracker for high school students
+            Free homework tracker built for high school students. Import from Canvas, set priorities, and never miss a deadline.
           </p>
           <div className="hero-cta-container animate-on-scroll fade-up">
             <button 
@@ -17,7 +17,7 @@ function Hero({ onSignUp, onLearnMore, darkMode }) {
               onClick={onSignUp}
               aria-describedby="cta-description"
             >
-              Start Now
+              Get Started
             </button>
             <button 
               className="btn-secondary hero-cta-secondary"
@@ -30,13 +30,6 @@ function Hero({ onSignUp, onLearnMore, darkMode }) {
             </p>
           </div>
         </div>
-      </div>
-      
-      {/* Enhanced Parallax background elements */}
-      <div className="hero-bg-elements">
-        <div className="bg-circle parallax-bg" data-speed="0.3"></div>
-        <div className="bg-circle-2 parallax-bg" data-speed="0.5"></div>
-        <div className="bg-circle-3 parallax-bg" data-speed="0.4"></div>
       </div>
     </section>
   );

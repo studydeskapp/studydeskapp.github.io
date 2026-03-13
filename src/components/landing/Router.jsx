@@ -1,6 +1,7 @@
 import React from 'react';
 import LandingPage from './LandingPage';
 import LearnMorePage from './LearnMorePage';
+import ReleaseNotesPage from './ReleaseNotesPage';
 
 function Router({ darkMode, onToggleDarkMode, onSignIn, onSignUp }) {
   const pathname = window.location.pathname;
@@ -23,6 +24,19 @@ function Router({ darkMode, onToggleDarkMode, onSignIn, onSignUp }) {
   if (pathname === '/learn-more' || pathname === '/learn-more/') {
     return (
       <LearnMorePage
+        onSignIn={handleSignIn}
+        onSignUp={handleSignUp}
+        onBack={handleBackToHome}
+        darkMode={darkMode}
+        onToggleDarkMode={onToggleDarkMode}
+      />
+    );
+  }
+
+  // Route to Release Notes page
+  if (pathname === '/release-notes' || pathname === '/release-notes/') {
+    return (
+      <ReleaseNotesPage
         onSignIn={handleSignIn}
         onSignUp={handleSignUp}
         onBack={handleBackToHome}
@@ -55,8 +69,20 @@ function Router({ darkMode, onToggleDarkMode, onSignIn, onSignUp }) {
                   <p style={{fontSize: '1.125rem', color: 'var(--landing-text2)', marginBottom: '2rem', lineHeight: '1.7'}}>
                     For support, questions, or feedback, please reach out to us at:
                   </p>
-                  <p style={{fontSize: '1.25rem', color: 'var(--landing-accent)', fontWeight: '600', marginBottom: '2rem'}}>
-                    support@studydesk.com
+                  <p style={{fontSize: '1.25rem', marginBottom: '2rem'}}>
+                    <a 
+                      href="mailto:support@mystudydesk.app" 
+                      style={{
+                        color: 'var(--landing-accent)', 
+                        fontWeight: '600',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseOver={(e) => e.target.style.textDecoration = 'underline'}
+                      onMouseOut={(e) => e.target.style.textDecoration = 'none'}
+                    >
+                      support@mystudydesk.app
+                    </a>
                   </p>
                   <p style={{fontSize: '1rem', color: 'var(--landing-text2)', lineHeight: '1.7'}}>
                     We typically respond within 24-48 hours. For urgent issues, please include "URGENT" in your subject line.
@@ -118,6 +144,26 @@ function Router({ darkMode, onToggleDarkMode, onSignIn, onSignUp }) {
                     <p style={{color: 'var(--landing-text2)', lineHeight: '1.7'}}>
                       Our built-in Pomodoro timer helps you focus with 25-minute work sessions followed by short breaks. You can customize the duration to fit your study style.
                     </p>
+                  </div>
+                  <div style={{marginTop: '3rem', padding: '2rem', background: 'var(--landing-card)', border: '2px solid var(--landing-border)', borderRadius: '16px', textAlign: 'center'}}>
+                    <h3 style={{color: 'var(--landing-text)', fontSize: '1.25rem', marginBottom: '1rem'}}>Still need help?</h3>
+                    <p style={{color: 'var(--landing-text2)', marginBottom: '1rem'}}>
+                      Can't find what you're looking for? Reach out to us:
+                    </p>
+                    <a 
+                      href="mailto:support@mystudydesk.app" 
+                      style={{
+                        color: 'var(--landing-accent)', 
+                        fontWeight: '600',
+                        fontSize: '1.125rem',
+                        textDecoration: 'none',
+                        transition: 'all 0.2s ease'
+                      }}
+                      onMouseOver={(e) => e.target.style.textDecoration = 'underline'}
+                      onMouseOut={(e) => e.target.style.textDecoration = 'none'}
+                    >
+                      support@mystudydesk.app
+                    </a>
                   </div>
                 </div>
               </div>

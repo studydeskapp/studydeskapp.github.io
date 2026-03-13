@@ -7,8 +7,9 @@ import { SHOP_ITEMS, SUBJECT_COLORS } from '../constants';
 import { fbIncrementStat } from '../utils/firebase';
 
 // ── Game Completion Logic ──────────────────────────────────────────────────────
-export function handleComplete(prev, next, user, setGame, addFloat) {
-  if (next !== 100 || prev >= 100) return;
+export function handleComplete(prev, next, user, setGame, addFloat, hasBeenCompleted) {
+  // Only award points if going from incomplete to complete AND hasn't been completed before
+  if (next !== 100 || prev >= 100 || hasBeenCompleted) return;
   
   if (user) fbIncrementStat("totalSubmitted", 1, user.idToken);
   if (user) fbIncrementStat("totalPoints", 15, user.idToken);

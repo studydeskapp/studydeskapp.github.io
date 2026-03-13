@@ -152,6 +152,7 @@ export default function StudyDesk() {
   const [releaseViewed, setReleaseViewed] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [addingA, setAddingA] = useState(false);
+  const [validatingAssignment, setValidatingAssignment] = useState(false);
   const [addingC, setAddingC] = useState(false);
   const [schoolWiz, setSchoolWiz] = useState(null);
   // schoolWiz = null | {step:"search"|"confirm"|"periods", query, results, school, numPeriods, periods:[{name,start,end,days}], currentPeriod}
@@ -306,8 +307,9 @@ export default function StudyDesk() {
         if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url)};if(d.t)setTemplates(d.t);if(d.chats)setChats(d.chats);}
         saveReady.current=true;
         setLoaded(true);
-        const seenVersion=localStorage.getItem("studydesk-seen-version");
-        if(seenVersion!==APP_VERSION) setShowReleases(true);
+        // Don't auto-show release notes anymore
+        // const seenVersion=localStorage.getItem("studydesk-seen-version");
+        // if(seenVersion!==APP_VERSION) setShowReleases(true);
       }).catch((error)=>{
         console.warn("Session restore failed:", error);
         // If token refresh fails, clear session and show auth screen
@@ -613,9 +615,7 @@ export default function StudyDesk() {
   function resetImport(){setImportUrl("");setPasteText("");setCanvasPaste("");setImportResult(null);setImportStep("url");setCanvasStatus("");setAgendaUrl("");setFetchStatus("");setAgendaStep("url");setAgendaDocText("");setAgendaSlideLinks([]);setAgendaSlideTexts([]);}
 
   function dismissReleases(){
-    localStorage.setItem("studydesk-seen-version", APP_VERSION);
     setShowReleases(false);
-    setReleaseViewed(true);
   }
 
   // Import handlers
@@ -651,9 +651,9 @@ export default function StudyDesk() {
   // Game logic handlers
   const handleAddFloat = (pts, streak) => addFloat(pts, streak, setFloats);
   const handleLaunchConfetti = (originEl) => launchConfetti(originEl, setConfetti);
-  const handleCompleteAssignment = (prev, next) => {
+  const handleCompleteAssignment = (prev, next, hasBeenCompleted) => {
     try {
-      handleComplete(prev, next, user, setGame, handleAddFloat);
+      handleComplete(prev, next, user, setGame, handleAddFloat, hasBeenCompleted);
     } catch(error) {
       console.error("Error completing assignment:", error);
     }
@@ -1038,11 +1038,49 @@ async function run(){
   }
 
 
-  function addAssignment(){
+  async function addAssignment(){
     if(!af.title||!af.subject) {
       console.warn("Cannot add assignment: missing title or subject", af);
       return;
     }
+    
+    // Validate assignment with Gemini API
+    if(GEMINI_KEY) {
+      setValidatingAssignment(true);
+      try {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contents: [{
+              parts: [{
+                text: `Is this a real school assignment or homework task? Answer with only "YES" or "NO".\n\nAssignment title: "${af.title}"\nSubject: "${af.subject}"\n\nConsider it real if it's a legitimate homework, project, quiz, test, or school task. Consider it fake if it's gibberish, random characters, or clearly not a real assignment.`
+              }]
+            }]
+          })
+        });
+        
+        const data = await response.json();
+        const answer = data?.candidates?.[0]?.content?.parts?.[0]?.text?.trim().toUpperCase();
+        
+        setValidatingAssignment(false);
+        
+        if(answer === "NO") {
+          // Deduct 15 points for fake assignment
+          setGame(g => ({ ...g, points: Math.max(0, g.points - 15) }));
+          alert("⚠️ This doesn't appear to be a real assignment. 15 points have been deducted.");
+          setAddingA(false);
+          setAf(emptyAF);
+          setSubjMode("select");
+          return;
+        }
+      } catch(error) {
+        console.warn("Gemini validation failed, allowing assignment:", error);
+        setValidatingAssignment(false);
+        // Continue adding assignment if validation fails
+      }
+    }
+    
     try {
       const na={...af,id:Date.now().toString(),createdAt:new Date().toISOString()};
       console.log("Adding assignment:", na);
@@ -1064,9 +1102,11 @@ async function run(){
     setAssignments(prev=>{
       const a=prev.find(x=>x.id===id);
       if(a&&patch.progress!==undefined){
-        handleCompleteAssignment(a.progress,patch.progress);
-        // Add completedAt timestamp when marking as complete
-        if(patch.progress===100&&a.progress<100){
+        // Check if assignment has ever been completed (has completedAt timestamp)
+        const hasBeenCompleted = !!a.completedAt;
+        handleCompleteAssignment(a.progress,patch.progress,hasBeenCompleted);
+        // Add completedAt timestamp when marking as complete for the first time
+        if(patch.progress===100&&a.progress<100&&!hasBeenCompleted){
           patch={...patch,completedAt:new Date().toISOString()};
         }
       }
@@ -1566,8 +1606,9 @@ async function run(){
               }
               saveReady.current = true;
               setLoaded(true);
-              const sv = localStorage.getItem("studydesk-seen-version");
-              if(sv !== APP_VERSION) setShowReleases(true);
+              // Don't auto-show release notes anymore
+              // const sv = localStorage.getItem("studydesk-seen-version");
+              // if(sv !== APP_VERSION) setShowReleases(true);
               
               // Redirect to /dashboard after successful login
               window.history.pushState({}, '', '/dashboard');
@@ -1637,7 +1678,7 @@ async function run(){
                     <div style={{position:"fixed",inset:0,zIndex:40}} onClick={()=>setShowMoreDropdown(false)} aria-hidden="true"/>
                     <div className="sidebar-more-dropdown">
                       <button type="button" onClick={()=>{setShowReleases(true);setShowMoreDropdown(false);}}>
-                        <span>🚀</span> Releases
+                        <span></span> Release Notes
                       </button>
                       <a href="https://docs.google.com/forms/d/e/1FAIpQLSeadDtMTet9ZndDOsF9hNtViwRK7tU-nzK38CjVWZZmeRtqGA/viewform?usp=publish-editor" target="_blank" rel="noreferrer" onClick={()=>setShowMoreDropdown(false)}>
                         <span></span> Suggestions
@@ -1719,16 +1760,31 @@ async function run(){
               )}
             </div>
           </div>
+          
+          {/* Mobile User Menu */}
+          {showUserMenu&&(
+            <>
+              <div style={{position:"fixed",inset:0,zIndex:49}} onClick={()=>setShowUserMenu(false)} aria-hidden="true"/>
+              <div className="mob-user-menu">
+                <div className="mob-user-menu-email">{user.email}</div>
+                <button type="button" className="mob-user-menu-signout" onClick={()=>{setShowUserMenu(false);fbClearSession();setUser(null);setAssignments([]);setClasses([]);setGame({points:0,streak:0,lastStreakDate:"",dailyDate:"",dailyCount:0,owned:[],equipped:{hat:"",face:"",body:"",special:""}});saveReady.current=false;window.location.href="/";}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+                  Sign out
+                </button>
+              </div>
+            </>
+          )}
+          
           <div className="mob-status">
             {game.streak>0&&<div className="mob-pill fire">{game.streak}d streak</div>}
             <div className="mob-pill star">{game.points} pts</div>
             {canvasToken?(
               <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.syncing?"canvas":canvasSync.lastSync?"ok":"canvas")}
                 onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else handleSyncCanvas(canvasToken,canvasBaseUrl);}}>
-                <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
-                  {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.lastSync?"✓":"🎓"}
+                <span style={{display:"inline-block"}}>
+                  {canvasSync.syncing ? "..." : canvasSync.error ? "⚠️" : canvasSync.lastSync ? "✓" : "Canvas"}
                 </span>
-                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.lastSync?`Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}`:"\Canvas"}
+                {canvasSync.syncing ? "Syncing" : canvasSync.error ? "Sync error" : canvasSync.lastSync ? `Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}` : "Canvas"}
               </div>
             ):(
               <div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>
@@ -1754,10 +1810,10 @@ async function run(){
                   background:canvasSync.error?"#fef2f2":canvasSync.newSubmissions>0?"#f0fdf4":"var(--bg3)",
                   cursor:"pointer",fontSize:".72rem",fontWeight:700,
                   color:canvasSync.error?"#dc2626":canvasSync.newSubmissions>0?"#16a34a":"var(--text3)"}}>
-                <span style={{animation:canvasSync.syncing?"spin .8s linear infinite":"",display:"inline-block"}}>
-                  {canvasSync.syncing?"⟳":canvasSync.error?"⚠️":canvasSync.newSubmissions>0?"✅":"🎓"}
+                <span style={{display:"inline-block"}}>
+                  {canvasSync.syncing ? "..." : canvasSync.error ? "⚠️" : canvasSync.newSubmissions > 0 ? "✅" : "Canvas"}
                 </span>
-                {canvasSync.syncing?"Syncing...":canvasSync.error?"Sync error":canvasSync.newSubmissions>0?`${canvasSync.newSubmissions} in!`:canvasSync.lastSync?"Synced":canvasToken?"Canvas":""}
+                {canvasSync.syncing ? "Syncing" : canvasSync.error ? "Sync error" : canvasSync.newSubmissions > 0 ? `${canvasSync.newSubmissions} in!` : canvasSync.lastSync ? "Synced" : "Canvas"}
               </div>
             )}
             {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
@@ -2010,8 +2066,10 @@ async function run(){
               </div>
             </div>
             <div className="mactions" style={{borderTop:"1.5px solid var(--border)",paddingTop:14,marginTop:6,flexShrink:0}}>
-              <button className="btn btn-g" onClick={()=>{setAddingA(false);setAf(emptyAF);setSubjMode("select");}}>Cancel</button>
-              <button className="btn btn-p" onClick={addAssignment} disabled={!af.title||!af.subject}>Add Assignment</button>
+              <button className="btn btn-g" onClick={()=>{setAddingA(false);setAf(emptyAF);setSubjMode("select");}} disabled={validatingAssignment}>Cancel</button>
+              <button className="btn btn-p" onClick={addAssignment} disabled={!af.title||!af.subject||validatingAssignment}>
+                {validatingAssignment ? "Validating..." : "Add Assignment"}
+              </button>
             </div>
           </div>
         </div>
@@ -2709,50 +2767,68 @@ async function run(){
                 </div>
               </div>
 
+              <div className="about-section">
+                <div className="about-section-title">Need Help?</div>
+                <div className="about-card" style={{textAlign:"center"}}>
+                  <p style={{color:"var(--text2)",marginBottom:12,fontSize:".9rem"}}>
+                    Questions, feedback, or need support?
+                  </p>
+                  <a 
+                    href="mailto:support@mystudydesk.app" 
+                    style={{
+                      color:"var(--accent)",
+                      fontWeight:600,
+                      fontSize:"1rem",
+                      textDecoration:"none"
+                    }}
+                  >
+                    support@mystudydesk.app
+                  </a>
+                </div>
+              </div>
+
               <div className="about-made">Made by <span>Amar G.</span> · Free forever</div>
             </div>
           </div>
         </div>
-      )}
+      )}}
 
       {/* RELEASE MODAL */}
       {showReleases&&(
-        <div className="release-overlay" onClick={e=>{if(e.target===e.currentTarget)dismissReleases();}}>
-          <div className="release-box">
-            <div className="release-hd">
+        <div className="releases-fullpage">
+          <div className="releases-header">
+            <div className="releases-header-content">
               <div>
-                <div className="release-title">
-                  {localStorage.getItem("studydesk-seen-version")!==APP_VERSION?"🎉 What's New":"📋 Release Notes"}
-                </div>
-                <div className="release-sub">StudyDesk v{APP_VERSION}</div>
+                <h1 className="releases-main-title">Release Notes</h1>
+                <p className="releases-subtitle">Track all updates and improvements to StudyDesk</p>
               </div>
-              <button onClick={dismissReleases} style={{background:"none",border:"none",cursor:"pointer",color:"#bbb",fontSize:"1.3rem",lineHeight:1,padding:4}}>✕</button>
+              <button onClick={dismissReleases} className="releases-close-btn" aria-label="Close">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
             </div>
-            <div className="release-body">
+          </div>
+          <div className="releases-content">
+            <div className="releases-container">
               {RELEASES.map((r,i)=>(
-                <div key={r.version} className="release-entry">
-                  <div className="release-ver">
-                    <span className="release-badge">v{r.version}</span>
-                    <span className="release-date">{r.date}</span>
-                    {i===0&&<span style={{background:"#f0fdf4",color:"#16a34a",fontSize:".65rem",fontWeight:700,padding:"2px 8px",borderRadius:20}}>Latest</span>}
+                <div key={r.version} className="release-card">
+                  <div className="release-card-header">
+                    <div className="release-version-info">
+                      <span className="release-version-badge">Version {r.version}</span>
+                      {i===0&&<span className="release-latest-badge">Latest</span>}
+                    </div>
+                    <span className="release-date-text">{r.date}</span>
                   </div>
-                  <div className="release-name">{r.title}</div>
-                  <div className="release-changes">
+                  <h2 className="release-card-title">{r.title}</h2>
+                  <ul className="release-changes-list">
                     {r.changes.map((c,j)=>(
-                      <div key={j} className="release-change">
-                        <span className="release-dot">✦</span>
-                        <span>{c}</span>
-                      </div>
+                      <li key={j} className="release-change-item">{c}</li>
                     ))}
-                  </div>
-                  {i<RELEASES.length-1&&<div style={{borderBottom:"1.5px solid #EDE9E2",marginTop:20}}/>}
+                  </ul>
                 </div>
               ))}
-            </div>
-            <div style={{padding:"14px 24px",borderTop:"1.5px solid #EDE9E2"}}>
-              <button className="btn btn-p" style={{width:"100%",justifyContent:"center"}} onClick={dismissReleases}>
-                Got it ✓
-              </button>
             </div>
           </div>
         </div>

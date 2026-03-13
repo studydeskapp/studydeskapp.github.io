@@ -238,6 +238,30 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .shop-desc{font-size:.73rem;color:var(--text3);margin-bottom:10px;line-height:1.4}
 .eq-row{display:flex;gap:6px;flex-wrap:wrap;justify-content:center;margin-top:10px;min-height:20px}
 .eq-chip{background:var(--bg3);border-radius:20px;padding:3px 10px;font-size:.72rem;font-weight:600;color:var(--text3)}
+
+/* Full-page Release Notes */
+.releases-fullpage{position:fixed;inset:0;background:var(--bg);z-index:300;display:flex;flex-direction:column;overflow:hidden}
+.releases-header{background:var(--mbg);border-bottom:2px solid var(--border);padding:0;position:sticky;top:0;z-index:10;box-shadow:0 2px 12px rgba(0,0,0,.08)}
+.releases-header-content{max-width:1000px;margin:0 auto;padding:24px 32px;display:flex;align-items:center;justify-content:space-between;gap:24px}
+.releases-main-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.75rem;font-weight:800;color:var(--text);margin:0;letter-spacing:-.02em}
+.releases-subtitle{font-size:.9rem;color:var(--text3);margin:6px 0 0;font-weight:500}
+.releases-close-btn{background:var(--bg3);border:1.5px solid var(--border);border-radius:12px;width:44px;height:44px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all .2s ease;color:var(--text2);flex-shrink:0}
+.releases-close-btn:hover{background:var(--bg4);border-color:var(--accent);color:var(--accent);transform:scale(1.05)}
+.releases-content{flex:1;overflow-y:auto;padding:40px 32px}
+.releases-container{max-width:1000px;margin:0 auto;display:flex;flex-direction:column;gap:24px}
+.release-card{background:var(--mbg);border:2px solid var(--border);border-radius:20px;padding:28px 32px;transition:all .3s ease}
+.release-card:hover{border-color:var(--accent);box-shadow:0 8px 24px rgba(91,141,238,.12);transform:translateY(-2px)}
+.release-card-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:12px}
+.release-version-info{display:flex;align-items:center;gap:10px}
+.release-version-badge{background:linear-gradient(135deg,var(--accent),var(--accent2));color:#fff;font-size:.8rem;font-weight:700;padding:6px 14px;border-radius:20px;letter-spacing:.02em}
+.release-latest-badge{background:var(--bg3);color:var(--accent);font-size:.75rem;font-weight:700;padding:4px 12px;border-radius:16px;border:1.5px solid var(--accent)}
+.release-date-text{font-size:.85rem;color:var(--text3);font-weight:600}
+.release-card-title{font-family:'Plus Jakarta Sans',sans-serif;font-size:1.35rem;font-weight:700;color:var(--text);margin:0 0 20px;line-height:1.3;letter-spacing:-.01em}
+.release-changes-list{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:12px}
+.release-change-item{display:flex;align-items:flex-start;gap:12px;font-size:.92rem;color:var(--text2);line-height:1.6;padding-left:24px;position:relative}
+.release-change-item::before{content:'';position:absolute;left:0;top:10px;width:8px;height:8px;background:var(--accent);border-radius:50%;box-shadow:0 0 0 3px rgba(91,141,238,.15)}
+
+/* Old release styles - keep for backward compatibility */
 .release-overlay{position:fixed;inset:0;background:rgba(8,10,18,.62);backdrop-filter:blur(6px);z-index:300;display:flex;align-items:center;justify-content:center;padding:20px}
 .release-box{background:var(--mbg);border-radius:22px;width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;overflow:hidden;box-shadow:0 24px 60px var(--sh2);border:1.5px solid var(--border)}
 .release-hd{padding:22px 24px 16px;border-bottom:1.5px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
@@ -253,6 +277,7 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
 .release-changes{display:flex;flex-direction:column;gap:5px}
 .release-change{display:flex;gap:8px;font-size:.8rem;color:var(--text2);line-height:1.5}
 .release-dot{color:#f5a623;font-size:.9rem;flex-shrink:0;margin-top:1px}
+
 .about-body{padding:24px;overflow-y:auto;flex:1}
 .about-hero{text-align:center;padding:8px 0 20px}
 .about-logo{width:64px;height:64px;background:linear-gradient(135deg,var(--accent),var(--accent2));border-radius:18px;display:flex;align-items:center;justify-content:center;font-size:2rem;margin:0 auto 12px}
@@ -334,6 +359,13 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .mob-hdr-r{display:flex;align-items:center;gap:10px}
   .mob-avatar{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,var(--accent),#6366f1);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:.85rem;overflow:hidden;flex-shrink:0;cursor:pointer;border:2.5px solid var(--bg);box-shadow:0 2px 8px rgba(0,0,0,.15);-webkit-tap-highlight-color:transparent}
   .mob-avatar:active{transform:scale(.92)}
+  /* Mobile user menu */
+  .mob-user-menu{position:fixed;top:calc(max(env(safe-area-inset-top),14px) + 60px);right:20px;background:var(--mbg);border:1.5px solid var(--border);border-radius:16px;box-shadow:0 8px 24px rgba(0,0,0,.15);z-index:50;min-width:200px;overflow:hidden;animation:slideDown .2s cubic-bezier(.16,1,.3,1)}
+  .mob-user-menu-email{padding:12px 16px;font-size:.8rem;color:var(--text3);border-bottom:1px solid var(--border);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mob-user-menu-signout{width:100%;padding:12px 16px;background:none;border:none;display:flex;align-items:center;gap:10px;font-size:.85rem;font-weight:600;color:var(--text2);cursor:pointer;transition:all .15s;-webkit-tap-highlight-color:transparent;font-family:inherit}
+  .mob-user-menu-signout:active{background:var(--bg3);color:var(--text)}
+  .mob-user-menu-signout svg{flex-shrink:0}
+  @keyframes slideDown{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
   /* Status strip - modern pill design */
   .mob-status{display:flex;align-items:center;gap:8px;padding:10px 20px;overflow-x:auto;scrollbar-width:none;border-bottom:1px solid var(--border);background:var(--bg)}
   .mob-status::-webkit-scrollbar{display:none}
@@ -442,8 +474,17 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .grade-class-card{border-radius:18px;padding:22px;border-width:1px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
   /* Leaderboard */
   .lb-row{padding:12px 16px;border-radius:16px;border-width:1px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
-  /* Release notes */
+  /* Release notes - old modal */
   .release-box{border-radius:24px 24px 0 0;border-width:1px}
+  /* Release notes - new fullpage */
+  .releases-header-content{padding:20px 20px;flex-direction:column;align-items:flex-start}
+  .releases-main-title{font-size:1.4rem}
+  .releases-subtitle{font-size:.85rem}
+  .releases-close-btn{position:absolute;top:20px;right:20px;width:40px;height:40px}
+  .releases-content{padding:24px 20px}
+  .release-card{padding:20px 20px;border-radius:16px}
+  .release-card-title{font-size:1.15rem}
+  .release-change-item{font-size:.88rem;padding-left:20px}
   /* FAB - more prominent */
   .fab{width:60px;height:60px;bottom:calc(84px + env(safe-area-inset-bottom));right:22px;box-shadow:0 6px 24px rgba(91,141,238,.4),0 12px 48px rgba(91,141,238,.25);font-size:1.5rem}
   .fab:active{transform:scale(.88)}
