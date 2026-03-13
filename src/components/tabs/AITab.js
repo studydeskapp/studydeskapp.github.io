@@ -16,6 +16,23 @@ function AITab({ assignments, classes, chats, setChats }) {
   const [showChatList, setShowChatList] = useState(true); // Show sidebar by default
   const [chatSearchQuery, setChatSearchQuery] = useState('');
   const titleGeneratedRef = React.useRef(new Set()); // Track which chats have had titles generated
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 768);
+
+  // Detect mobile viewport changes
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth <= 768;
+      setIsMobile(mobile);
+      if (!mobile) {
+        setShowChatList(true); // Always show on desktop
+      } else {
+        setShowChatList(false); // Hide by default on mobile
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize(); // Initial check
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Homework helper state
   const [homeworkStep, setHomeworkStep] = useState('upload'); // 'upload' | 'analyzing' | 'selectProblems' | 'explanation' | 'check' | 'checking' | 'done'
@@ -1028,18 +1045,40 @@ Provide insights on study patterns, subject performance, areas to improve, and n
 
       {/* ── CHAT ── */}
       {aiMode === 'chat' && (
-        <div style={{ flex:1, display:'flex', gap:12, overflow:'hidden', height:'100%' }}>
-          {/* Chat List Sidebar - Fixed position */}
+        <div style={{ flex:1, display:'flex', gap:12, overflow:'hidden', height:'100%', position:'relative' }}>
+          {/* Mobile overlay backdrop */}
+          {isMobile && showChatList && (
+            <div 
+              onClick={() => setShowChatList(false)}
+              style={{
+                position: 'fixed',
+                inset: 0,
+                background: 'rgba(0,0,0,0.5)',
+                zIndex: 998,
+                backdropFilter: 'blur(4px)'
+              }}
+            />
+          )}
+
+          {/* Chat List Sidebar - Responsive */}
           <div style={{ 
-            width: showChatList ? '240px' : '0px',
-            transition: 'width 0.3s',
+            width: isMobile ? (showChatList ? '280px' : '0px') : (showChatList ? '240px' : '0px'),
+            transition: 'transform 0.3s ease, width 0.3s ease',
+            transform: isMobile && showChatList ? 'translateX(0)' : isMobile ? 'translateX(-100%)' : 'translateX(0)',
+            position: isMobile ? 'fixed' : 'relative',
+            left: isMobile ? 0 : 'auto',
+            top: isMobile ? 0 : 'auto',
+            bottom: isMobile ? 0 : 'auto',
+            zIndex: isMobile ? 999 : 'auto',
             overflow: 'hidden',
             display:'flex',
             flexDirection:'column',
             background:'var(--card)',
-            border:'1.5px solid var(--border)',
-            borderRadius:12,
-            flexShrink: 0
+            border: isMobile ? 'none' : '1.5px solid var(--border)',
+            borderRight: isMobile ? '1.5px solid var(--border)' : '1.5px solid var(--border)',
+            borderRadius: isMobile ? 0 : 12,
+            flexShrink: 0,
+            boxShadow: isMobile ? '4px 0 12px rgba(0,0,0,0.15)' : 'none'
           }}>
             <div style={{ padding:'12px 12px 10px', borderBottom:'1.5px solid var(--border)' }}>
               <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:10 }}>

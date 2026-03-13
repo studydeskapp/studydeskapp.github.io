@@ -456,6 +456,19 @@ body{font-family:'Plus Jakarta Sans',sans-serif;background:var(--bg);min-height:
   .acard:nth-child(3){animation-delay:.06s}
   .acard:nth-child(4){animation-delay:.08s}
   .acard:nth-child(5){animation-delay:.1s}
+  
+  /* AI Chat mobile optimizations */
+  .sec-hd{flex-wrap:wrap;gap:8px}
+  .sec-hd .sec-t{font-size:1.2rem}
+  
+  /* Make mode tabs scrollable on mobile */
+  .sec-hd + div{overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch}
+  .sec-hd + div::-webkit-scrollbar{display:none}
+  
+  /* Chat input area - better mobile UX */
+  .chat-input-wrap{padding:12px;gap:8px}
+  .chat-input-wrap input{font-size:16px;padding:12px 14px;min-height:44px}
+  .chat-input-wrap button{min-width:44px;min-height:44px;padding:10px}
 }
 /* ── PWA INSTALL BANNER ── */
 .pwa-banner{position:fixed;bottom:calc(70px + env(safe-area-inset-bottom));left:12px;right:12px;background:var(--accent);color:#fff;border-radius:16px;padding:14px 18px;display:flex;align-items:center;gap:12px;z-index:300;box-shadow:0 8px 32px rgba(99,102,241,.4);animation:slideUp .3s ease}
