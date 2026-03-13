@@ -2791,7 +2791,7 @@ async function run(){
             </div>
           </div>
         </div>
-      )}}
+      )}
 
       {/* RELEASE MODAL */}
       {showReleases&&(
