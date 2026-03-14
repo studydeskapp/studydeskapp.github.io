@@ -77,6 +77,7 @@ import BuddyTab from './components/tabs/BuddyTab';
 import ShopTab from './components/tabs/ShopTab';
 import AITab from './components/tabs/AITab';
 import AnalyticsTab from './components/tabs/AnalyticsTab';
+import MobileApp from './components/mobile/MobileApp';
 
 // ── Service Modules ──────────────────────────────────────────────────────────────
 import { handleComplete, buyItem, equipItem, addFloat, launchConfetti, checkUnknown } from './services/gameLogic';
@@ -1647,6 +1648,49 @@ async function run(){
     ["ai","AI",<svg key="ai" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg>],
     ["analytics","Analytics",<svg key="an" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>],
   ];
+
+  // ── MOBILE UI ────────────────────────────────────────────────────────────────
+  // Use new mobile-first UI on mobile devices
+  if(isMobile && user && loaded) {
+    return (
+      <>
+        <style>{css}</style>
+        <MobileApp
+          user={user}
+          assignments={assignments}
+          setAssignments={setAssignments}
+          classes={classes}
+          game={game}
+          setGame={setGame}
+          darkMode={darkMode}
+          setDarkMode={setDarkMode}
+          onAddAssignment={() => setAddingA(true)}
+          onAddClass={() => setAddingC(true)}
+          onSignOut={() => {
+            fbClearSession();
+            setUser(null);
+            window.location.href = '/';
+          }}
+          timerMode={timerMode}
+          setTimerMode={setTimerMode}
+          timerSeconds={timerSeconds}
+          timerRunning={timerRunning}
+          timerSessions={timerSessions}
+          startTimer={startTimer}
+          resetTimer={resetTimer}
+          fmtTimer={fmtTimer}
+          customFocus={customFocus}
+          setCustomFocus={setCustomFocus}
+          customShort={customShort}
+          setCustomShort={setCustomShort}
+          customLong={customLong}
+          setCustomLong={setCustomLong}
+          buyItem={buyItem}
+          equipItem={equipItem}
+        />
+      </>
+    );
+  }
 
   return(
     <>
