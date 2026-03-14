@@ -19,6 +19,7 @@ function Header({
     {id:"assignments", label:"Assignments", mobile:"📝"},
     {id:"grades", label:"Grades", mobile:"📊"},
     {id:"schedule", label:"Schedule", mobile:"🏫"},
+    {id:"notes", label:"Notes", mobile:"📔"},
     {id:"timer", label:"Timer", mobile:"⏰"},
     {id:"buddy", label:"Buddy", mobile:"🐾"},
     {id:"shop", label:"Shop", mobile:"🛍️"},

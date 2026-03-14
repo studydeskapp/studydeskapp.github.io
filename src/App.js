@@ -48,7 +48,7 @@ import {
   fbCheckEmailVerified, fbDeleteAccount, fbAdminDeleteUserData,
   fbGoogleSignIn, fbLoadData, fbSaveData, fbGetSession, 
   fbSetSession, fbClearSession, fbIncrementStat, fbUpdatePresence, 
-  fbGetAdminStats, fbEnsureValidToken
+  fbGetAdminStats, fbEnsureValidToken, fbSaveNote, fbDeleteNote, fbGetNotes
 } from './utils/firebase';
 import { callGemini, callGeminiStream, getGeminiKey } from './utils/gemini';
 import { 
@@ -77,6 +77,7 @@ import BuddyTab from './components/tabs/BuddyTab';
 import ShopTab from './components/tabs/ShopTab';
 import AITab from './components/tabs/AITab';
 import AnalyticsTab from './components/tabs/AnalyticsTab';
+import NotesTab from './components/tabs/NotesTab';
 import MobileApp from './components/mobile/MobileApp';
 
 // ── Service Modules ──────────────────────────────────────────────────────────────
@@ -125,6 +126,7 @@ export default function StudyDesk() {
   const [assignments, setAssignments] = useState([]);
   const [classes, setClasses] = useState([]);
   const [chats, setChats] = useState([]);
+  const [notes, setNotes] = useState([]);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — UI / Navigation
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -301,7 +303,7 @@ export default function StudyDesk() {
         setUser(validUser);
         return fbLoadData(validUser.uid, validUser.idToken);
       }).then(d=>{
-        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url)};if(d.t)setTemplates(d.t);if(d.chats)setChats(d.chats);}
+        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url)};if(d.t)setTemplates(d.t);if(d.chats)setChats(d.chats);if(d.n)setNotes(d.n);}
         saveReady.current=true;
         setLoaded(true);
         // Don't auto-show release notes anymore
@@ -362,13 +364,13 @@ export default function StudyDesk() {
       }
       if(e.key==="j"||e.key==="J"){
         e.preventDefault();
-        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai","analytics"];
+        const tabs=["dashboard","assignments","grades","schedule","notes","timer","buddy","shop","ai","analytics"];
         const idx=tabs.indexOf(tab);
         if(idx<tabs.length-1) setTab(tabs[idx+1]);
       }
       if(e.key==="k"||e.key==="K"){
         e.preventDefault();
-        const tabs=["dashboard","assignments","grades","schedule","timer","buddy","shop","ai","analytics"];
+        const tabs=["dashboard","assignments","grades","schedule","notes","timer","buddy","shop","ai","analytics"];
         const idx=tabs.indexOf(tab);
         if(idx>0) setTab(tabs[idx-1]);
       }
@@ -1109,6 +1111,40 @@ async function run(){
       }
       return prev.map(x=>x.id===id?{...x,...patch}:x);
     });
+  }
+
+  // Note handlers
+  async function handleAddNote(noteData) {
+    try {
+      if (!user) return;
+      await fbSaveNote(user.uid, user.idToken, noteData);
+      setNotes(prev => [...prev, { ...noteData, id: Date.now() + Math.random() }]);
+      toast("Note created successfully", "success");
+    } catch (error) {
+      toast("Failed to create note: " + error.message, "error");
+    }
+  }
+
+  async function handleUpdateNote(noteId, noteData) {
+    try {
+      if (!user) return;
+      await fbSaveNote(user.uid, user.idToken, { ...noteData, id: noteId });
+      setNotes(prev => prev.map(note => note.id === noteId ? { ...note, ...noteData } : note));
+      toast("Note updated successfully", "success");
+    } catch (error) {
+      toast("Failed to update note: " + error.message, "error");
+    }
+  }
+
+  async function handleDeleteNote(noteId) {
+    try {
+      if (!user) return;
+      await fbDeleteNote(user.uid, user.idToken, noteId);
+      setNotes(prev => prev.filter(note => note.id !== noteId));
+      toast("Note deleted successfully", "success");
+    } catch (error) {
+      toast("Failed to delete note: " + error.message, "error");
+    }
   }
   function addClass(){if(!cf.name)return;setClasses(p=>[...p,{...cf,id:Date.now().toString()}]);setCf(emptyCF);setAddingC(false);if(user)fbIncrementStat("totalClasses",1,user.idToken);}
 
@@ -1866,7 +1902,7 @@ async function run(){
         <div className="main-inner">
         {/* TABS (desktop: hidden when sidebar shown) */}
         <div className="tabs">
-          {[["dashboard","Dashboard"],["assignments","Assignments"],["grades","Grades"],["schedule","Schedule"],["timer","Timer"],["buddy","Buddy"],["shop","Shop"],["ai","AI Assistant"]].map(([t,l])=>(
+          {[["dashboard","Dashboard"],["assignments","Assignments"],["grades","Grades"],["schedule","Schedule"],["notes","Notes"],["timer","Timer"],["buddy","Buddy"],["shop","Shop"],["ai","AI Assistant"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
@@ -1948,7 +1984,18 @@ async function run(){
           />
         )}
 
-        {tab==="ai"&&<AITab assignments={assignments} classes={classes} chats={chats} setChats={setChats}/>}
+        {tab==="ai"&&<AITab assignments={assignments} classes={classes} chats={chats} setChats={setChats} notes={notes}/>}
+
+        {tab==="notes"&&(
+          <NotesTab
+            notes={notes}
+            assignments={assignments}
+            onAddNote={handleAddNote}
+            onUpdateNote={handleUpdateNote}
+            onDeleteNote={handleDeleteNote}
+            darkMode={darkMode}
+          />
+        )}
 
         {tab==="analytics"&&<AnalyticsTab assignments={assignments} classes={classes} game={game} timerSessions={timerSessions}/>}
 

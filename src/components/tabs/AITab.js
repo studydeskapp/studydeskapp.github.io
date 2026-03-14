@@ -2,8 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { callGemini, callGeminiStream, getGeminiKey } from '../../utils/gemini';
 import { FB_FS, FB_KEY } from '../../utils/firebase';
 import { createNewChat, generateChatTitle, getTimeAgo, getLastMessage, sortChatsByRecent, searchChats } from '../../services/chatLogic';
+import AINoteAnalyzer from './AINoteAnalyzer';
 
-function AITab({ assignments, classes, chats, setChats }) {
+function AITab({ assignments, classes, chats, setChats, notes }) {
   const [aiMode, setAiMode] = useState('chat');
 
   // Chat mode state
@@ -1050,7 +1051,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
 
       {/* Mode tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
-        {[['chat','Chat'],['homework','Homework Helper'],['flashcards','Flashcards'],['writing','Writing'],['insights','Insights']]
+        {[['chat','Chat'],['homework','Homework Helper'],['flashcards','Flashcards'],['writing','Writing'],['notes','Note Analyzer'],['insights','Insights']]
           .map(([mode, label]) => (
             <button key={mode} className={`btn btn-sm ${aiMode === mode ? 'btn-p' : 'btn-g'}`}
               onClick={() => setAiMode(mode)}>{label}</button>
@@ -1716,6 +1717,17 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── NOTE ANALYZER ── */}
+      {aiMode === 'notes' && (
+        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'hidden' }}>
+          <AINoteAnalyzer 
+            notes={notes || []} 
+            assignments={assignments}
+            darkMode={document.body.classList.contains('dark')}
+          />
         </div>
       )}
 

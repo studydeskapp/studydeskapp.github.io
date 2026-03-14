@@ -482,9 +482,71 @@ export async function fbGetUserData(uid, idToken) {
       classes,
       game: gameData,
       canvasUrl: data.cv?.url || "",
+      notes: data.n || [],
     };
   } catch (e) {
     console.error("Error fetching user data:", e);
     return null;
+  }
+}
+
+// ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  NOTES FUNCTIONS                                                             │
+// └──────────────────────────────────────────────────────────────────────────────┘
+
+export async function fbSaveNote(uid, idToken, note) {
+  try {
+    // Get existing user data
+    const userData = await fbLoadData(uid, idToken) || { a: [], c: [], g: {}, n: [] };
+    
+    // Ensure notes array exists
+    if (!userData.n) userData.n = [];
+    
+    // Add or update note
+    const existingIndex = userData.n.findIndex(n => n.id === note.id);
+    if (existingIndex >= 0) {
+      userData.n[existingIndex] = { ...note, updatedAt: new Date().toISOString() };
+    } else {
+      userData.n.push({ 
+        ...note, 
+        id: note.id || Date.now() + Math.random(),
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+    }
+    
+    // Save updated data
+    await fbSaveData(uid, idToken, userData);
+    return true;
+  } catch (error) {
+    console.error("Error saving note:", error);
+    throw error;
+  }
+}
+
+export async function fbDeleteNote(uid, idToken, noteId) {
+  try {
+    // Get existing user data
+    const userData = await fbLoadData(uid, idToken) || { a: [], c: [], g: {}, n: [] };
+    
+    // Remove note
+    userData.n = userData.n.filter(n => n.id !== noteId);
+    
+    // Save updated data
+    await fbSaveData(uid, idToken, userData);
+    return true;
+  } catch (error) {
+    console.error("Error deleting note:", error);
+    throw error;
+  }
+}
+
+export async function fbGetNotes(uid, idToken) {
+  try {
+    const userData = await fbLoadData(uid, idToken);
+    return userData?.n || [];
+  } catch (error) {
+    console.error("Error fetching notes:", error);
+    return [];
   }
 }
