@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { fbGetAdminStats, fbAdminDeleteUserData, fbGetUserData } from '../../utils/firebase';
 
-const ADMIN_PASS = "studydesk2026";
+const getAdminPass = () => process.env.REACT_APP_ADMIN_PASS || '';
 
 function AdminPanel({user, onClose, inline=false}){
   const [pass, setPass] = useState("");
@@ -106,7 +106,7 @@ function AdminPanel({user, onClose, inline=false}){
   },[selectedUser]);
 
   function tryLogin(){
-    if(pass===ADMIN_PASS){setAuthed(true);loadStats();}
+    if(getAdminPass() && pass===getAdminPass()){setAuthed(true);loadStats();}
     else setPassErr("Wrong password.");
   }
 

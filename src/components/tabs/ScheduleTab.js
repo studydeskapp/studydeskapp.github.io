@@ -1,5 +1,6 @@
 import React from 'react';
 import { fmt12 } from '../../utils/helpers';
+import EmptyState from '../shared/EmptyState';
 
 function ScheduleTab({ classes, setSchoolWiz, setAddingC, delClass }) {
   // Only show weekdays (Mon-Fri)
@@ -69,12 +70,13 @@ function ScheduleTab({ classes, setSchoolWiz, setAddingC, delClass }) {
       </div>
       
       {uniqueClasses.length === 0 ? (
-        <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
-          <div className="empty-i">🏫</div>
-          <div className="empty-t">No classes yet</div>
-          <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Add your class schedule to see it here</div>
-          <button className="btn btn-p" onClick={()=>setAddingC(true)}>＋ Add First Class</button>
-        </div>
+        <EmptyState
+          icon="🏫"
+          title="No classes yet"
+          description="Add your class schedule to see your week at a glance"
+          actionLabel="＋ Add first class"
+          onAction={()=>setAddingC(true)}
+        />
       ) : (
         <div className="sched-layout">
           {/* Left side - Class list */}

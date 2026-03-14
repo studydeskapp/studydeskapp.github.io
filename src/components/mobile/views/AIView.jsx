@@ -1,7 +1,5 @@
 import React, { useState } from 'react';
-import { callGemini, callGeminiStream } from '../../../utils/gemini';
-
-const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY || "AIzaSyBas4QTuwJM4rJE4S_1xlPOoTg05GBQNpE";
+import { callGemini, callGeminiStream, getGeminiKey } from '../../../utils/gemini';
 
 // ── Markdown + KaTeX renderer ─────────────────────────────────────────────────
 const renderMarkdown = (text) => {
@@ -149,7 +147,7 @@ Provide helpful, encouraging responses about studying and academics. Use markdow
     const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${getGeminiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

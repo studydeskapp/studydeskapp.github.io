@@ -1,23 +1,25 @@
 import React from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import LandingPage from './LandingPage';
 import LearnMorePage from './LearnMorePage';
 import ReleaseNotesPage from './ReleaseNotesPage';
 
 function Router({ darkMode, onToggleDarkMode, onSignIn, onSignUp }) {
-  const pathname = window.location.pathname;
+  const { pathname } = useLocation();
+  const navigate = useNavigate();
 
   const handleSignIn = () => {
-    window.location.href = '/sign-in';
+    navigate('/sign-in');
     if (onSignIn) onSignIn();
   };
 
   const handleSignUp = () => {
-    window.location.href = '/sign-up';
+    navigate('/sign-up');
     if (onSignUp) onSignUp();
   };
 
   const handleBackToHome = () => {
-    window.location.href = '/';
+    navigate('/');
   };
 
   // Route to Learn More page

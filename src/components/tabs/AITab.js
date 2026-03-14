@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { callGemini, callGeminiStream } from '../../utils/gemini';
+import { callGemini, callGeminiStream, getGeminiKey } from '../../utils/gemini';
 import { FB_FS, FB_KEY } from '../../utils/firebase';
 import { createNewChat, generateChatTitle, getTimeAgo, getLastMessage, sortChatsByRecent, searchChats } from '../../services/chatLogic';
-
-const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY || "AIzaSyBas4QTuwJM4rJE4S_1xlPOoTg05GBQNpE";
 
 function AITab({ assignments, classes, chats, setChats }) {
   const [aiMode, setAiMode] = useState('chat');
@@ -122,7 +120,7 @@ function AITab({ assignments, classes, chats, setChats }) {
     const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${getGeminiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -171,7 +169,7 @@ function AITab({ assignments, classes, chats, setChats }) {
     const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -328,7 +326,7 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -356,7 +354,7 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
 
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -383,7 +381,7 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
     const mimeMatch = base64Image.match(/^data:(image\/\w+);base64,/);
     const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
     const res = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -458,7 +456,7 @@ Use clear markdown formatting with headers, numbered steps, and math notation wh
       const mimeTypeH = mimeMatchH ? mimeMatchH[1] : 'image/jpeg';
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${getGeminiKey()}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -664,7 +662,7 @@ RULES:
       ];
 
       const res = await fetch(
-        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${GEMINI_KEY}`,
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:streamGenerateContent?alt=sse&key=${getGeminiKey()}`,
         {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

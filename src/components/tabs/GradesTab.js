@@ -1,5 +1,6 @@
 import React from 'react';
 import { subjectColor } from '../../utils/helpers';
+import EmptyState from '../shared/EmptyState';
 
 function GradesTab({ assignments, classes, expandedGradeClass, setExpandedGradeClass }) {
   // Build per-class grade data from assignments that have a grade
@@ -28,17 +29,11 @@ function GradesTab({ assignments, classes, expandedGradeClass, setExpandedGradeC
       </div>
       
       {graded.length === 0 ? (
-        <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
-          <div className="empty-i">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">
-              <path d="M18 20V10"/>
-              <path d="M12 20V4"/>
-              <path d="M6 20v-6"/>
-            </svg>
-          </div>
-          <div className="empty-t">No grades yet</div>
-          <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8}}>Grades will appear here when you add them to assignments or sync from Canvas</div>
-        </div>
+        <EmptyState
+          icon="📊"
+          title="No grades yet"
+          description="Grades appear when you add them to assignments or sync from Canvas"
+        />
       ) : (
         <div className="grades-overview">
           {classStats.map(({ subject, assignments, avg, color, count }) => (

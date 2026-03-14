@@ -1,7 +1,9 @@
 import React, { useState } from 'react';
 import { FB_FS, FB_KEY } from '../../utils/firebase';
+import { useToast } from '../../contexts/ToastContext';
 
 function PhoneUploadPage({uploadId}){
+  const { toast } = useToast();
   const [uploaded, setUploaded] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [preview, setPreview] = useState(null);
@@ -81,7 +83,7 @@ function PhoneUploadPage({uploadId}){
     
     img.onerror = () => {
       setUploading(false);
-      alert("Failed to load image. Please try again.");
+      toast("Failed to load image. Please try again.", "error", 4000);
     };
     
     // Load the image

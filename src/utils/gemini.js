@@ -3,7 +3,7 @@
 // │  Functions for interacting with Google's Gemini AI API.                     │
 // └──────────────────────────────────────────────────────────────────────────────┘
 
-const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY || "AIzaSyBas4QTuwJM4rJE4S_1xlPOoTg05GBQNpE";
+export const getGeminiKey = () => process.env.REACT_APP_GEMINI_KEY;
 
 export async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[]){
   const contents = [
@@ -14,7 +14,9 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
   try{
     const controller = new AbortController();
     const timeout = setTimeout(()=>controller.abort(), 30000);
-    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${process.env.REACT_APP_GEMINI_KEY}`,{
+    const key = getGeminiKey();
+    if (!key) throw new Error("Gemini API key not configured. Set REACT_APP_GEMINI_KEY in .env");
+    const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/${model}:streamGenerateContent?alt=sse&key=${key}`,{
       method:"POST",
       signal:controller.signal,
       headers:{"Content-Type":"application/json"},

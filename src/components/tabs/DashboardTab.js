@@ -1,5 +1,6 @@
 import React from 'react';
 import { fmt12, todayAbbr, daysUntil } from '../../utils/helpers';
+import EmptyState from '../shared/EmptyState';
 
 function DashboardTab({ 
   assignments, 
@@ -11,7 +12,8 @@ function DashboardTab({
   todayC, 
   todayCnt, 
   game, 
-  ACard 
+  ACard,
+  onAddAssignment
 }) {
   return (
     <div className="tab-content">
@@ -70,7 +72,13 @@ function DashboardTab({
             {upcoming.slice(0,8).map(a=>{
               return <ACard key={a.id} a={a} compact/>;
             })}
-            {upcoming.length===0&&<div className="empty"><div className="empty-i">🎉</div><div className="empty-t">All caught up!</div></div>}
+            {upcoming.length===0&&(
+              onAddAssignment ? (
+                <EmptyState icon="🎉" title="All caught up!" description="No pending assignments. Add one or import from Canvas." actionLabel="＋ Add assignment" onAction={onAddAssignment} />
+              ) : (
+                <div className="empty"><div className="empty-i">🎉</div><div className="empty-t">All caught up!</div></div>
+              )
+            )}
           </div>
         </div>
 

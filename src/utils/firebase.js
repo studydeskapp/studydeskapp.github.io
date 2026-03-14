@@ -4,14 +4,14 @@
 // │  No Firebase SDK — pure REST API calls for auth, Firestore, and admin.     │
 // └──────────────────────────────────────────────────────────────────────────────┘
 
-// Firebase Configuration
-export const FB_KEY = "AIzaSyAm_er58eB70Mlhs1uALPmqMO-gh9BGg6c";
-export const FB_PROJECT = "studydesk-1b251";
+// Firebase Configuration (from env - see .env.example)
+export const FB_KEY = process.env.REACT_APP_FB_KEY || "";
+export const FB_PROJECT = process.env.REACT_APP_FB_PROJECT || "studydesk-1b251";
 export const FB_AUTH = "https://identitytoolkit.googleapis.com/v1/accounts";
 export const FB_FS = `https://firestore.googleapis.com/v1/projects/${FB_PROJECT}/databases/(default)/documents`;
 
 // Google OAuth Configuration
-export const GOOGLE_CLIENT_ID = "354710751847-29cuupcg436t4uubpa212ftg341s9t6p.apps.googleusercontent.com";
+export const GOOGLE_CLIENT_ID = process.env.REACT_APP_GOOGLE_CLIENT_ID || "REPLACE_WITH_YOUR_WEB_CLIENT_ID";
 
 // ┌──────────────────────────────────────────────────────────────────────────────┐
 // │  AUTHENTICATION FUNCTIONS                                                    │
@@ -241,13 +241,21 @@ export async function fbEnsureValidToken(user) {
   }
 }
 
+/**
+ * Save user data to Firestore.
+ * Uses updateMask to update only the data field (merge semantics) — other document
+ * fields are preserved. Returns a promise that rejects on failure for caller handling.
+ */
 export async function fbSaveData(uid, idToken, data) {
-  try {
-    await fetch(`${FB_FS}/users/${uid}?updateMask.fieldPaths=data`, {
-      method:"PATCH", headers:{"Content-Type":"application/json","Authorization":`Bearer ${idToken}`},
-      body: JSON.stringify({fields:{data:{stringValue:JSON.stringify(data)}}})
-    });
-  } catch(e) { console.warn("Save error", e); }
+  const res = await fetch(`${FB_FS}/users/${uid}?updateMask.fieldPaths=data`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
+    body: JSON.stringify({ fields: { data: { stringValue: JSON.stringify(data) } } }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err?.error?.message || "Save failed");
+  }
 }
 
 export function fbGetSession() {

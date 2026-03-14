@@ -50,7 +50,7 @@ import {
   fbSetSession, fbClearSession, fbIncrementStat, fbUpdatePresence, 
   fbGetAdminStats, fbEnsureValidToken
 } from './utils/firebase';
-import { callGemini, callGeminiStream } from './utils/gemini';
+import { callGemini, callGeminiStream, getGeminiKey } from './utils/gemini';
 import { 
   CF_PROXY, fetchWithFallback, getBuddyStage, daysUntil, 
   fmtDate, fmt12, fmt12h, todayAbbr, subjectColor, extractId 
@@ -91,19 +91,20 @@ import { fetchLeaderboard } from './services/leaderboardLogic';
 import { getBuddyQuote, getBuddyMood, getBuddyReaction, getBuddyTip } from './services/buddyLogic';
 import { getSmartRecommendations, getTimeBasedSuggestion } from './services/smartPriority';
 import { checkAndCreateFromTemplates, createTemplateFromAssignment, validateTemplate, getTemplatePreview } from './services/templateLogic';
+import { useTimerState } from './hooks/useTimerState';
+import { useToast } from './contexts/ToastContext';
 
 // ── Local Constants (not extracted) ─────────────────────────────────────────────
 const IS_PREVIEW = false;
 const isChromebook = navigator.userAgentData?.platform === "Chrome OS" || navigator.userAgent.includes("CrOS");
 const isLocalhost = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1";
-const ADMIN_PASS = "studydesk2026";
-const GEMINI_KEY = process.env.REACT_APP_GEMINI_KEY;
 const STORAGE_KEY = "hw-tracker-v1";
 const APP_VERSION = "1.7.0";
 
 
 export default function StudyDesk() {
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  const { toast } = useToast();
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Core data (persisted to Firestore)
   
   // Restore path from 404.html redirect - must run BEFORE route detection
@@ -133,19 +134,14 @@ export default function StudyDesk() {
   const [pwaPrompt, setPwaPrompt] = useState(null);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Study Timer + Leaderboard
-  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
-  const [timerMode, setTimerMode] = useState("pomodoro"); // pomodoro|short|long|custom
-  const [timerSeconds, setTimerSeconds] = useState(25*60);
-  const [timerRunning, setTimerRunning] = useState(false);
-  const [timerInterval, setTimerInterval] = useState(null);
-  const [timerSessions, setTimerSessions] = useState(0);
-  const [showCustomTimer, setShowCustomTimer] = useState(false);
-  const [customFocus,  setCustomFocus]  = useState(25); // minutes
-  const [customShort,  setCustomShort]  = useState(5);
-  const [customLong,   setCustomLong]   = useState(15);
-  const [customRounds, setCustomRounds] = useState(4);  // sessions before long break
-  const [autoStartBreaks, setAutoStartBreaks] = useState(false);
-  const [sessionCount, setSessionCount] = useState(0); // tracks rounds for auto long-break
+  // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
+  const timerState = useTimerState();
+  const {
+    timerMode, setTimerMode, timerSeconds, setTimerSeconds, timerRunning, setTimerRunning,
+    timerInterval, setTimerInterval, timerSessions, setTimerSessions, showCustomTimer, setShowCustomTimer,
+    customFocus, setCustomFocus, customShort, setCustomShort, customLong, setCustomLong,
+    customRounds, setCustomRounds, autoStartBreaks, setAutoStartBreaks, sessionCount, setSessionCount,
+  } = timerState;
   const [leaderboard, setLeaderboard] = useState([]);
   const [showLeaderboard, setShowLeaderboard] = useState(false);
   const [showReleases, setShowReleases] = useState(false);
@@ -332,13 +328,13 @@ export default function StudyDesk() {
       try {
         const validUser = await fbEnsureValidToken(user);
         if (validUser !== user) {
-          setUser(validUser); // Update user state if token was refreshed
+          setUser(validUser);
         }
         await fbSaveData(validUser.uid, validUser.idToken, {a:assignments,c:classes,g:game,cv:{url:canvasBaseUrl},t:templates,chats:chats});
       } catch (error) {
         console.warn("Save failed:", error);
         if (error.message.includes("Session expired")) {
-          setUser(null); // Force re-login
+          setUser(null);
         }
       }
     },800); // debounce 800ms
@@ -1046,10 +1042,11 @@ async function run(){
     }
     
     // Validate assignment with Gemini API
-    if(GEMINI_KEY) {
+    const geminiKey = getGeminiKey();
+    if(geminiKey) {
       setValidatingAssignment(true);
       try {
-        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`, {
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${geminiKey}`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -1067,9 +1064,8 @@ async function run(){
         setValidatingAssignment(false);
         
         if(answer === "NO") {
-          // Deduct 15 points for fake assignment
           setGame(g => ({ ...g, points: Math.max(0, g.points - 15) }));
-          alert("⚠️ This doesn't appear to be a real assignment. 15 points have been deducted.");
+          toast("This doesn't appear to be a real assignment. 15 points deducted.", "warning", 5000);
           setAddingA(false);
           setAf(emptyAF);
           setSubjMode("select");
@@ -1092,10 +1088,10 @@ async function run(){
       setSubjMode("select");
       setTab("assignments");
       if(user) fbIncrementStat("totalAssignments",1,user.idToken);
-      console.log("Assignment added successfully");
+      toast("Assignment added!", "success", 2500);
     } catch(error) {
       console.error("Error adding assignment:", error);
-      alert("Failed to add assignment: " + error.message);
+      toast("Failed to add assignment: " + error.message, "error", 5000);
     }
   }
   function delAssignment(id){setAssignments(p=>p.filter(x=>x.id!==id));}
@@ -1902,9 +1898,10 @@ async function run(){
 
         {/* ═══ TAB CONTENT ═══════════════════════════════════════════ */}
         {tab==="dashboard"&&(
-          <DashboardTab 
+          <DashboardTab
             assignments={assignments}
             classes={classes}
+            onAddAssignment={()=>{setSubjMode("select");setAddingA(true);}}
             overdue={overdue}
             dueToday={dueToday}
             completed={completed}

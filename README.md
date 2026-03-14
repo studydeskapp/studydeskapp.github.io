@@ -144,16 +144,20 @@ public/
 
 ## 🔒 Environment / Config
 
-All config is hardcoded in `App.js` at the top of the file:
+Copy `.env.example` to `.env` and fill in your values:
 
-```js
-const FB_KEY = "...";           // Firebase API key
-const FB_PROJECT = "...";       // Firebase project ID
-const GOOGLE_CLIENT_ID = "..."; // Google OAuth Web Client ID
-const CF_PROXY = "...";         // Cloudflare Worker URL
+```bash
+cp .env.example .env
 ```
 
-To deploy your own instance, swap these values for your own Firebase project.
+Required variables:
+- `REACT_APP_FB_KEY` — Firebase API key
+- `REACT_APP_FB_PROJECT` — Firebase project ID  
+- `REACT_APP_GOOGLE_CLIENT_ID` — Google OAuth Web Client ID
+- `REACT_APP_GEMINI_KEY` — Gemini AI API key (for AI features)
+- `REACT_APP_ADMIN_PASS` — Admin panel password (optional)
+
+**Note:** `public/action.html` is a static email action handler. For production, replace the `FB_KEY` placeholder in that file or use your deployment platform's env substitution.
 
 ---
 

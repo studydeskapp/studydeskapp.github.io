@@ -1,5 +1,6 @@
 import React from 'react';
 import { subjectColor } from '../../utils/helpers';
+import EmptyState from '../shared/EmptyState';
 
 function AssignmentsTab({ 
   sortedA, 
@@ -73,12 +74,13 @@ function AssignmentsTab({
         </div>
       )}
       {pending.length===0&&done.length===0&&(
-        <div className="empty" style={{background:"var(--card)",border:"1.5px dashed var(--border2)",borderRadius:18,padding:"52px 20px"}}>
-          <div className="empty-i">📝</div>
-          <div className="empty-t">No assignments yet</div>
-          <div style={{fontSize:".78rem",color:"var(--text4)",marginTop:8,marginBottom:18}}>Add assignments manually or import from Canvas or Google Slides</div>
-          <button className="btn btn-p" onClick={()=>{setSubjMode("select");setAddingA(true);}}>＋ Add First Assignment</button>
-        </div>
+        <EmptyState
+          icon="📝"
+          title="No assignments yet"
+          description="Add assignments manually or import from Canvas, Google Docs, or Slides"
+          actionLabel="＋ Add first assignment"
+          onAction={()=>{setSubjMode("select");setAddingA(true);}}
+        />
       )}
     </div>
   );

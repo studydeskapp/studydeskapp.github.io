@@ -61,7 +61,7 @@
     radial-gradient(circle at 80% 70%, rgba(91, 141, 238, 0.06) 0%, transparent 50%);
 }
 
-/* CSS Variables for Landing Page */
+/* CSS Variables for Landing Page - aligned with app design tokens */
 .landing-page {
   --landing-bg: #F4F1EB;
   --landing-bg2: #FFFFFF;
@@ -77,6 +77,8 @@
   --landing-accent2: #4A7DD9;
   --landing-card: #FFFFFF;
   --landing-card2: #F9F7F3;
+  --landing-radius: 16px;
+  --landing-space: 24px;
 }
 
 .landing-page.dark {
