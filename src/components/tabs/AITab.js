@@ -73,6 +73,17 @@ function AITab({ assignments, classes, chats, setChats, notes }) {
   const [writingFeedback, setWritingFeedback] = useState('');
   const [writingLoading, setWritingLoading] = useState(false);
 
+  // Questions state
+  const [questionsInput, setQuestionsInput] = useState('');
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [generatedQuestions, setGeneratedQuestions] = useState([]);
+  const [userAnswers, setUserAnswers] = useState({});
+  const [showResults, setShowResults] = useState({});
+  const [userTextAnswers, setUserTextAnswers] = useState({});
+  const [checkingAnswer, setCheckingAnswer] = useState(false);
+  const [showWebcam, setShowWebcam] = useState(false);
+  const [webcamStream, setWebcamStream] = useState(null);
+
   // Insights state
   const [insights, setInsights] = useState('');
   const [insightsLoading, setInsightsLoading] = useState(false);
@@ -953,6 +964,230 @@ Be constructive and encouraging. Use markdown formatting.`;
     setWritingLoading(false);
   };
 
+  // ── Questions ────────────────────────────────────────────────────────────────
+  const openWebcam = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+      setWebcamStream(stream);
+      setShowWebcam(true);
+    } catch (err) {
+      console.error('Error accessing webcam:', err);
+      alert('Could not access webcam. Please check permissions or use file upload instead.');
+    }
+  };
+
+  const closeWebcam = () => {
+    if (webcamStream) {
+      webcamStream.getTracks().forEach(track => track.stop());
+      setWebcamStream(null);
+    }
+    setShowWebcam(false);
+  };
+
+  const capturePhoto = () => {
+    const video = document.getElementById('webcam-video');
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    canvas.getContext('2d').drawImage(video, 0, 0);
+    const imageData = canvas.toDataURL('image/jpeg');
+    
+    // For now, just add to input - you can extend this to actually process the image
+    setQuestionsInput(prev => prev + '\n[Image captured from webcam]');
+    closeWebcam();
+    
+    // TODO: You can add the image to a state variable to send to Gemini
+    console.log('Captured image:', imageData);
+  };
+
+  const generateQuestions = async () => {
+    if (!questionsInput.trim() || questionsLoading) return;
+    setQuestionsLoading(true);
+    setGeneratedQuestions([]);
+    setUserAnswers({});
+    setShowResults({});
+    setUserTextAnswers({});
+    
+    try {
+      const prompt = `Based on the content provided, generate practice questions to test understanding.
+
+IMPORTANT: Create actual QUESTIONS that students can answer, not definitions or explanations.
+
+Generate exactly these types of questions:
+
+MULTIPLE CHOICE (5 questions):
+Format each as:
+1. [Question text asking student to choose answer]
+   A) [Option 1 text]
+   B) [Option 2 text] 
+   C) [Option 3 text]
+   D) [Option 4 text]
+   Correct Answer: [letter A, B, C, or D]
+   Explanation: [brief explanation]
+
+SHORT ANSWER (3 questions):
+Format each as:
+6. [Question that requires 1-2 sentence answer]
+   Answer: [expected answer]
+   
+ESSAY/DISCUSSION (2 questions):
+Format each as:
+9. [Question requiring detailed explanation or comparison]
+   Answer: [key points expected]
+
+Content to analyze:
+${questionsInput}`;
+
+      const response = await callGemini(prompt, "You are a helpful AI study assistant. Generate practice questions to test understanding.");
+      const questions = parseQuestions(response);
+      setGeneratedQuestions(questions);
+    } catch (err) {
+      alert("Sorry, I couldn't generate questions right now. Please try again.");
+    }
+    setQuestionsLoading(false);
+  };
+
+  const parseQuestions = (response) => {
+    const questions = [];
+    const lines = response.split('\n');
+    let currentQuestion = null;
+    let questionType = 'multiple-choice';
+    let collectingAnswer = false;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      
+      if (line.match(/MULTIPLE\s+CHOICE/i)) {
+        questionType = 'multiple-choice';
+        continue;
+      } else if (line.match(/SHORT\s+ANSWER/i)) {
+        questionType = 'short-answer';
+        continue;
+      } else if (line.match(/ESSAY|DISCUSSION/i)) {
+        questionType = 'essay';
+        continue;
+      }
+      
+      const questionMatch = line.match(/^(\d+)\.\s+(.+)/);
+      if (questionMatch && questionMatch[2].length > 10) {
+        if (currentQuestion && currentQuestion.text) {
+          questions.push(currentQuestion);
+        }
+        currentQuestion = { 
+          type: questionType, 
+          text: questionMatch[2], 
+          options: [], 
+          correct: null,
+          explanation: '',
+          answer: ''
+        };
+        collectingAnswer = false;
+        continue;
+      }
+      
+      if (currentQuestion && currentQuestion.type === 'multiple-choice') {
+        const optionMatch = line.match(/^([A-D])\)\s+(.+)/i);
+        if (optionMatch && optionMatch[2].length > 1) {
+          currentQuestion.options.push({
+            letter: optionMatch[1].toUpperCase(),
+            text: optionMatch[2]
+          });
+          continue;
+        }
+        
+        const correctMatch = line.match(/Correct\s+Answer:\s*([A-D])/i);
+        if (correctMatch) {
+          currentQuestion.correct = correctMatch[1].toUpperCase();
+          continue;
+        }
+        
+        const explanationMatch = line.match(/Explanation:\s*(.+)/i);
+        if (explanationMatch) {
+          currentQuestion.explanation = explanationMatch[1];
+          continue;
+        }
+      }
+      
+      if (currentQuestion && ['short-answer', 'essay'].includes(currentQuestion.type)) {
+        const answerMatch = line.match(/Answer:\s*(.+)/i);
+        if (answerMatch) {
+          currentQuestion.answer = answerMatch[1];
+          collectingAnswer = true;
+          continue;
+        }
+        
+        if (collectingAnswer && line && !line.match(/^\d+\./) && line.length > 0) {
+          currentQuestion.answer += ' ' + line;
+        }
+      }
+    }
+    
+    if (currentQuestion && currentQuestion.text && 
+        ((currentQuestion.type === 'multiple-choice' && currentQuestion.options.length > 0) ||
+         (['short-answer', 'essay'].includes(currentQuestion.type) && currentQuestion.answer))) {
+      questions.push(currentQuestion);
+    }
+    
+    return questions.filter(q => {
+      if (!q.text || q.text.length < 10) return false;
+      if (q.type === 'multiple-choice' && q.options.length < 2) return false;
+      if (['short-answer', 'essay'].includes(q.type) && !q.answer) return false;
+      return true;
+    });
+  };
+
+  const handleMultipleChoiceAnswer = (questionIndex, selectedOption) => {
+    setUserAnswers(prev => ({ ...prev, [questionIndex]: selectedOption }));
+    setShowResults(prev => ({ ...prev, [questionIndex]: true }));
+  };
+
+  const handleTextAnswer = (questionIndex, answer) => {
+    setUserTextAnswers(prev => ({ ...prev, [questionIndex]: answer }));
+  };
+
+  const checkTextAnswerWithAI = async (questionIndex, question) => {
+    const userAnswer = userTextAnswers[questionIndex] || '';
+    if (!userAnswer.trim()) {
+      alert('Please provide an answer first');
+      return;
+    }
+
+    setCheckingAnswer(true);
+    try {
+      const prompt = `You are evaluating a student's answer to a question.
+
+Question: ${question.text}
+Expected Answer: ${question.answer}
+Student's Answer: ${userAnswer}
+
+Evaluate if the student's answer is correct. Respond in this exact format:
+RESULT: [CORRECT or INCORRECT]
+FEEDBACK: [Brief 1-2 sentence explanation. If incorrect, explain why and what was missing. If correct, acknowledge what they got right.]`;
+
+      const response = await callGemini(prompt, "You are a helpful study assistant evaluating student answers. Be encouraging but accurate.");
+      
+      const resultMatch = response.match(/RESULT:\s*(CORRECT|INCORRECT)/i);
+      const feedbackMatch = response.match(/FEEDBACK:\s*(.+)/is);
+      
+      const isCorrect = resultMatch && resultMatch[1].toUpperCase() === 'CORRECT';
+      const feedback = feedbackMatch ? feedbackMatch[1].trim() : response;
+      
+      setShowResults(prev => ({ 
+        ...prev, 
+        [questionIndex]: { 
+          shown: true, 
+          isCorrect, 
+          feedback 
+        } 
+      }));
+    } catch (error) {
+      console.error('Error checking answer:', error);
+      alert('Failed to check answer. Please try again.');
+    } finally {
+      setCheckingAnswer(false);
+    }
+  };
+
   // ── Insights ─────────────────────────────────────────────────────────────────
   const generateInsights = async () => {
     if (insightsLoading) return;
@@ -1051,7 +1286,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
 
       {/* Mode tabs */}
       <div style={{ display:'flex', gap:6, marginBottom:16, flexWrap:'wrap' }}>
-        {[['chat','Chat'],['homework','Homework Helper'],['flashcards','Flashcards'],['writing','Writing'],['notes','Note Analyzer'],['insights','Insights']]
+        {[['chat','Chat'],['homework','Homework Helper'],['flashcards','Flashcards'],['writing','Writing'],['questions','Questions'],['notes','Note Analyzer'],['insights','Insights']]
           .map(([mode, label]) => (
             <button key={mode} className={`btn btn-sm ${aiMode === mode ? 'btn-p' : 'btn-g'}`}
               onClick={() => setAiMode(mode)}>{label}</button>
@@ -1641,33 +1876,91 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               <div style={{ fontSize:'.9rem', fontWeight:600, color:'var(--text)', marginBottom:16 }}>
                 Your Flashcards ({flashcards.length}) — Click to flip!
               </div>
-              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:16, marginBottom:16 }}>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(300px, 1fr))', gap:16, marginBottom:16, perspective:1000 }}>
                 {flashcards.map((card, index) => {
                   const isFlipped = flippedCards.has(index);
                   return (
                     <div key={index} onClick={() => toggleFlashcard(index)}
-                      style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:12,
-                        minHeight:200, maxHeight:250, cursor:'pointer', position:'relative',
-                        transformStyle:'preserve-3d', transition:'transform 0.6s',
-                        transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)', overflow:'hidden' }}>
-                      <div style={{ position:'absolute', width:'100%', height:'100%', backfaceVisibility:'hidden',
-                        display:'flex', flexDirection:'column', justifyContent:'center', padding:20,
-                        borderRadius:12, boxSizing:'border-box' }}>
+                      style={{ 
+                        background:'var(--card)', 
+                        border:'1.5px solid var(--border)', 
+                        borderRadius:12,
+                        minHeight:200, 
+                        maxHeight:250, 
+                        cursor:'pointer', 
+                        position:'relative',
+                        transformStyle:'preserve-3d', 
+                        transition:'transform 0.6s',
+                        transform: isFlipped ? 'rotateY(180deg)' : 'rotateY(0deg)'
+                      }}>
+                      {/* Front of card (Question) */}
+                      <div style={{ 
+                        position:'absolute', 
+                        width:'100%', 
+                        height:'100%', 
+                        backfaceVisibility:'hidden',
+                        WebkitBackfaceVisibility:'hidden',
+                        display:'flex', 
+                        flexDirection:'column', 
+                        justifyContent:'center', 
+                        padding:20,
+                        borderRadius:12, 
+                        boxSizing:'border-box',
+                        background:'var(--card)'
+                      }}>
                         <div style={{ fontSize:'.8rem', color:'var(--accent)', fontWeight:600, marginBottom:12, textAlign:'center' }}>QUESTION</div>
-                        <div style={{ fontSize:'.85rem', color:'var(--text)', lineHeight:1.4, textAlign:'center',
-                          flex:1, display:'flex', alignItems:'center', justifyContent:'center',
-                          wordWrap:'break-word', overflowWrap:'break-word', hyphens:'auto', padding:'0 4px' }}>
+                        <div style={{ 
+                          fontSize:'.85rem', 
+                          color:'var(--text)', 
+                          lineHeight:1.4, 
+                          textAlign:'center',
+                          flex:1, 
+                          display:'flex', 
+                          alignItems:'center', 
+                          justifyContent:'center',
+                          wordWrap:'break-word', 
+                          overflowWrap:'break-word', 
+                          hyphens:'auto', 
+                          padding:'0 4px',
+                          overflowY:'auto'
+                        }}>
                           {card.question}
                         </div>
                         <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12 }}>Click to reveal answer</div>
                       </div>
-                      <div style={{ position:'absolute', width:'100%', height:'100%', backfaceVisibility:'hidden',
-                        transform:'rotateY(180deg)', display:'flex', flexDirection:'column', justifyContent:'center',
-                        padding:20, borderRadius:12, background:'var(--card)', boxSizing:'border-box' }}>
+                      
+                      {/* Back of card (Answer) */}
+                      <div style={{ 
+                        position:'absolute', 
+                        width:'100%', 
+                        height:'100%', 
+                        backfaceVisibility:'hidden',
+                        WebkitBackfaceVisibility:'hidden',
+                        transform:'rotateY(180deg)', 
+                        display:'flex', 
+                        flexDirection:'column', 
+                        justifyContent:'center',
+                        padding:20, 
+                        borderRadius:12, 
+                        background:'var(--card)', 
+                        boxSizing:'border-box'
+                      }}>
                         <div style={{ fontSize:'.8rem', color:'#16a34a', fontWeight:600, marginBottom:12, textAlign:'center' }}>ANSWER</div>
-                        <div style={{ fontSize:'.85rem', color:'var(--text)', lineHeight:1.4, textAlign:'center',
-                          flex:1, display:'flex', alignItems:'center', justifyContent:'center',
-                          wordWrap:'break-word', overflowWrap:'break-word', hyphens:'auto', padding:'0 4px', overflowY:'auto' }}>
+                        <div style={{ 
+                          fontSize:'.85rem', 
+                          color:'var(--text)', 
+                          lineHeight:1.4, 
+                          textAlign:'center',
+                          flex:1, 
+                          display:'flex', 
+                          alignItems:'center', 
+                          justifyContent:'center',
+                          wordWrap:'break-word', 
+                          overflowWrap:'break-word', 
+                          hyphens:'auto', 
+                          padding:'0 4px', 
+                          overflowY:'auto'
+                        }}>
                           {card.answer}
                         </div>
                         <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12 }}>Click to see question</div>
@@ -1715,6 +2008,246 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               <div style={{ marginTop:16, textAlign:'center' }}>
                 <button className="btn btn-g btn-sm" onClick={() => setWritingFeedback('')}>Clear Feedback</button>
               </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── QUESTIONS ── */}
+      {aiMode === 'questions' && (
+        <div style={{ flex:1, display:'flex', flexDirection:'column', overflow:'auto' }}>
+          <div style={{ background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, marginBottom:16 }}>
+            <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>Generate Practice Questions</div>
+            <div style={{ fontSize:'.85rem', color:'var(--text3)', marginBottom:16 }}>
+              Enter text, upload a file, or take a picture to generate practice questions.
+            </div>
+            <textarea value={questionsInput} onChange={e => setQuestionsInput(e.target.value)}
+              placeholder="Paste your notes or study material here..."
+              style={{ width:'100%', minHeight:120, padding:12, border:'1.5px solid var(--border)', borderRadius:8,
+                background:'var(--bg2)', color:'var(--text)', fontSize:'.85rem', outline:'none', resize:'vertical',
+                fontFamily:"'Plus Jakarta Sans', sans-serif", marginBottom:12 }} />
+            <div style={{ display:'flex', gap:8, marginBottom:12, flexWrap:'wrap' }}>
+              <label className="btn btn-g btn-sm" style={{ cursor:'pointer' }}>
+                📁 Upload File
+                <input type="file" accept=".txt,.pdf,.doc,.docx,.jpg,.jpeg,.png,.gif" style={{ display:'none' }} />
+              </label>
+              {/Mobi|Android/i.test(navigator.userAgent) ? (
+                <label className="btn btn-g btn-sm" style={{ cursor:'pointer' }}>
+                  📷 Take Picture
+                  <input type="file" accept="image/*" capture="environment" style={{ display:'none' }} />
+                </label>
+              ) : (
+                <button className="btn btn-g btn-sm" onClick={openWebcam}>
+                  📷 Take Picture
+                </button>
+              )}
+            </div>
+            <button className="btn btn-p" onClick={generateQuestions} disabled={!questionsInput.trim() || questionsLoading}>
+              {questionsLoading ? 'Generating Questions...' : 'Generate Questions'}
+            </button>
+          </div>
+
+          {/* Webcam Modal */}
+          {showWebcam && (
+            <div style={{
+              position:'fixed', inset:0, background:'rgba(0,0,0,0.8)', zIndex:9999,
+              display:'flex', alignItems:'center', justifyContent:'center'
+            }}>
+              <div style={{
+                background:'var(--card)', borderRadius:16, padding:20, maxWidth:600, width:'90%',
+                display:'flex', flexDirection:'column', gap:16
+              }}>
+                <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                  <div style={{ fontWeight:600, fontSize:'1.1rem', color:'var(--text)' }}>Take a Picture</div>
+                  <button onClick={closeWebcam} style={{
+                    background:'none', border:'none', fontSize:'1.5rem', cursor:'pointer', color:'var(--text3)'
+                  }}>×</button>
+                </div>
+                <video
+                  id="webcam-video"
+                  autoPlay
+                  playsInline
+                  ref={video => {
+                    if (video && webcamStream) {
+                      video.srcObject = webcamStream;
+                    }
+                  }}
+                  style={{ width:'100%', borderRadius:8, background:'#000' }}
+                />
+                <div style={{ display:'flex', gap:8, justifyContent:'center' }}>
+                  <button className="btn btn-p" onClick={capturePhoto}>
+                    📸 Capture
+                  </button>
+                  <button className="btn btn-g" onClick={closeWebcam}>
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {generatedQuestions.length > 0 && (
+            <div style={{ flex:1, background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, overflow:'auto' }}>
+              <h3 style={{ marginBottom:16, color:'var(--accent)', fontSize:'1.1rem', fontWeight:700 }}>Practice Questions</h3>
+              {generatedQuestions.map((q, idx) => (
+                <div key={idx} style={{ marginBottom:24, padding:16, background:'var(--bg3)', borderRadius:10 }}>
+                  <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>
+                    {idx + 1}. {q.text}
+                  </div>
+                  
+                  {/* Multiple Choice Questions */}
+                  {q.options && q.options.length > 0 && (
+                    <div style={{ marginLeft:16 }}>
+                      {q.options.map((opt, optIdx) => {
+                        const optionLetter = opt.letter;
+                        const isSelected = userAnswers[idx] === optionLetter;
+                        const isCorrect = optionLetter === q.correct;
+                        const showResult = showResults[idx];
+                        
+                        return (
+                          <div
+                            key={optIdx}
+                            onClick={() => !showResult && handleMultipleChoiceAnswer(idx, optionLetter)}
+                            style={{
+                              padding:12,
+                              marginBottom:8,
+                              border: `2px solid ${
+                                showResult && isCorrect ? '#10b981' :
+                                showResult && isSelected && !isCorrect ? '#ef4444' :
+                                isSelected ? 'var(--accent)' : 'var(--border)'
+                              }`,
+                              borderRadius:8,
+                              background: showResult && isCorrect ? '#10b98110' :
+                                         showResult && isSelected && !isCorrect ? '#ef444410' :
+                                         isSelected ? 'var(--accent)10' : 'var(--card)',
+                              cursor: showResult ? 'default' : 'pointer',
+                              transition:'all 0.2s ease',
+                              display:'flex',
+                              alignItems:'center',
+                              gap:12
+                            }}
+                          >
+                            <div style={{
+                              width:24,
+                              height:24,
+                              borderRadius:'50%',
+                              border: `2px solid ${
+                                showResult && isCorrect ? '#10b981' :
+                                showResult && isSelected && !isCorrect ? '#ef4444' :
+                                isSelected ? 'var(--accent)' : 'var(--border)'
+                              }`,
+                              background: isSelected ? (
+                                showResult && isCorrect ? '#10b981' :
+                                showResult && !isCorrect ? '#ef4444' : 'var(--accent)'
+                              ) : 'transparent',
+                              display:'flex',
+                              alignItems:'center',
+                              justifyContent:'center',
+                              color:'white',
+                              fontSize:'.75rem',
+                              fontWeight:600,
+                              flexShrink:0
+                            }}>
+                              {isSelected && (showResult ? (isCorrect ? '✓' : '✗') : optionLetter)}
+                            </div>
+                            <div style={{ flex:1 }}>
+                              <span style={{ fontWeight: showResult && isCorrect ? 600 : 'normal', color:'var(--text)' }}>
+                                <strong>{optionLetter})</strong> {opt.text}
+                              </span>
+                            </div>
+                            {showResult && isCorrect && (
+                              <span style={{ color:'#10b981', fontWeight:600, fontSize:'.85rem' }}>✓ Correct</span>
+                            )}
+                            {showResult && !isCorrect && isSelected && (
+                              <span style={{ color:'#ef4444', fontWeight:600, fontSize:'.85rem' }}>✗ Wrong</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {showResults[idx] && q.explanation && (
+                        <div style={{ marginTop:12, padding:12, background:'var(--bg2)', borderRadius:8,
+                          borderLeft:'4px solid var(--accent)', fontSize:'.85rem', color:'var(--text2)' }}>
+                          <strong style={{ color:'var(--accent)' }}>💡 Explanation:</strong> {q.explanation}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  
+                  {/* Text Answer Questions */}
+                  {(!q.options || q.options.length === 0) && q.answer && (
+                    <div style={{ marginLeft:16 }}>
+                      <textarea
+                        placeholder={q.type === 'essay' ? "Write your detailed answer here..." : "Type your answer here..."}
+                        value={userTextAnswers[idx] || ''}
+                        onChange={(e) => handleTextAnswer(idx, e.target.value)}
+                        disabled={showResults[idx]?.shown}
+                        style={{
+                          width:'100%',
+                          minHeight: q.type === 'essay' ? 120 : 80,
+                          padding:12,
+                          border: `2px solid ${
+                            showResults[idx]?.shown ? 
+                              (showResults[idx]?.isCorrect ? '#10b981' : '#ef4444') : 'var(--border)'
+                          }`,
+                          borderRadius:8,
+                          background:'var(--card)',
+                          color:'var(--text)',
+                          fontSize:'.85rem',
+                          resize:'vertical',
+                          fontFamily:'inherit'
+                        }}
+                      />
+                      <div style={{ marginTop:12, display:'flex', flexDirection:'column', gap:12 }}>
+                        {!showResults[idx]?.shown && (
+                          <button
+                            onClick={() => checkTextAnswerWithAI(idx, q)}
+                            disabled={!userTextAnswers[idx]?.trim() || checkingAnswer}
+                            style={{
+                              padding:'10px 20px',
+                              background: userTextAnswers[idx]?.trim() && !checkingAnswer ? 'var(--accent)' : 'var(--bg3)',
+                              color: userTextAnswers[idx]?.trim() && !checkingAnswer ? 'white' : 'var(--text3)',
+                              border:'none',
+                              borderRadius:8,
+                              fontSize:'.85rem',
+                              fontWeight:600,
+                              cursor: userTextAnswers[idx]?.trim() && !checkingAnswer ? 'pointer' : 'not-allowed',
+                              transition:'all 0.2s ease',
+                              alignSelf:'flex-start'
+                            }}
+                          >
+                            {checkingAnswer ? 'Checking...' : '✓ Check Answer'}
+                          </button>
+                        )}
+                        {showResults[idx]?.shown && (
+                          <div style={{ 
+                            padding:16, 
+                            background: showResults[idx]?.isCorrect ? '#10b98115' : '#ef444415',
+                            border: `2px solid ${showResults[idx]?.isCorrect ? '#10b981' : '#ef4444'}`,
+                            borderRadius:8,
+                            fontSize:'.85rem'
+                          }}>
+                            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:8 }}>
+                              <span style={{ fontSize:20, color: showResults[idx]?.isCorrect ? '#10b981' : '#ef4444' }}>
+                                {showResults[idx]?.isCorrect ? '✓' : '✗'}
+                              </span>
+                              <span style={{ 
+                                color: showResults[idx]?.isCorrect ? '#10b981' : '#ef4444', 
+                                fontWeight:700,
+                                fontSize:'.95rem'
+                              }}>
+                                {showResults[idx]?.isCorrect ? 'Correct!' : 'Incorrect'}
+                              </span>
+                            </div>
+                            <div style={{ color:'var(--text2)', lineHeight:1.5 }}>
+                              <strong>Feedback:</strong> {showResults[idx]?.feedback}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
