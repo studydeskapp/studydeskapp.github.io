@@ -1821,6 +1821,10 @@ async function run(){
           setCustomLong={setCustomLong}
           buyItem={buyItem}
           equipItem={equipItem}
+          notes={notes}
+          onAddNote={handleAddNote}
+          onUpdateNote={handleUpdateNote}
+          onDeleteNote={handleDeleteNote}
         />
       </>
     );

@@ -89,16 +89,33 @@ function AIView({
   const [writingFeedback, setWritingFeedback] = useState('');
   const [writingLoading, setWritingLoading] = useState(false);
 
+  // Questions state
+  const [questionsImage, setQuestionsImage] = useState(null);
+  const [questionsText, setQuestionsText] = useState('');
+  const [questionsData, setQuestionsData] = useState(null);
+  const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [userAnswers, setUserAnswers] = useState({});
+  const [checkedAnswers, setCheckedAnswers] = useState({});
+
+  // Note Analyzer state
+  const [noteFiles, setNoteFiles] = useState([]);
+  const [noteText, setNoteText] = useState('');
+  const [showNoteTextInput, setShowNoteTextInput] = useState(false);
+  const [noteAnalysis, setNoteAnalysis] = useState('');
+  const [noteAnalyzing, setNoteAnalyzing] = useState(false);
+
   // Insights state
   const [insights, setInsights] = useState('');
   const [insightsLoading, setInsightsLoading] = useState(false);
 
   const modes = [
-    { id: 'chat', label: 'Chat', icon: '💬' },
-    { id: 'homework', label: 'Homework', icon: '📝' },
-    { id: 'flashcards', label: 'Cards', icon: '🎴' },
-    { id: 'writing', label: 'Writing', icon: '✍️' },
-    { id: 'insights', label: 'Insights', icon: '📊' }
+    { id: 'chat', label: 'Chat' },
+    { id: 'homework', label: 'Homework' },
+    { id: 'flashcards', label: 'Cards' },
+    { id: 'writing', label: 'Writing' },
+    { id: 'questions', label: 'Questions' },
+    { id: 'notes', label: 'Notes' },
+    { id: 'insights', label: 'Insights' }
   ];
 
   // ── Chat ─────────────────────────────────────────────────────────────────────
@@ -339,6 +356,106 @@ Be constructive and encouraging. Use markdown formatting.`;
     setWritingLoading(false);
   };
 
+  // ── Questions ────────────────────────────────────────────────────────────────
+  const generateQuestions = async () => {
+    if ((!questionsText.trim() && !questionsImage) || questionsLoading) return;
+    setQuestionsLoading(true);
+    setQuestionsData(null);
+    setUserAnswers({});
+    setCheckedAnswers({});
+
+    try {
+      let content = questionsText;
+      
+      // If image, extract text first
+      if (questionsImage) {
+        const imagePrompt = "Extract all text content from this image.";
+        const b64 = questionsImage.replace(/^data:image\/\w+;base64,/, '');
+        const mimeMatch = questionsImage.match(/^data:(image\/\w+);base64,/);
+        const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+        
+        const res = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${getGeminiKey()}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: imagePrompt }, { inline_data: { mime_type: mimeType, data: b64 } }] }]
+            })
+          }
+        );
+        const data = await res.json();
+        const extractedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        content = extractedText + '\n\n' + content;
+      }
+
+      const questions = await generateQuestionsFromContent(content, callGemini);
+      setQuestionsData(questions.length > 0 ? questions : [
+        { text: "What are the main concepts covered?", type: "short_answer", answer: "Review the key topics and themes." }
+      ]);
+    } catch (err) {
+      setQuestionsData([{ text: "Error generating questions. Please try again.", type: "short_answer", answer: "" }]);
+    }
+    setQuestionsLoading(false);
+  };
+
+  // ── Note Analyzer ────────────────────────────────────────────────────────────
+  const analyzeNotes = async () => {
+    if ((noteFiles.length === 0 && !noteText.trim()) || noteAnalyzing) return;
+    setNoteAnalyzing(true);
+    setNoteAnalysis('');
+
+    try {
+      let content = noteText;
+      
+      // If files, extract text from images
+      if (noteFiles.length > 0) {
+        for (const file of noteFiles) {
+          if (file.data.startsWith('data:image')) {
+            const imagePrompt = "Extract all text content from this image.";
+            const b64 = file.data.replace(/^data:image\/\w+;base64,/, '');
+            const mimeMatch = file.data.match(/^data:(image\/\w+);base64,/);
+            const mimeType = mimeMatch ? mimeMatch[1] : 'image/jpeg';
+            
+            const res = await fetch(
+              `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${getGeminiKey()}`,
+              {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  contents: [{ parts: [{ text: imagePrompt }, { inline_data: { mime_type: mimeType, data: b64 } }] }]
+                })
+              }
+            );
+            const data = await res.json();
+            const extractedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            content += '\n\n' + extractedText;
+          }
+        }
+      }
+
+      const analysisPrompt = `Analyze these study notes comprehensively. Provide:
+
+1. **Key Concepts** - Main ideas and topics covered
+2. **Important Details** - Critical facts, definitions, formulas
+3. **Connections** - How concepts relate to each other
+4. **Study Recommendations** - What to focus on, potential gaps
+5. **Study Plan** - Suggested approach to master this material
+
+Notes:
+${content}
+
+Use clear markdown formatting with headers, bullet points, and emphasis.`;
+
+      await callGeminiStream(analysisPrompt, '',
+        (streamedText) => setNoteAnalysis(streamedText)
+      );
+    } catch (err) {
+      setNoteAnalysis("Sorry, I couldn't analyze your notes right now. Please try again.");
+    }
+    setNoteAnalyzing(false);
+  };
+
   // ── Insights ─────────────────────────────────────────────────────────────────
   const generateInsights = async () => {
     if (insightsLoading) return;
@@ -386,8 +503,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
             className={`ai-mode-btn ${mode === m.id ? 'active' : ''}`}
             onClick={() => setMode(m.id)}
           >
-            <span>{m.icon}</span>
-            <span>{m.label}</span>
+            {m.label}
           </button>
         ))}
       </div>
@@ -611,8 +727,268 @@ Provide insights on study patterns, subject performance, areas to improve, and n
           )}
         </div>
       )}
+
+      {/* Questions Mode */}
+      {mode === 'questions' && (
+        <div className="ai-questions-container">
+          <div className="questions-input-card">
+            <div className="questions-title">Generate Practice Questions</div>
+            <div className="questions-desc">Enter text or upload content to generate practice questions</div>
+            
+            <textarea
+              className="questions-textarea"
+              placeholder="Paste your notes or study material here..."
+              value={questionsText}
+              onChange={(e) => setQuestionsText(e.target.value)}
+              rows={6}
+            />
+
+            <div className="questions-upload-btns">
+              <input 
+                type="file" 
+                accept="image/*" 
+                capture="environment"
+                onChange={(e) => {
+                  const file = e.target.files[0];
+                  if (file) {
+                    const reader = new FileReader();
+                    reader.onload = (ev) => setQuestionsImage(ev.target.result);
+                    reader.readAsDataURL(file);
+                  }
+                }}
+                style={{ display: 'none' }} 
+                id="questions-camera" 
+              />
+              <label htmlFor="questions-camera" className="btn-secondary">
+                📷 Take Picture
+              </label>
+            </div>
+
+            {questionsImage && (
+              <div className="questions-image-preview">
+                <img src={questionsImage} alt="Uploaded" />
+                <button className="questions-remove-image" onClick={() => setQuestionsImage(null)}>×</button>
+              </div>
+            )}
+
+            <button 
+              className="btn-primary" 
+              onClick={generateQuestions}
+              disabled={(!questionsText.trim() && !questionsImage) || questionsLoading}
+            >
+              {questionsLoading ? 'Generating...' : 'Generate Questions'}
+            </button>
+          </div>
+
+          {questionsData && questionsData.length > 0 && (
+            <div className="questions-list-card">
+              <div className="questions-list-title">Practice Questions</div>
+              {questionsData.map((q, idx) => (
+                <div key={idx} className="question-item">
+                  <div className="question-text">
+                    {idx + 1}. {q.text}
+                  </div>
+
+                  {/* Multiple Choice */}
+                  {q.options && q.options.length > 0 && (
+                    <div className="question-options">
+                      {q.options.map((opt, optIdx) => {
+                        const isSelected = userAnswers[idx] === opt.letter;
+                        const isCorrect = opt.letter === q.correct;
+                        const showResult = checkedAnswers[idx];
+
+                        return (
+                          <div
+                            key={optIdx}
+                            className={`question-option ${isSelected ? 'selected' : ''} ${showResult && isCorrect ? 'correct' : ''} ${showResult && isSelected && !isCorrect ? 'incorrect' : ''}`}
+                            onClick={() => !showResult && setUserAnswers({...userAnswers, [idx]: opt.letter})}
+                          >
+                            <div className="option-letter">{opt.letter}</div>
+                            <div className="option-text">{opt.text}</div>
+                            {showResult && isCorrect && <span className="option-icon">✓</span>}
+                            {showResult && isSelected && !isCorrect && <span className="option-icon">✗</span>}
+                          </div>
+                        );
+                      })}
+                      {!checkedAnswers[idx] && userAnswers[idx] && (
+                        <button 
+                          className="btn-check-answer"
+                          onClick={() => setCheckedAnswers({...checkedAnswers, [idx]: true})}
+                        >
+                          Check Answer
+                        </button>
+                      )}
+                      {checkedAnswers[idx] && q.explanation && (
+                        <div className="question-explanation">
+                          <strong>💡 Explanation:</strong> {q.explanation}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Text Answer */}
+                  {(!q.options || q.options.length === 0) && (
+                    <div className="question-text-answer">
+                      <textarea
+                        className="answer-textarea"
+                        placeholder="Type your answer here..."
+                        value={userAnswers[idx] || ''}
+                        onChange={(e) => setUserAnswers({...userAnswers, [idx]: e.target.value})}
+                        rows={4}
+                      />
+                      {q.answer && (
+                        <div className="model-answer">
+                          <strong>Model Answer:</strong> {q.answer}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Notes Analyzer Mode */}
+      {mode === 'notes' && (
+        <div className="ai-notes-container">
+          <div className="notes-analyzer-card">
+            <div className="notes-analyzer-title">Analyze Your Notes</div>
+            <div className="notes-analyzer-desc">Upload files, enter text, or take a picture to analyze</div>
+
+            {/* Text Input Toggle */}
+            <button 
+              className="btn-secondary"
+              onClick={() => setShowNoteTextInput(!showNoteTextInput)}
+              style={{ marginBottom: 12 }}
+            >
+              {showNoteTextInput ? '📁 Upload File Instead' : '✏️ Text Entry'}
+            </button>
+
+            {showNoteTextInput ? (
+              <textarea
+                className="notes-analyzer-textarea"
+                placeholder="Paste or type your notes here..."
+                value={noteText}
+                onChange={(e) => setNoteText(e.target.value)}
+                rows={8}
+              />
+            ) : (
+              <>
+                <div className="notes-upload-btns">
+                  <input 
+                    type="file" 
+                    accept="image/*,.pdf,.txt,.doc,.docx" 
+                    multiple
+                    onChange={(e) => {
+                      const files = Array.from(e.target.files);
+                      files.forEach(file => {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setNoteFiles(prev => [...prev, { name: file.name, data: ev.target.result }]);
+                        };
+                        reader.readAsDataURL(file);
+                      });
+                    }}
+                    style={{ display: 'none' }} 
+                    id="notes-file" 
+                  />
+                  <label htmlFor="notes-file" className="btn-secondary">
+                    📁 Choose Files
+                  </label>
+
+                  <input 
+                    type="file" 
+                    accept="image/*" 
+                    capture="environment"
+                    onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (file) {
+                        const reader = new FileReader();
+                        reader.onload = (ev) => {
+                          setNoteFiles(prev => [...prev, { name: file.name, data: ev.target.result }]);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    style={{ display: 'none' }} 
+                    id="notes-camera" 
+                  />
+                  <label htmlFor="notes-camera" className="btn-secondary">
+                    📷 Take Picture
+                  </label>
+                </div>
+
+                {noteFiles.length > 0 && (
+                  <div className="notes-files-list">
+                    {noteFiles.map((file, idx) => (
+                      <div key={idx} className="notes-file-item">
+                        <span>{file.name}</span>
+                        <button onClick={() => setNoteFiles(prev => prev.filter((_, i) => i !== idx))}>×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </>
+            )}
+
+            <button 
+              className="btn-primary" 
+              onClick={analyzeNotes}
+              disabled={(noteFiles.length === 0 && !noteText.trim()) || noteAnalyzing}
+            >
+              {noteAnalyzing ? 'Analyzing...' : 'Analyze Notes'}
+            </button>
+          </div>
+
+          {noteAnalysis && (
+            <div className="notes-analysis-card">
+              <div className="notes-analysis-title">📚 Analysis</div>
+              <div className="notes-analysis-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(noteAnalysis) }} />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
+}
+
+// Helper function to generate questions
+async function generateQuestionsFromContent(content, callGemini) {
+  const prompt = `Generate 5 practice questions from this content. Include a mix of multiple choice (with 4 options A-D) and short answer questions.
+
+Content:
+${content}
+
+Return ONLY a JSON array in this exact format:
+[
+  {
+    "text": "Question text here?",
+    "type": "multiple_choice",
+    "options": [
+      {"letter": "A", "text": "Option A"},
+      {"letter": "B", "text": "Option B"},
+      {"letter": "C", "text": "Option C"},
+      {"letter": "D", "text": "Option D"}
+    ],
+    "correct": "A",
+    "explanation": "Why A is correct"
+  },
+  {
+    "text": "Short answer question?",
+    "type": "short_answer",
+    "answer": "Expected answer"
+  }
+]`;
+
+  const response = await callGemini(prompt);
+  try {
+    const clean = response.trim().replace(/```json\n?/g, '').replace(/```\n?/g, '');
+    return JSON.parse(clean);
+  } catch {
+    return [];
+  }
 }
 
 export default AIView;

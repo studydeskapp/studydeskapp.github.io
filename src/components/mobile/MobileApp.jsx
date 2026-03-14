@@ -9,6 +9,8 @@ import BuddyView from './views/BuddyView';
 import ShopView from './views/ShopView';
 import TimerView from './views/TimerView';
 import AIView from './views/AIView';
+import CalendarView from './views/CalendarView';
+import NotesView from './views/NotesView';
 import BottomSheet from './BottomSheet';
 import '../../styles/mobile.css';
 
@@ -45,7 +47,12 @@ function MobileApp({
   setCustomLong,
   // Shop props
   buyItem,
-  equipItem
+  equipItem,
+  // Notes props
+  notes,
+  onAddNote,
+  onUpdateNote,
+  onDeleteNote
 }) {
   const [activeTab, setActiveTab] = useState('home');
   const [selectedAssignment, setSelectedAssignment] = useState(null);
@@ -62,7 +69,7 @@ function MobileApp({
   const pullStartY = useRef(0);
   const isPulling = useRef(false);
 
-  const tabOrder = ['home', 'tasks', 'schedule', 'grades', 'buddy', 'shop', 'timer', 'ai'];
+  const tabOrder = ['home', 'tasks', 'grades', 'schedule', 'calendar', 'notes', 'timer', 'buddy', 'shop', 'ai'];
 
   // Online/Offline detection
   useEffect(() => {
@@ -197,7 +204,9 @@ function MobileApp({
     buddy: 'Buddy',
     shop: 'Shop',
     timer: 'Timer',
-    ai: 'AI'
+    ai: 'AI',
+    calendar: 'Calendar',
+    notes: 'Notes'
   };
 
   // Handle assignment completion with celebration
@@ -360,6 +369,24 @@ function MobileApp({
           <AIView
             assignments={assignments}
             classes={classes}
+          />
+        );
+      
+      case 'calendar':
+        return (
+          <CalendarView
+            assignments={assignments}
+            classes={classes}
+          />
+        );
+      
+      case 'notes':
+        return (
+          <NotesView
+            notes={notes}
+            onAddNote={onAddNote}
+            onUpdateNote={onUpdateNote}
+            onDeleteNote={onDeleteNote}
           />
         );
       

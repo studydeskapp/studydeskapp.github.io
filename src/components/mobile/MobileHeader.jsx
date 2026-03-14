@@ -19,7 +19,9 @@ function MobileHeader({ user, game, onMenuClick, title = 'StudyDesk', darkMode, 
           </svg>
         </button>
 
-        <h1 className="mobile-header-title">{title}</h1>
+        <h1 className="mobile-header-title">
+          <span className="mobile-header-title-text">{title}</span>
+        </h1>
         
         <div className="mobile-header-actions">
           {game?.streak > 0 && (
