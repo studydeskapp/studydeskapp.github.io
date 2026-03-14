@@ -14,7 +14,11 @@ function AssignmentsTab({
   sortBy,
   setSortBy,
   sortOrder,
-  setSortOrder
+  setSortOrder,
+  multiSelectMode,
+  setMultiSelectMode,
+  selectedAssignments,
+  toggleAssignmentSelection
 }) {
   const pending = sortedA.filter(a => a.progress < 100);
   const done = sortedA.filter(a => a.progress >= 100);
@@ -25,6 +29,14 @@ function AssignmentsTab({
         <div className="sec-t">Assignments</div>
         <div style={{display:"flex",gap:7,alignItems:"center"}}>
           <span style={{fontSize:".75rem",color:"var(--text3)",fontWeight:600}}>{pending.length} pending · {done.length} done</span>
+          <button 
+            className="btn btn-sm" 
+            onClick={()=>{setMultiSelectMode(!multiSelectMode);}}
+            style={multiSelectMode?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}
+            title="Multi-select mode (M)"
+          >
+            {multiSelectMode ? "✓ Select" : "☐ Select"}
+          </button>
           <button className="btn btn-p btn-sm" onClick={()=>{setSubjMode("select");setAddingA(true);}}>＋ Add</button>
         </div>
       </div>
@@ -64,13 +76,45 @@ function AssignmentsTab({
       {pending.length>0&&(
         <div style={{marginBottom:22}}>
           <div className="sec-lbl">Pending — {pending.length}</div>
-          <div className="alist">{pending.map(a=><ACard key={a.id} a={a}/>)}</div>
+          <div className="alist">
+            {pending.map(a => (
+              <div key={a.id} style={{display:'flex', alignItems:'center', gap:'12px'}}>
+                {multiSelectMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedAssignments.includes(a.id)}
+                    onChange={() => toggleAssignmentSelection(a.id)}
+                    style={{width:'20px', height:'20px', cursor:'pointer', flexShrink:0}}
+                  />
+                )}
+                <div style={{flex:1, minWidth:0}}>
+                  <ACard a={a}/>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {done.length>0&&(
         <div>
           <div className="sec-lbl">Completed — {done.length}</div>
-          <div className="alist" style={{opacity:.55}}>{done.map(a=><ACard key={a.id} a={a}/>)}</div>
+          <div className="alist" style={{opacity:.55}}>
+            {done.map(a => (
+              <div key={a.id} style={{display:'flex', alignItems:'center', gap:'12px'}}>
+                {multiSelectMode && (
+                  <input
+                    type="checkbox"
+                    checked={selectedAssignments.includes(a.id)}
+                    onChange={() => toggleAssignmentSelection(a.id)}
+                    style={{width:'20px', height:'20px', cursor:'pointer', flexShrink:0}}
+                  />
+                )}
+                <div style={{flex:1, minWidth:0}}>
+                  <ACard a={a}/>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {pending.length===0&&done.length===0&&(

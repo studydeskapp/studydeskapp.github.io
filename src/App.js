@@ -65,6 +65,9 @@ import BuddyCreature from './components/shared/BuddyCreature';
 import PhoneUploadPage from './components/shared/PhoneUploadPage';
 import Header from './components/shared/Header';
 import { CopyBtn, FetcherCopyBox } from './components/shared/UtilityComponents';
+import KeyboardShortcutsPanel from './components/shared/KeyboardShortcutsPanel';
+import NotificationCenter from './components/shared/NotificationCenter';
+import MultiSelectBar from './components/shared/MultiSelectBar';
 import Router from './components/landing/Router';
 
 // ── Tab Components ───────────────────────────────────────────────────────────────
@@ -78,6 +81,7 @@ import ShopTab from './components/tabs/ShopTab';
 import AITab from './components/tabs/AITab';
 import AnalyticsTab from './components/tabs/AnalyticsTab';
 import NotesTab from './components/tabs/NotesTab';
+import CalendarTab from './components/tabs/CalendarTab';
 import MobileApp from './components/mobile/MobileApp';
 
 // ── Service Modules ──────────────────────────────────────────────────────────────
@@ -157,6 +161,10 @@ export default function StudyDesk() {
   // schoolWiz = null | {step:"search"|"confirm"|"periods", query, results, school, numPeriods, periods:[{name,start,end,days}], currentPeriod}
   const [filter, setFilter] = useState("all");
   const [darkMode, setDarkMode] = useState(()=>{try{return localStorage.getItem("sd-dark")==="1";}catch{return false;}});
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [multiSelectMode, setMultiSelectMode] = useState(false);
+  const [selectedAssignments, setSelectedAssignments] = useState([]);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Auth + User session
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
@@ -350,34 +358,95 @@ export default function StudyDesk() {
   useEffect(()=>{try{if(canvasToken)localStorage.setItem("sd-canvas-token",canvasToken);else localStorage.removeItem("sd-canvas-token");}catch{}},[canvasToken]);
   useEffect(()=>{try{localStorage.setItem("sd-canvas-url",canvasBaseUrl);}catch{}},[canvasBaseUrl]);
 
+  // Sidebar navigation items (used for rendering and keyboard shortcuts)
+  const sidebarNav = useMemo(() => [
+    ["dashboard","Dashboard",<svg key="d" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>],
+    ["assignments","Assignments",<svg key="a" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>],
+    ["grades","Grades",<svg key="g" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>],
+    ["schedule","Schedule",<svg key="s" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>],
+    ["calendar","Calendar",<svg key="c" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01M16 18h.01"/></svg>],
+    ["notes","Notes",<svg key="n" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/></svg>],
+    ["timer","Timer",<svg key="t" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 1h6M12 1v3"/></svg>],
+    ["buddy","Buddy",<svg key="b" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>],
+    ["shop","Shop",<svg key="sh" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>],
+    ["ai","AI",<svg key="ai" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg>],
+    ["analytics","Analytics",<svg key="an" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>],
+  ], []);
+
   // Keyboard shortcuts
   useEffect(()=>{
     function handleKeyPress(e){
       // Ignore if typing in input/textarea
       if(e.target.tagName==="INPUT"||e.target.tagName==="TEXTAREA") return;
-      // Ignore if modal is open
-      if(addingA||addingC||importOpen||showCanvasSetup||showAbout||showReleases||showLeaderboard) return;
+      // Ignore if modal is open (but allow Escape to close)
+      if(addingA||addingC||importOpen||showCanvasSetup||showAbout||showReleases||showLeaderboard||showKeyboardShortcuts||showNotifications) {
+        if(e.key==="Escape"){
+          e.preventDefault();
+          if(showKeyboardShortcuts) setShowKeyboardShortcuts(false);
+          else if(showNotifications) setShowNotifications(false);
+          else if(addingA) setAddingA(false);
+          else if(addingC) setAddingC(false);
+          else if(importOpen) setImportOpen(false);
+          else if(showCanvasSetup) setShowCanvasSetup(false);
+          else if(showAbout) setShowAbout(false);
+          else if(showReleases) setShowReleases(false);
+          else if(showLeaderboard) setShowLeaderboard(false);
+        }
+        return;
+      }
       
       if(e.key==="n"||e.key==="N"){
         e.preventDefault();
         setAddingA(true);
       }
-      if(e.key==="j"||e.key==="J"){
+      else if(e.key==="c"||e.key==="C"){
         e.preventDefault();
-        const tabs=["dashboard","assignments","grades","schedule","notes","timer","buddy","shop","ai","analytics"];
+        setAddingC(true);
+      }
+      else if(e.key==="i"||e.key==="I"){
+        e.preventDefault();
+        setImportOpen(true);
+      }
+      else if(e.key==="s"||e.key==="S"){
+        e.preventDefault();
+        if(canvasToken) handleSyncCanvas(canvasToken, canvasBaseUrl);
+      }
+      else if(e.key==="m"||e.key==="M"){
+        e.preventDefault();
+        if(tab === "assignments") {
+          setMultiSelectMode(m => !m);
+          if(multiSelectMode) setSelectedAssignments([]);
+        }
+      }
+      else if(e.key==="?"){
+        e.preventDefault();
+        setShowKeyboardShortcuts(true);
+      }
+      else if(e.key==="j"||e.key==="J"){
+        e.preventDefault();
+        const tabs = sidebarNav.map(([t]) => t);
         const idx=tabs.indexOf(tab);
         if(idx<tabs.length-1) setTab(tabs[idx+1]);
       }
-      if(e.key==="k"||e.key==="K"){
+      else if(e.key==="k"||e.key==="K"){
         e.preventDefault();
-        const tabs=["dashboard","assignments","grades","schedule","notes","timer","buddy","shop","ai","analytics"];
+        const tabs = sidebarNav.map(([t]) => t);
         const idx=tabs.indexOf(tab);
         if(idx>0) setTab(tabs[idx-1]);
+      }
+      // Number keys for direct tab switching (based on sidebar order)
+      else if(e.key>="1"&&e.key<="9"){
+        const tabs = sidebarNav.map(([t]) => t);
+        const idx = parseInt(e.key) - 1;
+        if(idx < tabs.length){
+          e.preventDefault();
+          setTab(tabs[idx]);
+        }
       }
     }
     window.addEventListener("keydown",handleKeyPress);
     return()=>window.removeEventListener("keydown",handleKeyPress);
-  },[tab,addingA,addingC,importOpen,showCanvasSetup,showAbout,showReleases,showLeaderboard]);
+  },[tab,addingA,addingC,importOpen,showCanvasSetup,showAbout,showReleases,showLeaderboard,showKeyboardShortcuts,showNotifications,canvasToken,canvasBaseUrl,sidebarNav]);
 
   // Presence heartbeat — updates every 60s while logged in
   useEffect(()=>{
@@ -1113,6 +1182,42 @@ async function run(){
     });
   }
 
+  // Multi-select handlers
+  function toggleAssignmentSelection(id) {
+    setSelectedAssignments(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  }
+
+  function handleBulkComplete() {
+    selectedAssignments.forEach(id => updateA(id, { progress: 100 }));
+    setSelectedAssignments([]);
+    setMultiSelectMode(false);
+    toast(`Completed ${selectedAssignments.length} assignment${selectedAssignments.length > 1 ? 's' : ''}`, "success");
+  }
+
+  function handleBulkDelete() {
+    if (!window.confirm(`Delete ${selectedAssignments.length} assignment${selectedAssignments.length > 1 ? 's' : ''}?`)) return;
+    setAssignments(prev => prev.filter(a => !selectedAssignments.includes(a.id)));
+    setSelectedAssignments([]);
+    setMultiSelectMode(false);
+    toast(`Deleted ${selectedAssignments.length} assignment${selectedAssignments.length > 1 ? 's' : ''}`, "success");
+  }
+
+  function handleBulkReschedule() {
+    const newDate = prompt('Enter new due date (YYYY-MM-DD):');
+    if (!newDate) return;
+    selectedAssignments.forEach(id => updateA(id, { dueDate: newDate }));
+    setSelectedAssignments([]);
+    setMultiSelectMode(false);
+    toast(`Rescheduled ${selectedAssignments.length} assignment${selectedAssignments.length > 1 ? 's' : ''}`, "success");
+  }
+
+  function cancelMultiSelect() {
+    setSelectedAssignments([]);
+    setMultiSelectMode(false);
+  }
+
   // Note handlers
   async function handleAddNote(noteData) {
     try {
@@ -1669,18 +1774,6 @@ async function run(){
     );
   }
 
-  const sidebarNav = [
-    ["dashboard","Dashboard",<svg key="d" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>],
-    ["assignments","Assignments",<svg key="a" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10 9 9 9 8 9"/></svg>],
-    ["grades","Grades",<svg key="g" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>],
-    ["schedule","Schedule",<svg key="s" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>],
-    ["timer","Timer",<svg key="t" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2"/><path d="M9 1h6M12 1v3"/></svg>],
-    ["buddy","Buddy",<svg key="b" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>],
-    ["shop","Shop",<svg key="sh" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>],
-    ["ai","AI",<svg key="ai" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 2a10 10 0 1 0 10 10"/><path d="M12 8v4l3 3"/><circle cx="18" cy="5" r="3" fill="currentColor" stroke="none"/></svg>],
-    ["analytics","Analytics",<svg key="an" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg>],
-  ];
-
   // ── MOBILE UI ────────────────────────────────────────────────────────────────
   // Use new mobile-first UI on mobile devices
   if(isMobile && user && loaded) {
@@ -1874,7 +1967,7 @@ async function run(){
           <div style={{minWidth:0,flex:"1 1 auto"}}>
             <div className="hdr-title" onClick={handleLogoClick} style={{cursor:"default",userSelect:"none"}}>Study Desk</div>
             <div className="hdr-sub">{dateStr}</div>
-            <div className="hdr-hint">Press <kbd>N</kbd> to add • <kbd>J</kbd>/<kbd>K</kbd> to navigate</div>
+            <div className="hdr-hint">Press <kbd>?</kbd> for shortcuts • <kbd>N</kbd> to add • <kbd>J</kbd>/<kbd>K</kbd> to navigate</div>
           </div>
           <div className="hdr-r">
             {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
@@ -1894,6 +1987,15 @@ async function run(){
             )}
             {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
             <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</button>
+            <button className="hdr-icon-btn" onClick={()=>setShowNotifications(true)} title="Notifications">
+              🔔
+              {assignments.filter(a => a.progress < 100 && a.dueDate && new Date(a.dueDate + 'T00:00:00') <= new Date()).length > 0 && (
+                <span style={{position:'absolute',top:'-2px',right:'-2px',width:'8px',height:'8px',background:'#ef4444',borderRadius:'50%',border:'2px solid var(--card)'}}/>
+              )}
+            </button>
+            <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"}>
+              {darkMode ? '☀️' : '🌙'}
+            </button>
             <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} title="Search assignments">🔍</button>
           </div>
         </div>}
@@ -1902,7 +2004,7 @@ async function run(){
         <div className="main-inner">
         {/* TABS (desktop: hidden when sidebar shown) */}
         <div className="tabs">
-          {[["dashboard","Dashboard"],["assignments","Assignments"],["grades","Grades"],["schedule","Schedule"],["notes","Notes"],["timer","Timer"],["buddy","Buddy"],["shop","Shop"],["ai","AI Assistant"]].map(([t,l])=>(
+          {[["dashboard","Dashboard"],["assignments","Assignments"],["grades","Grades"],["schedule","Schedule"],["calendar","Calendar"],["notes","Notes"],["timer","Timer"],["buddy","Buddy"],["shop","Shop"],["ai","AI Assistant"],["analytics","Analytics"]].map(([t,l])=>(
             <button key={t} className={"tab"+(tab===t?" on":"")} onClick={()=>setTab(t)}>{l}</button>
           ))}
         </div>
@@ -1963,6 +2065,10 @@ async function run(){
             setSortBy={setSortBy}
             sortOrder={sortOrder}
             setSortOrder={setSortOrder}
+            multiSelectMode={multiSelectMode}
+            setMultiSelectMode={setMultiSelectMode}
+            selectedAssignments={selectedAssignments}
+            toggleAssignmentSelection={toggleAssignmentSelection}
           />
         )}
 
@@ -1981,6 +2087,18 @@ async function run(){
             setSchoolWiz={setSchoolWiz}
             setAddingC={setAddingC}
             delClass={delClass}
+          />
+        )}
+
+        {tab==="calendar"&&(
+          <CalendarTab
+            assignments={assignments}
+            classes={classes}
+            darkMode={darkMode}
+            onAssignmentClick={(assignment) => {
+              // Could open assignment details modal
+              console.log('Clicked assignment:', assignment);
+            }}
           />
         )}
 
@@ -3073,6 +3191,35 @@ async function run(){
           <line x1="5" y1="12" x2="19" y2="12"/>
         </svg>
       </button>
+
+      {/* KEYBOARD SHORTCUTS PANEL */}
+      <KeyboardShortcutsPanel 
+        show={showKeyboardShortcuts} 
+        onClose={() => setShowKeyboardShortcuts(false)} 
+        darkMode={darkMode} 
+      />
+
+      {/* NOTIFICATION CENTER */}
+      <NotificationCenter 
+        show={showNotifications} 
+        onClose={() => setShowNotifications(false)} 
+        assignments={assignments}
+        darkMode={darkMode}
+        onAssignmentClick={(assignment) => {
+          // Could open assignment details modal here
+          console.log('Clicked assignment:', assignment);
+        }}
+      />
+
+      {/* MULTI-SELECT BAR */}
+      <MultiSelectBar
+        selectedCount={selectedAssignments.length}
+        onComplete={handleBulkComplete}
+        onDelete={handleBulkDelete}
+        onReschedule={handleBulkReschedule}
+        onCancel={cancelMultiSelect}
+        darkMode={darkMode}
+      />
 
     </>
   );
