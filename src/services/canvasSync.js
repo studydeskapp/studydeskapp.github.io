@@ -7,7 +7,7 @@ import { fetchWithFallback } from '../utils/helpers';
 import { launchConfetti } from './gameLogic';
 
 // ── Canvas Sync Logic ──────────────────────────────────────────────────────────
-export async function syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlocked, canvasSyncRef, setCanvasSync, setAssignments, setCanvasToken) {
+export async function syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlocked, canvasSyncRef, setCanvasSync, setAssignments, setCanvasToken, setGame) {
   if (!token || canvasSyncRef.current) return;
   
   if (isLocalhost) {
@@ -34,6 +34,8 @@ export async function syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlock
     if (!Array.isArray(data)) throw new Error("Unexpected response from Canvas");
 
     let newSubmits = 0;
+    const completedAssignmentIds = []; // Track which assignments were completed
+    
     setAssignments(prev => {
       let updated = [...prev];
       for (const item of data) {
@@ -57,7 +59,12 @@ export async function syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlock
         if (match) {
           const wasSubmitted = match.progress >= 100;
           const patch = {};
-          if (submitted && !wasSubmitted) { patch.progress = 100; newSubmits++; }
+          if (submitted && !wasSubmitted) { 
+            patch.progress = 100;
+            patch.completedDate = new Date().toISOString(); // Set completion date
+            newSubmits++;
+            completedAssignmentIds.push(match.id); // Track for points
+          }
           if (score !== null && pointsPossible) { patch.grade = Math.round((score / pointsPossible) * 100); patch.gradeRaw = `${score}/${pointsPossible}`; }
           if (dueDate && !match.dueDate) patch.dueDate = dueDate;
           if (Object.keys(patch).length > 0) {
@@ -69,18 +76,45 @@ export async function syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlock
             const today2 = new Date(); today2.setHours(0, 0, 0, 0);
             const due = new Date(dueDate + "T00:00:00");
             if (due >= today2 || score !== null) {
+              const newId = "canvas_" + Date.now() + "_" + Math.random().toString(36).slice(2);
               updated.push({
-                id: "canvas_" + Date.now() + "_" + Math.random().toString(36).slice(2),
+                id: newId,
                 title, subject, dueDate, priority: "medium", progress: 100, notes: "Auto-imported from Canvas",
+                completedDate: new Date().toISOString(), // Set completion date for new completed assignments
                 ...(score !== null && pointsPossible ? { grade: Math.round((score / pointsPossible) * 100), gradeRaw: `${score}/${pointsPossible}` } : {})
               });
               newSubmits++;
+              completedAssignmentIds.push(newId); // Track for points
             }
           }
         }
       }
       return updated;
     });
+
+    // Award points for completed assignments
+    if (completedAssignmentIds.length > 0) {
+      setGame(prev => {
+        const today = new Date().toISOString().split('T')[0];
+        
+        // Count how many assignments were completed today (including these new ones)
+        const todayCompleted = completedAssignmentIds.length;
+        
+        // Calculate points: 15 per assignment + streak bonus if 3+ completed today
+        let totalPoints = completedAssignmentIds.length * 15;
+        
+        // Check if this brings us to 3+ completions today for streak bonus
+        if (todayCompleted >= 3) {
+          const streakBonus = Math.round(10 + prev.streak * 4);
+          totalPoints += streakBonus;
+        }
+        
+        return {
+          ...prev,
+          points: prev.points + totalPoints
+        };
+      });
+    }
 
     setCanvasSync({ lastSync: new Date(), syncing: false, newSubmissions: newSubmits, error: "", everSucceeded: true });
     if (newSubmits > 0) {

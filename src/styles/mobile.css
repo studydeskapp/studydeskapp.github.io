@@ -2661,3 +2661,446 @@
   line-height: 1.7;
   color: var(--text);
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   NEW MOBILE FEATURES - Pull-to-Refresh, Swipe Gestures, FAB, Haptic
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* ─── Pull-to-Refresh ───────────────────────────────────────────────────── */
+.pull-to-refresh-indicator {
+  position: absolute;
+  top: -60px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: top 0.3s, opacity 0.3s;
+  opacity: 0;
+  z-index: 10;
+}
+
+.pull-to-refresh-indicator.pulling {
+  opacity: 1;
+}
+
+.pull-to-refresh-indicator.refreshing {
+  top: 10px;
+  opacity: 1;
+}
+
+.pull-to-refresh-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.pull-to-refresh-arrow {
+  font-size: 1.5rem;
+  color: var(--accent);
+  transition: transform 0.3s;
+}
+
+.pull-to-refresh-indicator.ready .pull-to-refresh-arrow {
+  transform: rotate(180deg);
+}
+
+/* ─── Swipe Gesture Indicators ──────────────────────────────────────────── */
+.swipe-indicator {
+  position: fixed;
+  bottom: 100px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.7);
+  color: white;
+  padding: 8px 16px;
+  border-radius: 20px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  z-index: 150;
+  animation: fadeInOut 2s ease-in-out;
+  pointer-events: none;
+}
+
+@keyframes fadeInOut {
+  0%, 100% { opacity: 0; }
+  10%, 90% { opacity: 1; }
+}
+
+/* ─── Enhanced FAB with Quick Actions ───────────────────────────────────── */
+.fab-container {
+  position: fixed;
+  bottom: calc(20px + max(env(safe-area-inset-bottom), 16px));
+  right: 16px;
+  z-index: 90;
+}
+
+.fab-menu {
+  position: absolute;
+  bottom: 70px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+
+.fab-menu.open {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: all;
+}
+
+.fab-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1.5px solid var(--border);
+  border-radius: 28px;
+  padding: 12px 16px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  white-space: nowrap;
+}
+
+.fab-menu-item:active {
+  transform: scale(0.95);
+}
+
+.fab-menu-item-icon {
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+
+.fab-menu-item-label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fab.open {
+  transform: rotate(45deg);
+}
+
+/* ─── Haptic Feedback Visual Indicators ─────────────────────────────────── */
+.haptic-pulse {
+  animation: hapticPulse 0.3s ease-out;
+}
+
+@keyframes hapticPulse {
+  0% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+.haptic-success {
+  animation: hapticSuccess 0.4s ease-out;
+}
+
+@keyframes hapticSuccess {
+  0%, 100% {
+    transform: scale(1);
+  }
+  25% {
+    transform: scale(1.05);
+  }
+  50% {
+    transform: scale(0.95);
+  }
+  75% {
+    transform: scale(1.02);
+  }
+}
+
+/* ─── Swipe Between Tabs Gesture ────────────────────────────────────────── */
+.mobile-content.swiping {
+  transition: none;
+  will-change: transform;
+}
+
+.mobile-content.transitioning {
+  transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ─── Assignment Details Bottom Sheet Enhancement ───────────────────────── */
+.assignment-detail-sheet {
+  max-height: 85vh;
+}
+
+.assignment-detail-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.assignment-detail-title {
+  font-size: 1.3rem;
+  font-weight: 700;
+  color: var(--text);
+  margin: 0 0 8px 0;
+  line-height: 1.3;
+}
+
+.assignment-detail-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.assignment-detail-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  border-radius: 12px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  background: var(--bg3);
+  color: var(--text3);
+}
+
+.assignment-detail-body {
+  padding: 20px;
+}
+
+.assignment-detail-section {
+  margin-bottom: 20px;
+}
+
+.assignment-detail-section:last-child {
+  margin-bottom: 0;
+}
+
+.assignment-detail-label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--text3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 6px;
+}
+
+.assignment-detail-value {
+  font-size: 0.95rem;
+  color: var(--text);
+  line-height: 1.6;
+}
+
+.assignment-detail-progress {
+  margin-top: 8px;
+}
+
+.assignment-detail-progress-bar {
+  height: 8px;
+  background: var(--bg3);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 6px;
+}
+
+.assignment-detail-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 4px;
+  transition: width 0.3s;
+}
+
+.assignment-detail-progress-text {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--text3);
+}
+
+.assignment-detail-actions {
+  padding: 16px 20px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: 10px;
+}
+
+.btn-detail-action {
+  flex: 1;
+  padding: 12px;
+  border-radius: 12px;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-detail-action.primary {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-detail-action.secondary {
+  background: var(--bg3);
+  color: var(--text2);
+  border: 1.5px solid var(--border);
+}
+
+.btn-detail-action:active {
+  transform: scale(0.95);
+}
+
+/* ─── Offline Mode Indicator ────────────────────────────────────────────── */
+.offline-banner {
+  position: fixed;
+  top: max(env(safe-area-inset-top), 0);
+  left: 0;
+  right: 0;
+  background: #f59e0b;
+  color: white;
+  padding: 8px 16px;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: slideDown 0.3s ease-out;
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+.offline-icon {
+  font-size: 1rem;
+}
+
+/* ─── Loading Skeleton for Offline/Loading States ───────────────────────── */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--bg3) 0%,
+    var(--bg4) 50%,
+    var(--bg3) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-loading 1.5s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+@keyframes skeleton-loading {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+.skeleton-card {
+  height: 100px;
+  margin-bottom: 12px;
+}
+
+.skeleton-text {
+  height: 16px;
+  margin-bottom: 8px;
+}
+
+.skeleton-text.short {
+  width: 60%;
+}
+
+/* ─── Success/Completion Animations ─────────────────────────────────────── */
+.completion-celebration {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.7);
+  z-index: 300;
+  animation: fadeIn 0.3s;
+}
+
+.celebration-content {
+  background: var(--card);
+  border-radius: 24px;
+  padding: 40px 32px;
+  text-align: center;
+  animation: celebrationPop 0.5s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+}
+
+@keyframes celebrationPop {
+  0% {
+    transform: scale(0.5);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.celebration-icon {
+  font-size: 4rem;
+  margin-bottom: 16px;
+  animation: celebrationBounce 0.6s ease-in-out;
+}
+
+@keyframes celebrationBounce {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+.celebration-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.celebration-points {
+  font-size: 1.8rem;
+  font-weight: 800;
+  color: #F59E0B;
+  margin-bottom: 16px;
+}
+
+.celebration-message {
+  font-size: 0.95rem;
+  color: var(--text3);
+}

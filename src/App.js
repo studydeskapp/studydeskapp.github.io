@@ -514,6 +514,8 @@ export default function StudyDesk() {
       '/assignments': 'assignments',
       '/grades': 'grades',
       '/schedule': 'schedule',
+      '/calendar': 'calendar',
+      '/notes': 'notes',
       '/timer': 'timer',
       '/buddy': 'buddy',
       '/shop': 'shop',
@@ -537,6 +539,8 @@ export default function StudyDesk() {
       'assignments': '/assignments',
       'grades': '/grades',
       'schedule': '/schedule',
+      'calendar': '/calendar',
+      'notes': '/notes',
       'timer': '/timer',
       'buddy': '/buddy',
       'shop': '/shop',
@@ -555,7 +559,7 @@ export default function StudyDesk() {
   // Canvas sync handler
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const handleSyncCanvas = (token, baseUrl, silent = false) => 
-    syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlocked, canvasSyncRef, setCanvasSync, setAssignments, setCanvasToken);
+    syncCanvas(token, baseUrl, silent, isLocalhost, proxyBlocked, canvasSyncRef, setCanvasSync, setAssignments, setCanvasToken, setGame);
 
   // Auto-sync every 3 minutes if token is set
   useEffect(()=>{
@@ -1565,6 +1569,11 @@ async function run(){
   // Sort assignments based on sortBy and sortOrder
   const sortedA = useMemo(() => {
     const sorted = [...filteredA].sort((a, b) => {
+      // If both have customOrder, use that (manual drag & drop order)
+      if (a.customOrder !== undefined && b.customOrder !== undefined) {
+        return a.customOrder - b.customOrder;
+      }
+      
       if (sortBy === "date") {
         if (!a.dueDate) return 1;
         if (!b.dueDate) return -1;
@@ -2069,6 +2078,8 @@ async function run(){
             setMultiSelectMode={setMultiSelectMode}
             selectedAssignments={selectedAssignments}
             toggleAssignmentSelection={toggleAssignmentSelection}
+            assignments={assignments}
+            setAssignments={setAssignments}
           />
         )}
 
