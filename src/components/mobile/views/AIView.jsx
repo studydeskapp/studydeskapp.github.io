@@ -785,9 +785,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               <div className="questions-list-title">Practice Questions</div>
               {questionsData.map((q, idx) => (
                 <div key={idx} className="question-item">
-                  <div className="question-text">
-                    {idx + 1}. {q.text}
-                  </div>
+                  <div className="question-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(`${idx + 1}. ${q.text}`) }} />
 
                   {/* Multiple Choice */}
                   {q.options && q.options.length > 0 && (
@@ -804,7 +802,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                             onClick={() => !showResult && setUserAnswers({...userAnswers, [idx]: opt.letter})}
                           >
                             <div className="option-letter">{opt.letter}</div>
-                            <div className="option-text">{opt.text}</div>
+                            <div className="option-text" dangerouslySetInnerHTML={{ __html: renderMarkdown(opt.text) }} />
                             {showResult && isCorrect && <span className="option-icon">✓</span>}
                             {showResult && isSelected && !isCorrect && <span className="option-icon">✗</span>}
                           </div>
@@ -819,9 +817,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                         </button>
                       )}
                       {checkedAnswers[idx] && q.explanation && (
-                        <div className="question-explanation">
-                          <strong>💡 Explanation:</strong> {q.explanation}
-                        </div>
+                        <div className="question-explanation" dangerouslySetInnerHTML={{ __html: renderMarkdown(`**💡 Explanation:** ${q.explanation}`) }} />
                       )}
                     </div>
                   )}

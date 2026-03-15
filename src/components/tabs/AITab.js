@@ -2091,9 +2091,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               <h3 style={{ marginBottom:16, color:'var(--accent)', fontSize:'1.1rem', fontWeight:700 }}>Practice Questions</h3>
               {generatedQuestions.map((q, idx) => (
                 <div key={idx} style={{ marginBottom:24, padding:16, background:'var(--bg3)', borderRadius:10 }}>
-                  <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }}>
-                    {idx + 1}. {q.text}
-                  </div>
+                  <div style={{ fontWeight:600, marginBottom:12, color:'var(--text)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(`${idx + 1}. ${q.text}`) }} />
                   
                   {/* Multiple Choice Questions */}
                   {q.options && q.options.length > 0 && (
@@ -2152,7 +2150,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                             </div>
                             <div style={{ flex:1 }}>
                               <span style={{ fontWeight: showResult && isCorrect ? 600 : 'normal', color:'var(--text)' }}>
-                                <strong>{optionLetter})</strong> {opt.text}
+                                <strong>{optionLetter})</strong> <span dangerouslySetInnerHTML={{ __html: renderMarkdown(opt.text) }} />
                               </span>
                             </div>
                             {showResult && isCorrect && (
@@ -2166,9 +2164,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                       })}
                       {showResults[idx] && q.explanation && (
                         <div style={{ marginTop:12, padding:12, background:'var(--bg2)', borderRadius:8,
-                          borderLeft:'4px solid var(--accent)', fontSize:'.85rem', color:'var(--text2)' }}>
-                          <strong style={{ color:'var(--accent)' }}>💡 Explanation:</strong> {q.explanation}
-                        </div>
+                          borderLeft:'4px solid var(--accent)', fontSize:'.85rem', color:'var(--text2)' }} dangerouslySetInnerHTML={{ __html: renderMarkdown(`**💡 Explanation:** ${q.explanation}`) }} />
                       )}
                     </div>
                   )}

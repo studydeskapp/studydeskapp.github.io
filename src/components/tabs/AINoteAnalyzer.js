@@ -194,46 +194,34 @@ Note: This appears to be a ${subjectGuess ? subjectGuess + ' ' : ''}document. Fo
       `Title: ${note.title}\nSubject: ${note.subject || 'No subject'}\nContent: ${note.content.replace(/<[^>]*>/g, '')}`
     ).join('\n\n---\n\n');
 
-    const upcomingAssignments = assignments.filter(a => new Date(a.dueDate) > new Date())
-      .map(a => `${a.title} (${a.subject}) - Due: ${a.dueDate}`).join('\n');
-
     const fullContent = notesText + (uploadedContent ? `\n\n--- UPLOADED FILES ---\n\n${uploadedContent}` : '') + (textInput ? `\n\n--- TEXT INPUT ---\n\n${textInput}` : '');
 
-    return `You are a helpful AI study assistant. Based on the uploaded files and notes below, provide a comprehensive analysis.
+    return `You are an expert study assistant. Analyze the following notes and extract the most important information.
 
-Content to analyze:
+NOTES:
 ${fullContent}
 
-${upcomingAssignments ? `Upcoming Assignments:\n${upcomingAssignments}\n\n` : ''}
+Provide a comprehensive analysis with these sections:
 
-Please provide a detailed analysis that includes:
+## 📚 Key Concepts
+List all main topics, concepts, and themes covered in the notes.
 
-1. KEY CONCEPTS & MAIN IDEAS
-   - Identify the most important concepts
-   - Highlight main themes and patterns
-   - Note any definitions, formulas, or key terms
+## 📖 Important Definitions
+Define all key terms, vocabulary, and terminology.
 
-2. STUDY RECOMMENDATIONS
-   - Suggest effective study methods for this material
-   - Identify areas that need more attention
-   - Recommend how to approach learning this content
+## 🔢 Formulas & Equations
+List any formulas, equations, or mathematical expressions (if applicable).
 
-3. CONNECTIONS & RELATIONSHIPS
-   - How concepts relate to each other
-   - Connections to upcoming assignments
-   - Cross-subject relationships
+## 💡 Core Ideas
+Explain the fundamental principles and main takeaways.
 
-4. ACTIONABLE INSIGHTS
-   - Learning priorities based on this content
-   - Strengths and well-understood topics
-   - Gaps or areas needing more focus
+## � How Concepts Connect
+Show how the different ideas and concepts relate to each other.
 
-5. STUDY PLAN SUGGESTIONS
-   - How to organize study time for this material
-   - Recommended review schedule
-   - Tips to avoid burnout
+## ⚠️ Important Details
+Highlight critical facts, dates, examples, or information that shouldn't be missed.
 
-Format your response with clear headings, bullet points, and actionable advice.`;
+Use clear markdown formatting with headers, bullet points, and organized sections.`;
   };
 
   // Markdown renderer function
@@ -247,10 +235,10 @@ Format your response with clear headings, bullet points, and actionable advice.`
       .replace(/^###\s(.*)$/gm,  '<h3 style="font-size:1.1rem;font-weight:700;margin:16px 0 8px;color:var(--text);">$1</h3>')
       .replace(/^##\s(.*)$/gm,   '<h2 style="font-size:1.2rem;font-weight:700;margin:20px 0 10px;color:var(--text);">$1</h2>')
       .replace(/^#\s(.*)$/gm,    '<h1 style="font-size:1.3rem;font-weight:700;margin:20px 0 10px;color:var(--text);">$1</h1>')
-      .replace(/`([^`]+)`/g, '<code style="background:var(--bg3);padding:2px 4px;border-radius:4px;font-family:monospace;font-size:.85em;">$1</code>')
-      .replace(/^- (.*)$/gm, '<li style="margin:4px 0;">• $1</li>')
-      .replace(/^\d+\. (.*)$/gm, '<li style="margin:4px 0;">$1</li>')
-      .replace(/\n\n/g, '</p><p>')
+      .replace(/`([^`]+)`/g, '<code style="background:var(--bg3);padding:2px 4px;border-radius:4px;font-family:monospace;font-size:.85em;color:var(--text);">$1</code>')
+      .replace(/^- (.*)$/gm, '<li style="margin:4px 0;color:var(--text);">• $1</li>')
+      .replace(/^\d+\. (.*)$/gm, '<li style="margin:4px 0;color:var(--text);">$1</li>')
+      .replace(/\n\n/g, '</p><p style="color:var(--text);margin:8px 0;">')
       .replace(/\n/g, '<br>');
   };
 
@@ -286,7 +274,7 @@ Format your response with clear headings, bullet points, and actionable advice.`
     }
 
     return (
-      <div className="analysis-result">
+      <div className="analysis-result" style={{ color: 'var(--text)', lineHeight: '1.6' }}>
         <div dangerouslySetInnerHTML={{ __html: renderMarkdown(analysis) }} />
       </div>
     );
@@ -390,10 +378,10 @@ Format your response with clear headings, bullet points, and actionable advice.`
                 width: '100%',
                 minHeight: '150px',
                 padding: '12px',
-                border: `1.5px solid ${darkMode ? 'var(--border)' : 'var(--border2)'}`,
+                border: '1.5px solid var(--border)',
                 borderRadius: '10px',
-                background: darkMode ? 'var(--bg2)' : 'white',
-                color: darkMode ? 'var(--text)' : '#1f2937',
+                background: 'var(--bg2)',
+                color: 'var(--text)',
                 fontSize: 'var(--fs-sm)',
                 resize: 'vertical',
                 fontFamily: 'inherit',
@@ -567,16 +555,16 @@ Format your response with clear headings, bullet points, and actionable advice.`
       <div style={{ marginBottom: '24px' }}>
         <button
           onClick={generateAnalysis}
-          disabled={selectedNotes.length === 0 && uploadedFiles.length === 0 || loading}
+          disabled={selectedNotes.length === 0 && uploadedFiles.length === 0 && !textInput.trim() || loading}
           style={{
             padding: '12px 24px',
-            background: (selectedNotes.length > 0 || uploadedFiles.length > 0) && !loading ? 'var(--accent)' : (darkMode ? 'var(--bg3)' : 'var(--bg)'),
-            color: (selectedNotes.length > 0 || uploadedFiles.length > 0) && !loading ? 'white' : (darkMode ? 'var(--text3)' : 'var(--text4)'),
+            background: (selectedNotes.length > 0 || uploadedFiles.length > 0 || textInput.trim()) && !loading ? 'var(--accent)' : (darkMode ? 'var(--bg3)' : 'var(--bg)'),
+            color: (selectedNotes.length > 0 || uploadedFiles.length > 0 || textInput.trim()) && !loading ? 'white' : (darkMode ? 'var(--text3)' : 'var(--text4)'),
             border: `1.5px solid ${darkMode ? 'var(--border)' : 'var(--border2)'}`,
             borderRadius: '10px',
             fontSize: 'var(--fs-md)',
             fontWeight: 'var(--fw-semibold)',
-            cursor: (selectedNotes.length > 0 || uploadedFiles.length > 0) && !loading ? 'pointer' : 'not-allowed',
+            cursor: (selectedNotes.length > 0 || uploadedFiles.length > 0 || textInput.trim()) && !loading ? 'pointer' : 'not-allowed',
             transition: 'all var(--transition-base)'
           }}
         >
