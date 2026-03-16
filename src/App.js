@@ -534,6 +534,9 @@ export default function StudyDesk() {
   useEffect(() => {
     if (!user) return;
     
+    // Don't change URL if on admin route
+    if (window.location.pathname === '/admin' || window.location.pathname === '/admin/') return;
+    
     const tabPaths = {
       'dashboard': '/dashboard',
       'assignments': '/assignments',
