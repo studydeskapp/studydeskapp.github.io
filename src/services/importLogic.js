@@ -3,7 +3,7 @@
 // Handles assignment import from various sources (Canvas, Google Docs/Slides, text)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-import { fetchWithFallback, extractId } from '../utils/helpers';
+import { fetchWithFallback, extractId, findMatchingClassName } from '../utils/helpers';
 import { callGemini } from '../utils/gemini';
 import { fbIncrementStat } from '../utils/firebase';
 import { checkUnknown } from './gameLogic';
@@ -65,7 +65,7 @@ Return only the JSON array, no other text.`;
 }
 
 // ── Canvas Import Logic ────────────────────────────────────────────────────────
-export async function importFromCanvasPaste(canvasPaste, setImporting, setImportResult) {
+export async function importFromCanvasPaste(canvasPaste, setImporting, setImportResult, classes = []) {
   if (!canvasPaste.trim()) return;
   setImporting(true);
   setImportResult(null);
@@ -83,9 +83,12 @@ export async function importFromCanvasPaste(canvasPaste, setImporting, setImport
       .map(item => {
         const dueDate = item.plannable_date ? item.plannable_date.split("T")[0] : "";
         const days = dueDate ? (new Date(dueDate) - today) / 86400000 : 99;
+        // Apply fuzzy matching to subject name
+        const rawSubject = item.context_name || "Unknown";
+        const matchedSubject = findMatchingClassName(rawSubject, classes);
         return {
           title: item.plannable?.title || item.plannable_type,
-          subject: item.context_name || "Unknown",
+          subject: matchedSubject,
           dueDate,
           priority: days <= 2 ? "high" : days <= 7 ? "medium" : "low",
           progress: 0,
@@ -101,7 +104,7 @@ export async function importFromCanvasPaste(canvasPaste, setImporting, setImport
   setImporting(false);
 }
 
-export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult) {
+export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult, classes = []) {
   if (isLocalhost) {
     setImportResult({ error: "Canvas API import doesn't work on localhost due to CORS. Deploy the app or use the 'Paste Canvas data' option instead." });
     return;
@@ -152,10 +155,13 @@ export async function importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhos
         const canvasUrl = item.course_id && item.plannable_id 
           ? `${canvasBaseUrl}/courses/${item.course_id}/assignments/${item.plannable_id}`
           : null;
+        // Apply fuzzy matching to subject name
+        const rawSubject = item.context_name || "Unknown";
+        const matchedSubject = findMatchingClassName(rawSubject, classes);
         return {
           canvasId: String(item.plannable_id || ""),
           title: item.plannable?.title || item.plannable_type,
-          subject: item.context_name || "Unknown",
+          subject: matchedSubject,
           dueDate,
           priority: days <= 1 ? "high" : days <= 5 ? "medium" : "low",
           progress: submitted ? 100 : 0,
@@ -227,12 +233,15 @@ export function confirmImport(importResult, user, setAssignments, classes, setSc
     let updated = [...existing];
 
     for (const a of incoming) {
+      // Match imported subject name to existing class names
+      const matchedSubject = a.subject ? findMatchingClassName(a.subject, classes) : a.subject;
+      
       // Match by canvasId first, then by title+subject
       const match = updated.find(ex =>
         (a.canvasId && ex.canvasId && ex.canvasId === a.canvasId) ||
         (
           ex.title?.toLowerCase().trim() === a.title?.toLowerCase().trim() &&
-          (!a.subject || !ex.subject || ex.subject.toLowerCase() === a.subject.toLowerCase())
+          (!matchedSubject || !ex.subject || ex.subject.toLowerCase() === matchedSubject.toLowerCase())
         )
       );
 
@@ -241,7 +250,7 @@ export function confirmImport(importResult, user, setAssignments, classes, setSc
         updated = updated.map(ex => ex.id === match.id ? {
           ...ex,
           ...(a.canvasId ? { canvasId: a.canvasId } : {}),
-          subject: a.subject || ex.subject,
+          subject: matchedSubject || ex.subject,
           dueDate: a.dueDate || ex.dueDate,
           priority: a.priority || ex.priority,
           progress: Math.max(ex.progress ?? 0, a.progress ?? 0),
@@ -262,6 +271,7 @@ export function confirmImport(importResult, user, setAssignments, classes, setSc
           notes: '',
           dueDate: '',
           ...a,
+          subject: matchedSubject || a.subject, // Use matched subject name
           id: `${Date.now()}_${Math.random().toString(36).slice(2)}_${toAdd.length}`,
           createdAt: new Date().toISOString(),
           // Add source URLs based on import source

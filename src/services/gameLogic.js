@@ -7,6 +7,21 @@ import { SHOP_ITEMS, SUBJECT_COLORS } from '../constants';
 import { fbIncrementStat } from '../utils/firebase';
 
 // ── Game Completion Logic ──────────────────────────────────────────────────────
+// Validate streak on app load - reset if broken
+export function validateStreak(game) {
+  const today = new Date().toISOString().split("T")[0];
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const yesterdayStr = yesterday.toISOString().split("T")[0];
+  
+  // If lastStreakDate is not yesterday or today, streak is broken
+  if (game.lastStreakDate !== yesterdayStr && game.lastStreakDate !== today) {
+    return { ...game, streak: 0 };
+  }
+  
+  return game;
+}
+
 export function handleComplete(prev, next, user, setGame, addFloat, hasBeenCompleted) {
   // Only award points if going from incomplete to complete AND hasn't been completed before
   if (next !== 100 || prev >= 100 || hasBeenCompleted) return;
@@ -20,10 +35,24 @@ export function handleComplete(prev, next, user, setGame, addFloat, hasBeenCompl
     const nc = nd ? 1 : g.dailyCount + 1;
     let ns = g.streak, nl = g.lastStreakDate, bonus = 0;
     
+    // Only update streak when completing 3rd assignment of the day
     if (nc === 3) {
-      const y = new Date(); y.setDate(y.getDate() - 1);
-      const ys = y.toISOString().split("T")[0];
-      ns = (g.lastStreakDate === ys || g.lastStreakDate === today) ? g.streak + 1 : 1;
+      const yesterday = new Date();
+      yesterday.setDate(yesterday.getDate() - 1);
+      const yesterdayStr = yesterday.toISOString().split("T")[0];
+      
+      // Continue streak if last streak was yesterday, start new streak if it was earlier or never
+      if (g.lastStreakDate === yesterdayStr) {
+        // Continue existing streak
+        ns = g.streak + 1;
+      } else if (g.lastStreakDate === today) {
+        // Already got streak today, don't change it
+        ns = g.streak;
+      } else {
+        // Streak broken, start new one
+        ns = 1;
+      }
+      
       bonus = Math.round(10 + ns * 4);
       nl = today;
       setTimeout(() => addFloat(bonus, true), 600);

@@ -3,6 +3,7 @@ import { callGemini, callGeminiStream, getGeminiKey } from '../../utils/gemini';
 import { FB_FS, FB_KEY } from '../../utils/firebase';
 import { createNewChat, generateChatTitle, getTimeAgo, getLastMessage, sortChatsByRecent, searchChats } from '../../services/chatLogic';
 import AINoteAnalyzer from './AINoteAnalyzer';
+import ProgressBar from '../shared/ProgressBar';
 
 function AITab({ assignments, classes, chats, setChats, notes }) {
   const [aiMode, setAiMode] = useState('chat');
@@ -66,6 +67,7 @@ function AITab({ assignments, classes, chats, setChats, notes }) {
   const [flashcardTopic, setFlashcardTopic] = useState('');
   const [flashcards, setFlashcards] = useState([]);
   const [flashcardLoading, setFlashcardLoading] = useState(false);
+  const [flashcardsReady, setFlashcardsReady] = useState(false); // Content loaded but waiting for progress bar
   const [flippedCards, setFlippedCards] = useState(new Set());
 
   // Writing state
@@ -76,6 +78,7 @@ function AITab({ assignments, classes, chats, setChats, notes }) {
   // Questions state
   const [questionsInput, setQuestionsInput] = useState('');
   const [questionsLoading, setQuestionsLoading] = useState(false);
+  const [questionsReady, setQuestionsReady] = useState(false); // Content loaded but waiting for progress bar
   const [generatedQuestions, setGeneratedQuestions] = useState([]);
   const [userAnswers, setUserAnswers] = useState({});
   const [showResults, setShowResults] = useState({});
@@ -277,6 +280,7 @@ Return ONLY the JSON array, no other text.`,
     setHomeworkStep('explanation');
     setHomeworkExplanation('');
     setResponseTruncated(false);
+    const isGenerating = true; // Track that we're generating
 
     const focusClause = problemsToFocus.length > 0
       ? `\n\nThe student wants to focus on these specific problems/parts: ${problemsToFocus.join(', ')}. Focus your explanation primarily on these, but you may briefly mention others.`
@@ -890,6 +894,7 @@ Provide helpful, encouraging responses about studying and academics. Use markdow
   const generateFlashcards = async () => {
     if (!flashcardTopic.trim() || flashcardLoading) return;
     setFlashcardLoading(true);
+    setFlashcardsReady(false); // Content not ready yet
     setFlashcards([]);
     setFlippedCards(new Set());
     try {
@@ -929,10 +934,11 @@ Return ONLY the JSON array with exactly 6 flashcards. No other text.`;
         ];
       }
       setFlashcards(cards.slice(0, 6));
+      setFlashcardsReady(true); // Mark content as ready
     } catch (err) {
       setFlashcards([{ question: `Study topic: ${flashcardTopic}`, answer: "Sorry, couldn't generate flashcards right now. Please try again." }]);
+      setFlashcardsReady(true); // Mark as ready even on error so progress bar completes
     }
-    setFlashcardLoading(false);
     setFlashcardTopic('');
   };
 
@@ -1003,6 +1009,7 @@ Be constructive and encouraging. Use markdown formatting.`;
   const generateQuestions = async () => {
     if (!questionsInput.trim() || questionsLoading) return;
     setQuestionsLoading(true);
+    setQuestionsReady(false);
     setGeneratedQuestions([]);
     setUserAnswers({});
     setShowResults({});
@@ -1041,10 +1048,11 @@ ${questionsInput}`;
       const response = await callGemini(prompt, "You are a helpful AI study assistant. Generate practice questions to test understanding.");
       const questions = parseQuestions(response);
       setGeneratedQuestions(questions);
+      setQuestionsReady(true); // Mark content as ready, but keep loading true
     } catch (err) {
       alert("Sorry, I couldn't generate questions right now. Please try again.");
+      setQuestionsReady(true); // Mark as ready even on error so progress bar completes
     }
-    setQuestionsLoading(false);
   };
 
   const parseQuestions = (response) => {
@@ -1254,8 +1262,18 @@ Provide insights on study patterns, subject performance, areas to improve, and n
       <input type="file" accept="image/*" onChange={onFile} style={{ display:'none' }} id={`file-${slot}`} />
       <label htmlFor={`file-${slot}`} className="btn btn-p">📁 Upload File</label>
       <input type="file" accept="image/*" capture="environment" onChange={onCamera} style={{ display:'none' }} id={`cam-${slot}`} />
-      <button className="btn btn-p" onClick={() => document.getElementById(`cam-${slot}`).click()}>📷 Take Photo</button>
-      <button className="btn btn-p" onClick={onPhone}>📱 Use Phone</button>
+      <button className="btn btn-p" onClick={() => document.getElementById(`cam-${slot}`).click()} style={{display:"flex",alignItems:"center",gap:4}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/>
+        </svg>
+        Take Photo
+      </button>
+      <button className="btn btn-p" onClick={onPhone} style={{display:"flex",alignItems:"center",gap:4}}>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
+        </svg>
+        Use Phone
+      </button>
     </div>
   );
 
@@ -1563,7 +1581,13 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                 </svg>
               </div>
               <div style={{ fontWeight:600, color:'var(--text)', marginBottom:4 }}>Scanning your homework...</div>
-              <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Detecting problems and questions in your image.</div>
+              <div style={{ fontSize:'.8rem', color:'var(--text3)', marginBottom:20 }}>Detecting problems and questions in your image.</div>
+              
+              <ProgressBar 
+                isLoading={detectingProblems} 
+                label="Analyzing image"
+                showPercentage={true}
+              />
             </div>
           )}
 
@@ -1664,7 +1688,11 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                     background:'#fef3c7', border:'1.5px solid #fbbf24', borderRadius:10,
                     padding:'12px 16px', marginBottom:16, display:'flex', gap:10, alignItems:'flex-start'
                   }}>
-                    <span style={{ fontSize:'1.1rem', flexShrink:0 }}>⚠️</span>
+                    <span style={{ fontSize:'1.1rem', flexShrink:0 }}>
+                      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                      </svg>
+                    </span>
                     <div>
                       <div style={{ fontWeight:700, color:'#d97706', fontSize:'.85rem', marginBottom:4 }}>
                         Response was too long and got cut off
@@ -1693,9 +1721,20 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                 
                 <div className="hw-explanation-scroll"
                   style={{ fontSize:'.85rem', lineHeight:1.7, color:'var(--text)', fontFamily:"'Plus Jakarta Sans', sans-serif" }}>
-                  <div dangerouslySetInnerHTML={{ __html: renderMarkdown(homeworkExplanation) }} />
-                  {!homeworkExplanation && (
-                    <div style={{ color:'var(--text3)', fontStyle:'italic' }}>Reading your homework image...</div>
+                  {homeworkExplanation.length < 50 && (
+                    <>
+                      <ProgressBar 
+                        isLoading={homeworkExplanation.length < 50} 
+                        label="Generating explanation"
+                        showPercentage={true}
+                      />
+                      <div style={{ color:'var(--text3)', fontStyle:'italic', textAlign:'center', marginTop:12 }}>
+                        Reading your homework image and preparing step-by-step solutions...
+                      </div>
+                    </>
+                  )}
+                  {homeworkExplanation && (
+                    <div dangerouslySetInnerHTML={{ __html: renderMarkdown(homeworkExplanation) }} />
                   )}
                 </div>
               </div>
@@ -1770,7 +1809,11 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                   <div style={{ background:'var(--card)', border:'2px solid #16a34a', borderRadius:16, padding:20 }}>
                     <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16 }}>
                       <div style={{ width:36, height:36, borderRadius:'50%', background:'#16a34a', display:'flex',
-                        alignItems:'center', justifyContent:'center', color:'#fff', fontSize:'1rem', flexShrink:0 }}>✅</div>
+                        alignItems:'center', justifyContent:'center', color:'#fff', fontSize:'1rem', flexShrink:0 }}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                      </div>
                       <div style={{ flex:1 }}>
                         <div style={{ fontWeight:700, color:'var(--text)', fontSize:'.95rem' }}>Answer Feedback</div>
                         <div style={{ fontSize:'.75rem', color:'var(--text3)' }}>
@@ -1871,7 +1914,24 @@ Provide insights on study patterns, subject performance, areas to improve, and n
             </div>
             <div style={{ fontSize:'.8rem', color:'var(--text3)' }}>Tip: Be specific for better flashcards</div>
           </div>
-          {flashcards.length > 0 && (
+          
+          {flashcardLoading && (
+            <div style={{ padding:20, background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:12 }}>
+              <ProgressBar 
+                isLoading={flashcardLoading && !flashcardsReady} 
+                label="Generating flashcards"
+                showPercentage={true}
+                onComplete={() => {
+                  setTimeout(() => {
+                    setFlashcardLoading(false);
+                    setFlashcardsReady(false);
+                  }, 100);
+                }}
+              />
+            </div>
+          )}
+          
+          {flashcards.length > 0 && !flashcardLoading && (
             <div style={{ flex:1 }}>
               <div style={{ fontSize:'.9rem', fontWeight:600, color:'var(--text)', marginBottom:16 }}>
                 Your Flashcards ({flashcards.length}) — Click to flip!
@@ -1902,31 +1962,28 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                         WebkitBackfaceVisibility:'hidden',
                         display:'flex', 
                         flexDirection:'column', 
-                        justifyContent:'center', 
                         padding:20,
                         borderRadius:12, 
                         boxSizing:'border-box',
                         background:'var(--card)'
                       }}>
-                        <div style={{ fontSize:'.8rem', color:'var(--accent)', fontWeight:600, marginBottom:12, textAlign:'center' }}>QUESTION</div>
+                        <div style={{ fontSize:'.8rem', color:'var(--accent)', fontWeight:600, marginBottom:12, textAlign:'center', flexShrink:0 }}>QUESTION</div>
                         <div style={{ 
                           fontSize:'.85rem', 
                           color:'var(--text)', 
                           lineHeight:1.4, 
                           textAlign:'center',
                           flex:1, 
-                          display:'flex', 
-                          alignItems:'center', 
-                          justifyContent:'center',
                           wordWrap:'break-word', 
                           overflowWrap:'break-word', 
                           hyphens:'auto', 
-                          padding:'0 4px',
-                          overflowY:'auto'
+                          padding:'8px 4px',
+                          overflowY:'auto',
+                          minHeight:0
                         }}>
                           {card.question}
                         </div>
-                        <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12 }}>Click to reveal answer</div>
+                        <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12, flexShrink:0 }}>Click to reveal answer</div>
                       </div>
                       
                       {/* Back of card (Answer) */}
@@ -1939,31 +1996,28 @@ Provide insights on study patterns, subject performance, areas to improve, and n
                         transform:'rotateY(180deg)', 
                         display:'flex', 
                         flexDirection:'column', 
-                        justifyContent:'center',
                         padding:20, 
                         borderRadius:12, 
                         background:'var(--card)', 
                         boxSizing:'border-box'
                       }}>
-                        <div style={{ fontSize:'.8rem', color:'#16a34a', fontWeight:600, marginBottom:12, textAlign:'center' }}>ANSWER</div>
+                        <div style={{ fontSize:'.8rem', color:'#16a34a', fontWeight:600, marginBottom:12, textAlign:'center', flexShrink:0 }}>ANSWER</div>
                         <div style={{ 
                           fontSize:'.85rem', 
                           color:'var(--text)', 
                           lineHeight:1.4, 
                           textAlign:'center',
                           flex:1, 
-                          display:'flex', 
-                          alignItems:'center', 
-                          justifyContent:'center',
                           wordWrap:'break-word', 
                           overflowWrap:'break-word', 
                           hyphens:'auto', 
-                          padding:'0 4px', 
-                          overflowY:'auto'
+                          padding:'8px 4px', 
+                          overflowY:'auto',
+                          minHeight:0
                         }}>
                           {card.answer}
                         </div>
-                        <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12 }}>Click to see question</div>
+                        <div style={{ fontSize:'.75rem', color:'var(--text4)', textAlign:'center', marginTop:12, flexShrink:0 }}>Click to see question</div>
                       </div>
                     </div>
                   );
@@ -2046,6 +2100,22 @@ Provide insights on study patterns, subject performance, areas to improve, and n
               {questionsLoading ? 'Generating Questions...' : 'Generate Questions'}
             </button>
           </div>
+          
+          {questionsLoading && (
+            <div style={{ padding:20, background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:12, marginTop:16 }}>
+              <ProgressBar 
+                isLoading={questionsLoading && !questionsReady} 
+                label="Generating practice questions"
+                showPercentage={true}
+                onComplete={() => {
+                  setTimeout(() => {
+                    setQuestionsLoading(false);
+                    setQuestionsReady(false);
+                  }, 100);
+                }}
+              />
+            </div>
+          )}
 
           {/* Webcam Modal */}
           {showWebcam && (
@@ -2086,7 +2156,7 @@ Provide insights on study patterns, subject performance, areas to improve, and n
             </div>
           )}
 
-          {generatedQuestions.length > 0 && (
+          {generatedQuestions.length > 0 && !questionsLoading && (
             <div style={{ flex:1, background:'var(--card)', border:'1.5px solid var(--border)', borderRadius:16, padding:20, overflow:'auto' }}>
               <h3 style={{ marginBottom:16, color:'var(--accent)', fontSize:'1.1rem', fontWeight:700 }}>Practice Questions</h3>
               {generatedQuestions.map((q, idx) => (

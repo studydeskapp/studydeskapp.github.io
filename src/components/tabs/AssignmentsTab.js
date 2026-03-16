@@ -163,7 +163,7 @@ function AssignmentsTab({
       <div style={{marginBottom:16}}>
         <input
           type="text"
-          placeholder="🔍 Search assignments by title, subject, or notes..."
+          placeholder="Search assignments by title, subject, or notes..."
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           style={{
@@ -186,7 +186,7 @@ function AssignmentsTab({
         {["all",...subjects].map(s=>(
           <button key={s} className="sfbtn" onClick={()=>setFilter(s)}
             style={filter===s?{background:s==="all"?"var(--accent)":subjectColor(s,classes),borderColor:s==="all"?"var(--accent)":subjectColor(s,classes),color:"#fff"}:{}}>
-            {s==="all"?"✦ All":s}
+            {s==="all"?"All":s}
           </button>
         ))}
       </div>}
@@ -198,14 +198,20 @@ function AssignmentsTab({
           onClick={()=>setSortBy("date")}
           style={sortBy==="date"?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}
         >
-          📅 Date
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:4,verticalAlign:"middle"}}>
+            <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+          </svg>
+          Date
         </button>
         <button 
           className="btn btn-sm" 
           onClick={()=>setSortBy("priority")}
           style={sortBy==="priority"?{background:"var(--accent)",color:"#fff",borderColor:"var(--accent)"}:{}}
         >
-          ⚡ Priority
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:4,verticalAlign:"middle"}}>
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+          </svg>
+          Priority
         </button>
         <button 
           className="btn btn-sm" 
@@ -424,7 +430,7 @@ function AssignmentsTab({
       )}
       {pending.length===0&&done.length===0&&(
         <EmptyState
-          icon="📝"
+          icon={<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>}
           title={searchQuery ? "No matching assignments" : "No assignments yet"}
           description={searchQuery ? "Try a different search term" : "Add assignments manually or import from Canvas, Google Docs, or Slides"}
           actionLabel="＋ Add first assignment"

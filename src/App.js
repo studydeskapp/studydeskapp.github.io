@@ -85,7 +85,7 @@ import CalendarTab from './components/tabs/CalendarTab';
 import MobileApp from './components/mobile/MobileApp';
 
 // ── Service Modules ──────────────────────────────────────────────────────────────
-import { handleComplete, buyItem, equipItem, addFloat, launchConfetti, checkUnknown } from './services/gameLogic';
+import { handleComplete, buyItem, equipItem, addFloat, launchConfetti, checkUnknown, validateStreak } from './services/gameLogic';
 import { startTimer, resetTimer, fmtTimer, playDoneSound, onTimerComplete } from './services/timerLogic';
 import { syncCanvas } from './services/canvasSync';
 import { 
@@ -311,7 +311,19 @@ export default function StudyDesk() {
         setUser(validUser);
         return fbLoadData(validUser.uid, validUser.idToken);
       }).then(d=>{
-        if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);if(d.cv?.url){setCanvasBaseUrl(d.cv.url)};if(d.t)setTemplates(d.t);if(d.chats)setChats(d.chats);if(d.n)setNotes(d.n);}
+        if(d){
+          setAssignments(d.a||[]);
+          setClasses(d.c||[]);
+          if(d.g) {
+            // Validate streak on load - reset if broken
+            const validatedGame = validateStreak(d.g);
+            setGame(validatedGame);
+          }
+          if(d.cv?.url){setCanvasBaseUrl(d.cv.url)};
+          if(d.t)setTemplates(d.t);
+          if(d.chats)setChats(d.chats);
+          if(d.n)setNotes(d.n);
+        }
         saveReady.current=true;
         setLoaded(true);
         // Don't auto-show release notes anymore
@@ -700,7 +712,7 @@ export default function StudyDesk() {
   };
   const handleImportFromCanvasPaste = () => {
     try {
-      importFromCanvasPaste(canvasPaste, setImporting, setImportResult);
+      importFromCanvasPaste(canvasPaste, setImporting, setImportResult, classes);
     } catch(error) {
       console.error("Canvas paste import error:", error);
       setImportResult({ error: error.message || "Failed to import from Canvas" });
@@ -709,7 +721,7 @@ export default function StudyDesk() {
   };
   const handleImportFromCanvasAPI = () => {
     try {
-      importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult);
+      importFromCanvasAPI(canvasToken, canvasBaseUrl, isLocalhost, proxyBlocked, setImporting, setImportResult, classes);
     } catch(error) {
       console.error("Canvas API import error:", error);
       setImportResult({ error: error.message || "Failed to import from Canvas API" });
@@ -853,9 +865,9 @@ button:disabled{opacity:.5;cursor:not-allowed}
 #log{margin-top:16px;max-height:300px;overflow-y:auto}
 </style></head>
 <body>
-<h2>📋 Agenda Fetcher</h2>
+<h2>Agenda Fetcher</h2>
 <p>This page will fetch all your upcoming agendas using your Google login.<br>Make sure you're logged into Google in this browser, then click the button.</p>
-<button id="btn" onclick="run()">⬇️ Fetch All Agendas</button>
+<button id="btn" onclick="run()">Fetch All Agendas</button>
 <div id="log"></div>
 <script>
 const URLS=${JSON.stringify(urls,null,2)};
@@ -875,18 +887,18 @@ async function run(){
       if(!res.ok)throw new Error("HTTP "+res.status);
       const text=await res.text();
       combined+="\\n\\n=== "+item.label+" ===\\n"+text;
-      log("✅ Got: "+item.label);
+      log("✓ Got: "+item.label);
     }catch(e){
-      log("⚠️ Skipped "+item.label+": "+e.message,true);
+      log("✗ Skipped "+item.label+": "+e.message,true);
     }
   }
-  if(!combined.trim()){log("❌ Nothing was fetched. Make sure you're logged into Google.",true);document.getElementById("btn").disabled=false;return;}
+  if(!combined.trim()){log("✗ Nothing was fetched. Make sure you're logged into Google.",true);document.getElementById("btn").disabled=false;return;}
   const blob=new Blob([combined],{type:"text/plain"});
   const a=document.createElement("a");
   a.href=URL.createObjectURL(blob);
   a.download="agendas-combined.txt";
   a.click();
-  log("✅ Download started! Upload agendas-combined.txt back to Study Desk.");
+  log("✓ Download started! Upload agendas-combined.txt back to Study Desk.");
 }
 </script>
 </body></html>`;
@@ -1658,7 +1670,14 @@ async function run(){
       return <AuthScreen adminMode adminEmail={ADMIN_EMAIL} onAuth={u=>{
         setUser(u);
         fbLoadData(u.uid,u.idToken).then(d=>{
-          if(d){setAssignments(d.a||[]);setClasses(d.c||[]);if(d.g)setGame(d.g);}
+          if(d){
+            setAssignments(d.a||[]);
+            setClasses(d.c||[]);
+            if(d.g) {
+              const validatedGame = validateStreak(d.g);
+              setGame(validatedGame);
+            }
+          }
           saveReady.current=true;
         });
         if(u.email!==ADMIN_EMAIL){
@@ -1752,7 +1771,10 @@ async function run(){
               if(d) {
                 setAssignments(d.a || []);
                 setClasses(d.c || []);
-                if(d.g) setGame(d.g);
+                if(d.g) {
+                  const validatedGame = validateStreak(d.g);
+                  setGame(validatedGame);
+                }
               }
               saveReady.current = true;
               setLoaded(true);
@@ -1967,12 +1989,21 @@ async function run(){
               <div className={"mob-pill "+(canvasSync.error?"err":canvasSync.syncing?"canvas":canvasSync.lastSync?"ok":"canvas")}
                 onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else handleSyncCanvas(canvasToken,canvasBaseUrl);}}>
                 <span style={{display:"inline-block"}}>
-                  {canvasSync.syncing ? "..." : canvasSync.error ? "⚠️" : canvasSync.lastSync ? "✓" : "Canvas"}
+                  {canvasSync.syncing ? "..." : canvasSync.error ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign:"middle"}}>
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  ) : canvasSync.lastSync ? "✓" : "Canvas"}
                 </span>
                 {canvasSync.syncing ? "Syncing" : canvasSync.error ? "Sync error" : canvasSync.lastSync ? `Synced ${new Date(canvasSync.lastSync).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"})}` : "Canvas"}
               </div>
             ):(
-              <div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>🎓 Connect Canvas</div>
+              <div className="mob-pill canvas" onClick={()=>{setTokenDraft("");setShowCanvasSetup(true);}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:4,verticalAlign:"middle"}}>
+                  <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                </svg>
+                Connect Canvas
+              </div>
             )}
             <div className="mob-pill" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</div>
           </div>
@@ -1986,8 +2017,18 @@ async function run(){
             <div className="hdr-hint">Press <kbd>?</kbd> for shortcuts • <kbd>N</kbd> to add • <kbd>J</kbd>/<kbd>K</kbd> to navigate</div>
           </div>
           <div className="hdr-r">
-            {game.streak>0&&<div className="streak-pill">🔥 {game.streak}d</div>}
-            <div className="pts-pill">⭐ {game.points}</div>
+            {game.streak>0&&<div className="streak-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:3,verticalAlign:"middle"}}>
+                <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+              </svg>
+              {game.streak}d
+            </div>}
+            <div className="pts-pill">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="none" style={{marginRight:3,verticalAlign:"middle"}}>
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+              </svg>
+              {game.points}
+            </div>
             {canvasToken&&(
               <div onClick={()=>{if(canvasSync.error)setCanvasSync(s=>({...s,error:""}));else handleSyncCanvas(canvasToken,canvasBaseUrl);}} title={canvasSync.error?"Click to dismiss":"Click to sync Canvas now"}
                 style={{display:"flex",alignItems:"center",gap:5,padding:"5px 10px",borderRadius:20,border:"1.5px solid",
@@ -1996,23 +2037,50 @@ async function run(){
                   cursor:"pointer",fontSize:".72rem",fontWeight:700,
                   color:canvasSync.error?"#dc2626":canvasSync.newSubmissions>0?"#16a34a":"var(--text3)"}}>
                 <span style={{display:"inline-block"}}>
-                  {canvasSync.syncing ? "..." : canvasSync.error ? "⚠️" : canvasSync.newSubmissions > 0 ? "✅" : "Canvas"}
+                  {canvasSync.syncing ? "..." : canvasSync.error ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign:"middle"}}>
+                      <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                    </svg>
+                  ) : canvasSync.newSubmissions > 0 ? (
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{verticalAlign:"middle"}}>
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  ) : "Canvas"}
                 </span>
                 {canvasSync.syncing ? "Syncing" : canvasSync.error ? "Sync error" : canvasSync.newSubmissions > 0 ? `${canvasSync.newSubmissions} in!` : canvasSync.lastSync ? "Synced" : "Canvas"}
               </div>
             )}
-            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca"}}>🎓 Canvas</button>}
+            {!canvasToken&&<button className="btn btn-g btn-sm" onClick={()=>{setTokenDraft(canvasToken);setShowCanvasSetup(true);}} style={{borderColor:"#c7d2fe",color:"#4338ca",display:"flex",alignItems:"center",gap:5}}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+              </svg>
+              Canvas
+            </button>}
             <button className="btn btn-p btn-sm" onClick={()=>{setImportMode("canvas");setImportOpen(true);}}>＋ Import</button>
             <button className="hdr-icon-btn" onClick={()=>setShowNotifications(true)} title="Notifications">
-              🔔
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+              </svg>
               {assignments.filter(a => a.progress < 100 && a.dueDate && new Date(a.dueDate + 'T00:00:00') <= new Date()).length > 0 && (
                 <span style={{position:'absolute',top:'-2px',right:'-2px',width:'8px',height:'8px',background:'#ef4444',borderRadius:'50%',border:'2px solid var(--card)'}}/>
               )}
             </button>
             <button className="hdr-icon-btn" onClick={()=>setDarkMode(d=>!d)} title={darkMode?"Light mode":"Dark mode"}>
-              {darkMode ? '☀️' : '🌙'}
+              {darkMode ? (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>
+                </svg>
+              ) : (
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+                </svg>
+              )}
             </button>
-            <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} title="Search assignments">🔍</button>
+            <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} title="Search assignments">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
+              </svg>
+            </button>
           </div>
         </div>}
 
@@ -2195,7 +2263,18 @@ async function run(){
 
 
         {adminOpen&&<AdminPanel user={user} onClose={()=>setAdminOpen(false)}/>}
-        {floats.map(f=><div key={f.id} className="pts-float" style={{color:f.streak?"#EA580C":"#F59E0B"}}>+{f.pts}{f.streak?"🔥":"⭐"}</div>)}
+        {floats.map(f=><div key={f.id} className="pts-float" style={{color:f.streak?"#EA580C":"#F59E0B"}}>
+          +{f.pts}
+          {f.streak ? (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginLeft:2,verticalAlign:"middle"}}>
+              <path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>
+            </svg>
+          ) : (
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" stroke="none" style={{marginLeft:2,verticalAlign:"middle"}}>
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
+          )}
+        </div>)}
         {confetti.map(p=>(
           <div key={p.id} className="confetti-piece" style={{
             left:p.x,top:p.y,width:p.w,height:p.h,
@@ -2268,8 +2347,8 @@ async function run(){
                     else setAf({...af,subject:e.target.value});
                   }}>
                     <option value="">— Select class —</option>
-                    {schSubs.length>0&&<optgroup label="📅 From Schedule">{schSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
-                    {prevSubs.length>0&&<optgroup label="📝 Previous">{prevSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
+                    {schSubs.length>0&&<optgroup label="From Schedule">{schSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
+                    {prevSubs.length>0&&<optgroup label="Previous">{prevSubs.map(s=><option key={s} value={s}>{s}</option>)}</optgroup>}
                     <option value="__new">＋ Type a new one…</option>
                   </select>
                 )}
@@ -2305,8 +2384,18 @@ async function run(){
           <div className="modal" style={{display:"flex",flexDirection:"column",maxWidth:600}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
               <div className="modal-t">Assignment Details</div>
-              {!editingAssignment&&<button className="btn btn-sm btn-g" onClick={()=>setEditingAssignment(true)} title="Edit">✏️ Edit</button>}
-              {editingAssignment&&<button className="btn btn-sm btn-p" onClick={()=>{updateA(selectedAssignment.id,selectedAssignment);setEditingAssignment(false);}} title="Save">💾 Save</button>}
+              {!editingAssignment&&<button className="btn btn-sm btn-g" onClick={()=>setEditingAssignment(true)} title="Edit" style={{display:"flex",alignItems:"center",gap:4}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                </svg>
+                Edit
+              </button>}
+              {editingAssignment&&<button className="btn btn-sm btn-p" onClick={()=>{updateA(selectedAssignment.id,selectedAssignment);setEditingAssignment(false);}} title="Save" style={{display:"flex",alignItems:"center",gap:4}}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                </svg>
+                Save
+              </button>}
             </div>
             <div style={{flex:1,overflowY:"auto"}}>
               {!editingAssignment?(
@@ -2344,10 +2433,30 @@ async function run(){
                   {(selectedAssignment.canvasUrl||selectedAssignment.slidesUrl||selectedAssignment.agendaDocUrl)&&(
                     <div className="fg"><label className="flbl">Source Links</label>
                       <div style={{display:"flex",flexDirection:"column",gap:8,marginTop:8}}>
-                        {selectedAssignment.canvasUrl&&<a href={selectedAssignment.canvasUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>🎓 View on Canvas</a>}
-                        {selectedAssignment.slidesUrl&&<a href={selectedAssignment.slidesUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>📊 View Slides</a>}
-                        {selectedAssignment.agendaDocUrl&&<a href={selectedAssignment.agendaDocUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>📄 View Agenda Doc</a>}
-                        {selectedAssignment.agendaSlideUrl&&<a href={selectedAssignment.agendaSlideUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none"}}>📑 View Specific Slide</a>}
+                        {selectedAssignment.canvasUrl&&<a href={selectedAssignment.canvasUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none",display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                          </svg>
+                          View on Canvas
+                        </a>}
+                        {selectedAssignment.slidesUrl&&<a href={selectedAssignment.slidesUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none",display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                          </svg>
+                          View Slides
+                        </a>}
+                        {selectedAssignment.agendaDocUrl&&<a href={selectedAssignment.agendaDocUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none",display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                          View Agenda Doc
+                        </a>}
+                        {selectedAssignment.agendaSlideUrl&&<a href={selectedAssignment.agendaSlideUrl} target="_blank" rel="noopener noreferrer" className="btn btn-sm btn-g" style={{textDecoration:"none",display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/>
+                          </svg>
+                          View Specific Slide
+                        </a>}
                       </div>
                     </div>
                   )}
@@ -2457,7 +2566,12 @@ async function run(){
                 {/* ── STEP: CONFIRM ────────────────── */}
                 {wiz.step==="confirm"&&wiz.school&&(
                   <>
-                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4}}>✅ Confirm School</div>
+                    <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      Confirm School
+                    </div>
                     <div style={{padding:"14px 16px",border:`1.5px solid ${bd2}`,borderRadius:14,background:bg3c,marginBottom:18}}>
                       <div style={{fontWeight:700,color:txt2c,fontSize:".95rem"}}>{wiz.school.name}</div>
                       <div style={{fontSize:".76rem",color:txt3c,marginTop:3}}>{wiz.school.city}, {wiz.school.state} · NCES ID: {wiz.school.ncessch}</div>
@@ -2520,7 +2634,12 @@ async function run(){
                     const reviewPeriods=[...new Map(wiz.periods.map(p=>[p.label,p])).values()];
                     return(
                       <>
-                        <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4}}>🎉 Ready to add!</div>
+                        <div style={{fontFamily:"'Fraunces',serif",fontSize:"1.2rem",fontWeight:700,color:txt2c,marginBottom:4,display:"flex",alignItems:"center",gap:6}}>
+                          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/>
+                          </svg>
+                          Ready to add!
+                        </div>
                         <div style={{fontSize:".8rem",color:txt3c,marginBottom:16}}>Here's your schedule for {wiz.school?.name}:</div>
                         <div style={{display:"flex",flexDirection:"column",gap:7,maxHeight:220,overflow:"auto",marginBottom:18}}>
                           {reviewPeriods.map((pd,i)=>(
@@ -2560,8 +2679,11 @@ async function run(){
                       <div style={{fontSize:".78rem",color:txt3c,marginBottom:18}}>What class do you have {p.label?.toLowerCase()||`${ordinals[inputIdx]||`${inputIdx+1}th`} period`}?</div>
 
                       {/* Bell schedule banner */}
-                      {idx===0&&wiz.bellFound&&<div style={{padding:"8px 12px",background:darkMode?"#001a00":"#f0fdf4",border:`1px solid ${darkMode?"#14532d":"#bbf7d0"}`,borderRadius:9,fontSize:".74rem",color:darkMode?"#4ade80":"#16a34a",fontWeight:600,marginBottom:14}}>
-                        ✅ Bell times loaded automatically — just enter your class names!{wiz.bellNote&&<span style={{fontWeight:400,color:darkMode?"#4ade80":"#16a34a"}}> ({wiz.bellNote})</span>}
+                      {idx===0&&wiz.bellFound&&<div style={{padding:"8px 12px",background:darkMode?"#001a00":"#f0fdf4",border:`1px solid ${darkMode?"#14532d":"#bbf7d0"}`,borderRadius:9,fontSize:".74rem",color:darkMode?"#4ade80":"#16a34a",fontWeight:600,marginBottom:14,display:"flex",alignItems:"center",gap:6}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="20 6 9 17 4 12"/>
+                        </svg>
+                        Bell times loaded automatically — just enter your class names!{wiz.bellNote&&<span style={{fontWeight:400,color:darkMode?"#4ade80":"#16a34a"}}> ({wiz.bellNote})</span>}
                       </div>}
                       {idx===0&&!wiz.bellFound&&<div style={{padding:"8px 12px",background:bg3c,border:`1px solid ${bd2}`,borderRadius:9,fontSize:".74rem",color:txt3c,marginBottom:14}}>
                         ⏰ First person from this school! Enter times once and they'll be saved for everyone else.
@@ -2661,13 +2783,33 @@ async function run(){
       {importOpen&&(
         <div className="overlay" onClick={e=>e.target===e.currentTarget&&!importing&&(setImportOpen(false),resetImport())}>
           <div className="modal">
-            <div className="modal-t">📥 Import Assignments</div>
+            <div className="modal-t">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:8,verticalAlign:"middle"}}>
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+              </svg>
+              Import Assignments
+            </div>
 
             {!importing&&!importResult&&(
               <div className="itabs">
-                <button className={`itab${importMode==="canvas"?" canvas-on":""}`} onClick={()=>{setImportMode("canvas");setImportResult(null);}}>🎓 Canvas</button>
-                <button className={`itab${importMode==="slides"?" on":""}`} onClick={()=>{setImportMode("slides");setImportResult(null);}}>📊 Google Slides</button>
-                <button className={`itab${importMode==="agenda"?" agenda-on":""}`} onClick={()=>{setImportMode("agenda");setImportResult(null);}}>📋 Agenda</button>
+                <button className={`itab${importMode==="canvas"?" canvas-on":""}`} onClick={()=>{setImportMode("canvas");setImportResult(null);}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6,verticalAlign:"middle"}}>
+                    <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                  </svg>
+                  Canvas
+                </button>
+                <button className={`itab${importMode==="slides"?" on":""}`} onClick={()=>{setImportMode("slides");setImportResult(null);}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6,verticalAlign:"middle"}}>
+                    <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/>
+                  </svg>
+                  Google Slides
+                </button>
+                <button className={`itab${importMode==="agenda"?" agenda-on":""}`} onClick={()=>{setImportMode("agenda");setImportResult(null);}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{marginRight:6,verticalAlign:"middle"}}>
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/>
+                  </svg>
+                  Agenda
+                </button>
               </div>
             )}
 
@@ -2678,7 +2820,11 @@ async function run(){
                   /* ── Connected: one-click import ── */
                   <>
                     <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"14px 16px",marginBottom:16,display:"flex",alignItems:"center",gap:12}}>
-                      <div style={{width:36,height:36,borderRadius:10,background:"#4338ca",display:"flex",alignItems:"center",justifyContent:"center",fontSize:"1.1rem",flexShrink:0}}>🎓</div>
+                      <div style={{width:36,height:36,borderRadius:10,background:"#4338ca",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                        </svg>
+                      </div>
                       <div>
                         <div style={{fontWeight:700,color:"#4338ca",fontSize:".85rem"}}>Canvas connected</div>
                         <div style={{fontSize:".72rem",color:"#6366f1",marginTop:2}}>{canvasBaseUrl}</div>
@@ -2690,20 +2836,23 @@ async function run(){
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:18}}>
                       {[
-                        ["📥","Fetches every upcoming assignment, quiz, and discussion"],
-                        ["🔄","Updates due dates, grades, and submission status on existing assignments"],
-                        ["✅","Marks submitted assignments as 100% complete"],
-                        ["📚","Pulls the class name from Canvas automatically"],
+                        [<svg key="1" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>,"Fetches every upcoming assignment, quiz, and discussion"],
+                        [<svg key="2" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>,"Updates due dates, grades, and submission status on existing assignments"],
+                        [<svg key="3" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="20 6 9 17 4 12"/></svg>,"Marks submitted assignments as 100% complete"],
+                        [<svg key="4" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>,"Pulls the class name from Canvas automatically"],
                       ].map(([icon,text])=>(
                         <div key={text} style={{display:"flex",gap:10,alignItems:"center",fontSize:".8rem",color:"var(--text2)"}}>
-                          <span style={{fontSize:"1rem"}}>{icon}</span>{text}
+                          <span style={{display:"flex",alignItems:"center"}}>{icon}</span>{text}
                         </div>
                       ))}
                     </div>
                     <div className="mactions">
                       <button className="btn btn-g" onClick={()=>{setImportOpen(false);resetImport();}}>Cancel</button>
-                      <button className="btn btn-p" style={{background:"#4338ca",minWidth:160}} onClick={handleImportFromCanvasAPI}>
-                        🎓 Import All Assignments
+                      <button className="btn btn-p" style={{background:"#4338ca",minWidth:160,display:"flex",alignItems:"center",justifyContent:"center",gap:6}} onClick={handleImportFromCanvasAPI}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                        </svg>
+                        Import All Assignments
                       </button>
                     </div>
                   </>
@@ -2711,7 +2860,12 @@ async function run(){
                   /* ── Not connected: show connect prompt + manual paste fallback ── */
                   <>
                     <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:12,padding:"13px 15px",marginBottom:14}}>
-                      <div style={{fontWeight:700,color:"#4338ca",fontSize:".84rem",marginBottom:6}}>🎓 Connect Canvas for one-click import</div>
+                      <div style={{fontWeight:700,color:"#4338ca",fontSize:".84rem",marginBottom:6,display:"flex",alignItems:"center",gap:6}}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M22 10v6M2 10l10-5 10 5-10 5z"/><path d="M6 12v5c3 3 9 3 12 0v-5"/>
+                        </svg>
+                        Connect Canvas for one-click import
+                      </div>
                       <div style={{fontSize:".77rem",color:"#6366f1",marginBottom:10}}>Connect your Canvas API token once and import all assignments with a single button — no copy-pasting ever again.</div>
                       <button className="btn btn-p" style={{background:"#4338ca"}} onClick={()=>{setImportOpen(false);resetImport();setTokenDraft(canvasToken);setShowCanvasSetup(true);}}>Connect Canvas →</button>
                     </div>
@@ -2743,32 +2897,58 @@ async function run(){
                   <label className="flbl">Google Slides URL</label>
                   <input className="finp" value={importUrl} onChange={e=>setImportUrl(e.target.value)} placeholder="https://docs.google.com/presentation/d/..."/>
                 </div>
-                {importUrl&&!extractId(importUrl)&&<div className="err-box" style={{marginBottom:10}}>⚠️ Not a valid Google Slides URL</div>}
+                {importUrl&&!extractId(importUrl)&&<div className="err-box" style={{marginBottom:10,display:"flex",alignItems:"center",gap:6}}>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                  </svg>
+                  Not a valid Google Slides URL
+                </div>}
                 {extractId(importUrl)&&(
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:4}}>
                     <button onClick={importFromSlidesUrl}
                       style={{padding:"12px 10px",borderRadius:11,border:"1.5px solid #EDE9E2",background:"#fff",cursor:"pointer",textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                      <div style={{fontSize:"1.2rem",marginBottom:4}}>⚡</div>
+                      <div style={{marginBottom:4,display:"flex",justifyContent:"center"}}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+                        </svg>
+                      </div>
                       <div style={{fontSize:".8rem",fontWeight:700,color:"#1B1F3B",marginBottom:3}}>Auto Fetch</div>
                       <div style={{fontSize:".7rem",color:"#aaa",lineHeight:1.4}}>Works if slides are public</div>
                     </button>
                     <div style={{position:"relative"}}>
                       <button onClick={()=>window.open(`https://docs.google.com/presentation/d/${extractId(importUrl)}/export/txt`,"_blank")}
                         style={{width:"100%",padding:"12px 10px",borderRadius:11,border:"2px solid #1B1F3B",background:"#f8f8ff",cursor:"pointer",textAlign:"center",fontFamily:"'Plus Jakarta Sans',sans-serif"}}>
-                        <div style={{fontSize:"1.2rem",marginBottom:4}}>📄</div>
+                        <div style={{marginBottom:4,display:"flex",justifyContent:"center"}}>
+                          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                        </div>
                         <div style={{fontSize:".8rem",fontWeight:700,color:"#1B1F3B",marginBottom:3}}>Upload File</div>
                         <div style={{fontSize:".7rem",color:"#555",lineHeight:1.4}}>Works with school accounts</div>
-                        <div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:"#1B1F3B",color:"#fff",fontSize:".6rem",fontWeight:700,padding:"2px 8px",borderRadius:20,whiteSpace:"nowrap"}}>✦ Recommended</div>
+                        <div style={{position:"absolute",top:-9,left:"50%",transform:"translateX(-50%)",background:"#1B1F3B",color:"#fff",fontSize:".6rem",fontWeight:700,padding:"2px 8px",borderRadius:20,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:3}}>
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor" stroke="none">
+                            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+                          </svg>
+                          Recommended
+                        </div>
                       </button>
                     </div>
                   </div>
                 )}
                 {extractId(importUrl)&&(
                   <div style={{background:"#EEF2FF",border:"1.5px solid #c7d2fe",borderRadius:10,padding:"12px 13px",fontSize:".75rem",color:"#4338ca",lineHeight:1.6,marginTop:10}}>
-                    <div style={{fontWeight:700,marginBottom:8}}>📥 Step 1 — File downloaded! Now upload it here:</div>
+                    <div style={{fontWeight:700,marginBottom:8,display:"flex",alignItems:"center",gap:6}}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                      </svg>
+                      Step 1 — File downloaded! Now upload it here:
+                    </div>
                     <label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"11px",border:"2px dashed #c7d2fe",borderRadius:10,cursor:"pointer",background:"#fff",fontSize:".82rem",color:"#4338ca",fontWeight:600}}>
                       <input type="file" accept=".txt" style={{display:"none"}} onChange={handleFileUpload}/>
-                      📄 Select the downloaded .txt file
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                      </svg>
+                      Select the downloaded .txt file
                     </label>
                   </div>
                 )}
@@ -2784,7 +2964,12 @@ async function run(){
                 {agendaStep==="url"&&(
                   <>
                     <div style={{background:"#FFF7ED",border:"1.5px solid #fed7aa",borderRadius:12,padding:"11px 14px",marginBottom:14,fontSize:".79rem",color:"#92400e",lineHeight:1.6}}>
-                      <b>📋 Agenda Import</b> — works with school Google accounts.<br/>
+                      <b style={{display:"flex",alignItems:"center",gap:6}}>
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="9" y1="15" x2="15" y2="15"/>
+                        </svg>
+                        Agenda Import
+                      </b> — works with school Google accounts.<br/>
                       We'll read your agenda doc, find all the linked agendas from today onwards, and bundle them into one file for you to download.
                       <span style={{display:"inline-block",marginTop:6,fontSize:".7rem",background:"#fed7aa",color:"#7c2d12",padding:"2px 8px",borderRadius:20,fontWeight:700}}>Currently only supports Google Docs</span>
                     </div>
@@ -2804,7 +2989,12 @@ async function run(){
                     {agendaUrl&&getDocExportUrl(agendaUrl)&&(
                       <div style={{background:"#f0fdf4",border:"1.5px solid #86efac",borderRadius:10,padding:"10px 13px",marginBottom:12}}>
                         <div style={{fontSize:".75rem",fontWeight:700,color:"#15803d",marginBottom:6}}>Step 1 — Download your agenda as HTML (preserves links):</div>
-                        <a href={getDocExportUrl(agendaUrl)} target="_blank" rel="noreferrer" className="btn btn-p" style={{display:"inline-flex",alignItems:"center",gap:6,textDecoration:"none",fontSize:".82rem",padding:"7px 14px",borderRadius:9,background:"#16a34a"}}>⬇️ Download Agenda HTML</a>
+                        <a href={getDocExportUrl(agendaUrl)} target="_blank" rel="noreferrer" className="btn btn-p" style={{display:"inline-flex",alignItems:"center",gap:6,textDecoration:"none",fontSize:".82rem",padding:"7px 14px",borderRadius:9,background:"#16a34a"}}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                          </svg>
+                          Download Agenda HTML
+                        </a>
                         <div style={{fontSize:".7rem",color:"#888",marginTop:8}}>Then upload the .html file below ↓</div>
                       </div>
                     )}
@@ -2814,7 +3004,10 @@ async function run(){
                         <div style={{fontSize:".78rem",fontWeight:700,color:"#1B1F3B",marginBottom:8}}>Step 2 — Upload the downloaded HTML file:</div>
                         <label style={{display:"flex",alignItems:"center",justifyContent:"center",gap:8,padding:"13px",border:"2px dashed #fed7aa",borderRadius:12,cursor:"pointer",background:"#fffbeb",fontSize:".82rem",color:"#92400e",fontWeight:600}}>
                           <input type="file" accept=".html,.htm" style={{display:"none"}} onChange={handleAgendaDocUpload}/>
-                          📄 Upload agenda .html file
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                          </svg>
+                          Upload agenda .html file
                         </label>
                       </>
                     )}
@@ -2826,16 +3019,22 @@ async function run(){
 
                 {agendaStep==="fetcher"&&(
                   <>
-                    <div style={{background:"#f0fdf4",border:"1.5px solid #86efac",borderRadius:12,padding:"11px 14px",marginBottom:14,fontSize:".79rem",color:"#15803d",lineHeight:1.6}}>
-                      ✅ Found <b>{agendaSlideLinks.length} agenda{agendaSlideLinks.length!==1?"s":""}</b> from today onwards! Click each one to download, then upload them all below.
+                    <div style={{background:"#f0fdf4",border:"1.5px solid #86efac",borderRadius:12,padding:"11px 14px",marginBottom:14,fontSize:".79rem",color:"#15803d",lineHeight:1.6,display:"flex",alignItems:"center",gap:6}}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      Found <b>{agendaSlideLinks.length} agenda{agendaSlideLinks.length!==1?"s":""}</b> from today onwards! Click each one to download, then upload them all below.
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:6,marginBottom:14,maxHeight:200,overflowY:"auto"}}>
                       {agendaSlideLinks.map((l,i)=>(
                         <div key={i} style={{display:"flex",alignItems:"center",gap:10,background:"#f8f8f6",border:"1.5px solid #EDE9E2",borderRadius:9,padding:"7px 10px"}}>
                           <span style={{flex:1,fontSize:".78rem",fontWeight:600,color:"#1B1F3B"}}>{l.label}</span>
                           <a href={l.exportUrl} target="_blank" rel="noreferrer"
-                            style={{fontSize:".72rem",padding:"4px 10px",borderRadius:7,background:"#4338ca",color:"#fff",textDecoration:"none",fontWeight:700,whiteSpace:"nowrap"}}>
-                            ⬇️ Download
+                            style={{fontSize:".72rem",padding:"4px 10px",borderRadius:7,background:"#4338ca",color:"#fff",textDecoration:"none",fontWeight:700,whiteSpace:"nowrap",display:"flex",alignItems:"center",gap:4}}>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                            </svg>
+                            Download
                           </a>
                         </div>
                       ))}
@@ -2850,7 +3049,10 @@ async function run(){
                             runAgendaScan(texts.join("\n\n"));
                           });
                         }}/>
-                        📄 Upload .txt files (select all at once)
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                        </svg>
+                        Upload .txt files (select all at once)
                       </label>
                       <div style={{fontSize:".7rem",color:"#aaa",marginTop:5}}>Hold Ctrl/Cmd to select multiple files at once</div>
                     </div>

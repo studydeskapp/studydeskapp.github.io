@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { callGemini, uploadFileToGemini, callGeminiWithFile, deleteGeminiFile } from '../../utils/gemini';
 import { extractTextFromFile, validateFile, createFileAttachment } from '../../utils/fileUtils';
+import ProgressBar from '../shared/ProgressBar';
 
 function AINoteAnalyzer({ notes, assignments, darkMode }) {
   const [selectedNotes, setSelectedNotes] = useState([]);
@@ -224,39 +225,70 @@ Highlight critical facts, dates, examples, or information that shouldn't be miss
 Use clear markdown formatting with headers, bullet points, and organized sections.`;
   };
 
-  // Markdown renderer function
+  // Markdown + KaTeX renderer
   const renderMarkdown = (text) => {
     if (!text) return '';
+    const codeBlocks = [];
+    let p = text.replace(/```[\s\S]*?```/g, (m) => { codeBlocks.push(m); return `%%CB${codeBlocks.length - 1}%%`; });
     
-    return text
+    // KaTeX rendering for display math ($$...$$)
+    p = p.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => {
+      try { return `<div style="text-align:center;margin:12px 0;overflow-x:auto;">${window.katex.renderToString(math.trim(), { displayMode: true, throwOnError: false })}</div>`; }
+      catch { return `<code>$$${math}$$</code>`; }
+    });
+    
+    // KaTeX rendering for inline math ($...$)
+    p = p.replace(/\$([^\n$]+?)\$/g, (_, math) => {
+      try { return window.katex.renderToString(math.trim(), { displayMode: false, throwOnError: false }); }
+      catch { return `<code>${math}</code>`; }
+    });
+    
+    // Markdown formatting
+    p = p
+      .replace(/\*\*\*(.*?)\*\*\*/g, '<strong><em>$1</em></strong>')
       .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.*?)\*/g, '<em>$1</em>')
+      .replace(/`(.*?)`/g, '<code style="background:var(--bg3);padding:2px 4px;border-radius:4px;font-family:monospace;font-size:.85em;">$1</code>')
       .replace(/^####\s(.*)$/gm, '<h4 style="font-size:1rem;font-weight:700;margin:12px 0 6px;color:var(--text);">$1</h4>')
       .replace(/^###\s(.*)$/gm,  '<h3 style="font-size:1.1rem;font-weight:700;margin:16px 0 8px;color:var(--text);">$1</h3>')
       .replace(/^##\s(.*)$/gm,   '<h2 style="font-size:1.2rem;font-weight:700;margin:20px 0 10px;color:var(--text);">$1</h2>')
       .replace(/^#\s(.*)$/gm,    '<h1 style="font-size:1.3rem;font-weight:700;margin:20px 0 10px;color:var(--text);">$1</h1>')
-      .replace(/`([^`]+)`/g, '<code style="background:var(--bg3);padding:2px 4px;border-radius:4px;font-family:monospace;font-size:.85em;color:var(--text);">$1</code>')
-      .replace(/^- (.*)$/gm, '<li style="margin:4px 0;color:var(--text);">• $1</li>')
-      .replace(/^\d+\. (.*)$/gm, '<li style="margin:4px 0;color:var(--text);">$1</li>')
-      .replace(/\n\n/g, '</p><p style="color:var(--text);margin:8px 0;">')
-      .replace(/\n/g, '<br>');
+      .replace(/^---$/gm, '<hr style="border:none;border-top:1px solid var(--border);margin:16px 0;">')
+      .replace(/^[-*]\s(.*)$/gm, '<li style="margin:4px 0;margin-left:8px;">$1</li>')
+      .replace(/^\d+\.\s(.*)$/gm, '<li style="margin:4px 0;margin-left:8px;">$1</li>')
+      .replace(/\n\n/g, '</p><p style="margin:8px 0;">')
+      .replace(/\n/g, '<br/>');
+    
+    // Wrap lists
+    p = p.replace(/(<li[^>]*>[\s\S]*?<\/li>(<br\/>)?)+/g, (m) => {
+      const clean = m.replace(/<br\/>/g, '');
+      return `<ul style="margin:8px 0;padding-left:20px;">${clean}</ul>`;
+    });
+    
+    // Restore code blocks
+    p = p.replace(/%%CB(\d+)%%/g, (_, i) => {
+      const code = codeBlocks[parseInt(i)].replace(/^```\w*\n?/, '').replace(/```$/, '');
+      return `<pre style="background:var(--bg3);padding:12px;border-radius:8px;overflow-x:auto;font-family:monospace;font-size:.82rem;margin:8px 0;"><code>${code}</code></pre>`;
+    });
+    
+    return `<span>${p}</span>`;
   };
 
   const renderAnalysis = () => {
     if (loading) {
       return (
         <div style={{ textAlign: 'center', padding: '40px' }}>
-          <div style={{ 
-            width: '40px', 
-            height: '40px', 
-            border: '4px solid var(--border)', 
-            borderTop: '4px solid var(--accent)', 
-            borderRadius: '50%', 
-            animation: 'spin 1s linear infinite',
-            margin: '0 auto 16px'
-          }}></div>
-          <p style={{ color: darkMode ? 'var(--text2)' : 'var(--text3)' }}>
-            Analyzing your files...
+          <ProgressBar 
+            isLoading={loading} 
+            label="Analyzing your notes"
+            showPercentage={true}
+          />
+          <p style={{ 
+            color: darkMode ? 'var(--text2)' : 'var(--text3)',
+            fontSize: '.85rem',
+            marginTop: 16
+          }}>
+            Processing your content and generating insights...
           </p>
         </div>
       );
@@ -265,7 +297,11 @@ Use clear markdown formatting with headers, bullet points, and organized section
     if (!analysis) {
       return (
         <div style={{ textAlign: 'center', padding: '40px' }}>
-          <div style={{ fontSize: '48px', marginBottom: '16px', color: darkMode ? 'var(--text3)' : 'var(--text4)' }}>📊</div>
+          <div style={{ fontSize: '48px', marginBottom: '16px', color: darkMode ? 'var(--text3)' : 'var(--text4)' }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+              <path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/>
+            </svg>
+          </div>
           <p style={{ color: darkMode ? 'var(--text2)' : 'var(--text3)' }}>
             Select notes or upload files and choose an analysis type to get started
           </p>
@@ -355,7 +391,10 @@ Use clear markdown formatting with headers, bullet points, and organized section
               transition: 'all var(--transition-base)'
             }}
           >
-            ✍️ Text Entry
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{marginRight:4,verticalAlign:"middle"}}>
+              <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+            </svg>
+            Text Entry
           </button>
           <span style={{ 
             fontSize: 'var(--fs-xs)', 
@@ -418,10 +457,15 @@ Use clear markdown formatting with headers, bullet points, and organized section
               >
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                   <span style={{ fontSize: 'var(--fs-sm)' }}>
-                    {file.type.startsWith('image/') ? '🖼️' : 
-                     file.type.includes('pdf') ? '📄' : 
-                     file.type.includes('word') ? '📝' : 
-                     file.type.includes('text') ? '📄' : '📎'}
+                    {file.type.startsWith('image/') ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                    ) : file.type.includes('pdf') ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    ) : file.type.includes('word') || file.type.includes('text') ? (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+                    )}
                   </span>
                   <div>
                     <div style={{ fontSize: 'var(--fs-xs)', fontWeight: 'var(--fw-medium)' }}>

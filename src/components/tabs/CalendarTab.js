@@ -3,6 +3,7 @@ import React, { useState, useMemo } from 'react';
 function CalendarTab({ assignments, classes, darkMode, onAssignmentClick }) {
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState(null);
+  const [view, setView] = useState('month'); // 'year', 'month', 'week', 'day'
 
   // Get calendar data
   const calendarData = useMemo(() => {
@@ -55,6 +56,109 @@ function CalendarTab({ assignments, classes, darkMode, onAssignmentClick }) {
     setCurrentDate(new Date());
   };
 
+  const goToPrev = () => {
+    if (view === 'year') {
+      setCurrentDate(new Date(currentDate.getFullYear() - 1, 0, 1));
+    } else if (view === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
+    } else if (view === 'week') {
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() - 7);
+      setCurrentDate(newDate);
+    } else if (view === 'day') {
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() - 1);
+      setCurrentDate(newDate);
+    }
+  };
+
+  const goToNext = () => {
+    if (view === 'year') {
+      setCurrentDate(new Date(currentDate.getFullYear() + 1, 0, 1));
+    } else if (view === 'month') {
+      setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 1));
+    } else if (view === 'week') {
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() + 7);
+      setCurrentDate(newDate);
+    } else if (view === 'day') {
+      const newDate = new Date(currentDate);
+      newDate.setDate(newDate.getDate() + 1);
+      setCurrentDate(newDate);
+    }
+  };
+
+  const getViewTitle = () => {
+    if (view === 'year') {
+      return currentDate.getFullYear().toString();
+    } else if (view === 'month') {
+      return `${monthNames[currentDate.getMonth()]} ${currentDate.getFullYear()}`;
+    } else if (view === 'week') {
+      const weekStart = new Date(currentDate);
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekEnd.getDate() + 6);
+      return `${monthNames[weekStart.getMonth()]} ${weekStart.getDate()} - ${monthNames[weekEnd.getMonth()]} ${weekEnd.getDate()}, ${weekStart.getFullYear()}`;
+    } else if (view === 'day') {
+      return currentDate.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' });
+    }
+  };
+
+  // Get week data
+  const getWeekData = () => {
+    const weekStart = new Date(currentDate);
+    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+    
+    const days = [];
+    for (let i = 0; i < 7; i++) {
+      const date = new Date(weekStart);
+      date.setDate(date.getDate() + i);
+      const dateStr = date.toISOString().split('T')[0];
+      const dayAssignments = assignments.filter(a => a.dueDate === dateStr);
+      
+      days.push({
+        date,
+        dateStr,
+        isToday: dateStr === new Date().toISOString().split('T')[0],
+        assignments: dayAssignments
+      });
+    }
+    return days;
+  };
+
+  // Get day data
+  const getDayData = () => {
+    const dateStr = currentDate.toISOString().split('T')[0];
+    const dayAssignments = assignments.filter(a => a.dueDate === dateStr);
+    return {
+      date: currentDate,
+      dateStr,
+      isToday: dateStr === new Date().toISOString().split('T')[0],
+      assignments: dayAssignments
+    };
+  };
+
+  // Get year data (12 months)
+  const getYearData = () => {
+    const year = currentDate.getFullYear();
+    const months = [];
+    
+    for (let month = 0; month < 12; month++) {
+      const monthAssignments = assignments.filter(a => {
+        if (!a.dueDate) return false;
+        const assignmentDate = new Date(a.dueDate);
+        return assignmentDate.getFullYear() === year && assignmentDate.getMonth() === month;
+      });
+      
+      months.push({
+        month,
+        name: monthNames[month],
+        assignments: monthAssignments
+      });
+    }
+    return months;
+  };
+
   const text = darkMode ? '#E5E7EB' : '#1F2937';
   const text2 = darkMode ? '#9CA3AF' : '#6B7280';
   const text3 = darkMode ? '#6B7280' : '#9CA3AF';
@@ -97,30 +201,58 @@ function CalendarTab({ assignments, classes, darkMode, onAssignmentClick }) {
         display: 'flex',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: '24px'
+        marginBottom: '24px',
+        flexWrap: 'wrap',
+        gap: '12px'
       }}>
-        <button
-          onClick={goToToday}
-          style={{
-            padding: '8px 14px',
-            background: bg,
-            border: `1px solid ${border}`,
-            borderRadius: '6px',
-            color: text,
-            fontSize: '0.875rem',
-            fontWeight: '500',
-            cursor: 'pointer',
-            transition: 'all 0.15s ease'
-          }}
-          onMouseEnter={(e) => e.currentTarget.style.background = bgHover}
-          onMouseLeave={(e) => e.currentTarget.style.background = bg}
-        >
-          Today
-        </button>
+        <div style={{ display: 'flex', gap: '8px' }}>
+          <button
+            onClick={goToToday}
+            style={{
+              padding: '8px 14px',
+              background: bg,
+              border: `1px solid ${border}`,
+              borderRadius: '6px',
+              color: text,
+              fontSize: '0.875rem',
+              fontWeight: '500',
+              cursor: 'pointer',
+              transition: 'all 0.15s ease'
+            }}
+            onMouseEnter={(e) => e.currentTarget.style.background = bgHover}
+            onMouseLeave={(e) => e.currentTarget.style.background = bg}
+          >
+            Today
+          </button>
+
+          {/* View Selector */}
+          <div style={{ display: 'flex', gap: '4px', background: bg, border: `1px solid ${border}`, borderRadius: '6px', padding: '2px' }}>
+            {['year', 'month', 'week', 'day'].map(v => (
+              <button
+                key={v}
+                onClick={() => setView(v)}
+                style={{
+                  padding: '6px 12px',
+                  background: view === v ? (darkMode ? '#374151' : '#E5E7EB') : 'transparent',
+                  border: 'none',
+                  borderRadius: '4px',
+                  color: view === v ? text : text2,
+                  fontSize: '0.875rem',
+                  fontWeight: view === v ? '600' : '500',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {v}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <button
-            onClick={goToPrevMonth}
+            onClick={goToPrev}
             style={{
               width: '32px',
               height: '32px',
@@ -146,14 +278,14 @@ function CalendarTab({ assignments, classes, darkMode, onAssignmentClick }) {
             fontSize: '1rem',
             fontWeight: '600',
             color: text,
-            minWidth: '160px',
+            minWidth: '200px',
             textAlign: 'center'
           }}>
-            {monthNames[currentDate.getMonth()]} {currentDate.getFullYear()}
+            {getViewTitle()}
           </div>
 
           <button
-            onClick={goToNextMonth}
+            onClick={goToNext}
             style={{
               width: '32px',
               height: '32px',
@@ -175,144 +307,490 @@ function CalendarTab({ assignments, classes, darkMode, onAssignmentClick }) {
             </svg>
           </button>
         </div>
-
-        <div style={{ width: '80px' }} /> {/* Spacer for balance */}
       </div>
 
       {/* Calendar Grid */}
-      <div style={{
-        background: bg,
-        border: `1px solid ${border}`,
-        borderRadius: '8px',
-        overflow: 'hidden'
-      }}>
-        {/* Day headers */}
+      {view === 'month' && (
+        <div style={{
+          background: bg,
+          border: `1px solid ${border}`,
+          borderRadius: '8px',
+          overflow: 'hidden'
+        }}>
+          {/* Day headers */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            borderBottom: `1px solid ${border}`,
+            background: darkMode ? '#1F2937' : '#F9FAFB'
+          }}>
+            {dayNames.map(day => (
+              <div
+                key={day}
+                style={{
+                  textAlign: 'center',
+                  fontSize: '0.75rem',
+                  fontWeight: '600',
+                  color: text2,
+                  padding: '12px 8px',
+                  textTransform: 'uppercase',
+                  letterSpacing: '0.05em'
+                }}
+              >
+                {day}
+              </div>
+            ))}
+          </div>
+
+          {/* Calendar days */}
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+          }}>
+            {calendarData.map((day, idx) => {
+              return (
+                <div
+                  key={idx}
+                  onClick={() => {
+                    if (day.isCurrentMonth) {
+                      setSelectedDay(day);
+                    }
+                  }}
+                  style={{
+                    height: '120px',
+                    padding: '8px',
+                    borderRight: (idx + 1) % 7 === 0 ? 'none' : `1px solid ${border}`,
+                    borderBottom: idx < calendarData.length - 7 ? `1px solid ${border}` : 'none',
+                    background: day.isToday ? (darkMode ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)') : 'transparent',
+                    opacity: day.isCurrentMonth ? 1 : 0.4,
+                    transition: 'background 0.15s ease',
+                    cursor: day.isCurrentMonth ? 'pointer' : 'default',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}
+                  onMouseEnter={(e) => {
+                    if (day.isCurrentMonth) {
+                      e.currentTarget.style.background = day.isToday 
+                        ? (darkMode ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)')
+                        : bgHover;
+                    }
+                  }}
+                  onMouseLeave={(e) => {
+                    e.currentTarget.style.background = day.isToday 
+                      ? (darkMode ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)')
+                      : 'transparent';
+                  }}
+                >
+                  {/* Date number */}
+                  <div style={{
+                    fontSize: '0.875rem',
+                    fontWeight: day.isToday ? '600' : '500',
+                    marginBottom: '6px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '28px',
+                    height: '28px',
+                    borderRadius: '50%',
+                    background: day.isToday ? 'var(--accent)' : 'transparent',
+                    color: day.isToday ? '#fff' : (day.isCurrentMonth ? text : text3)
+                  }}>
+                    {day.date.getDate()}
+                  </div>
+
+                  {/* Assignment indicators */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
+                    {day.assignments.slice(0, 2).map((assignment, aIdx) => (
+                      <div
+                        key={aIdx}
+                        onClick={() => onAssignmentClick && onAssignmentClick(assignment)}
+                        style={{
+                          fontSize: '0.7rem',
+                          padding: '3px 6px',
+                          background: assignment.progress === 100 
+                            ? (darkMode ? '#065F46' : '#D1FAE5')
+                            : (darkMode ? '#991B1B' : '#FEE2E2'),
+                          color: assignment.progress === 100 
+                            ? (darkMode ? '#6EE7B7' : '#047857')
+                            : (darkMode ? '#FCA5A5' : '#DC2626'),
+                          borderRadius: '4px',
+                          fontWeight: '500',
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                          cursor: 'pointer',
+                          borderLeft: `3px solid ${assignment.progress === 100 
+                            ? (darkMode ? '#10B981' : '#059669')
+                            : (darkMode ? '#EF4444' : '#DC2626')}`
+                        }}
+                        title={assignment.title}
+                      >
+                        {assignment.title}
+                      </div>
+                    ))}
+                    {day.assignments.length > 2 && (
+                      <div style={{
+                        fontSize: '0.7rem',
+                        color: text3,
+                        fontWeight: '500',
+                        padding: '2px 6px'
+                      }}>
+                        +{day.assignments.length - 2} more
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Year View */}
+      {view === 'year' && (
         <div style={{
           display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
-          borderBottom: `1px solid ${border}`,
-          background: darkMode ? '#1F2937' : '#F9FAFB'
+          gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+          gap: '16px'
         }}>
-          {dayNames.map(day => (
+          {getYearData().map((monthData, idx) => (
             <div
-              key={day}
+              key={idx}
+              onClick={() => {
+                setCurrentDate(new Date(currentDate.getFullYear(), monthData.month, 1));
+                setView('month');
+              }}
               style={{
-                textAlign: 'center',
-                fontSize: '0.75rem',
-                fontWeight: '600',
-                color: text2,
-                padding: '12px 8px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.05em'
+                background: bg,
+                border: `1px solid ${border}`,
+                borderRadius: '8px',
+                padding: '16px',
+                cursor: 'pointer',
+                transition: 'all 0.15s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = darkMode 
+                  ? '0 4px 12px rgba(0,0,0,0.3)' 
+                  : '0 4px 12px rgba(0,0,0,0.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.transform = 'translateY(0)';
+                e.currentTarget.style.boxShadow = 'none';
               }}
             >
-              {day}
+              <div style={{
+                fontSize: '1rem',
+                fontWeight: '600',
+                color: text,
+                marginBottom: '12px'
+              }}>
+                {monthData.name}
+              </div>
+              <div style={{
+                fontSize: '2rem',
+                fontWeight: '700',
+                color: monthData.assignments.length > 0 ? 'var(--accent)' : text3,
+                marginBottom: '8px'
+              }}>
+                {monthData.assignments.length}
+              </div>
+              <div style={{
+                fontSize: '0.875rem',
+                color: text2
+              }}>
+                {monthData.assignments.length === 1 ? 'assignment' : 'assignments'}
+              </div>
+              {monthData.assignments.length > 0 && (
+                <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                  <div style={{
+                    flex: 1,
+                    height: '4px',
+                    background: darkMode ? '#991B1B' : '#FEE2E2',
+                    borderRadius: '2px',
+                    position: 'relative',
+                    overflow: 'hidden'
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      left: 0,
+                      top: 0,
+                      bottom: 0,
+                      width: `${(monthData.assignments.filter(a => a.progress === 100).length / monthData.assignments.length) * 100}%`,
+                      background: darkMode ? '#10B981' : '#059669',
+                      borderRadius: '2px'
+                    }} />
+                  </div>
+                </div>
+              )}
             </div>
           ))}
         </div>
+      )}
 
-        {/* Calendar days */}
+      {/* Week View */}
+      {view === 'week' && (
         <div style={{
-          display: 'grid',
-          gridTemplateColumns: 'repeat(7, 1fr)',
+          background: bg,
+          border: `1px solid ${border}`,
+          borderRadius: '8px',
+          overflow: 'hidden'
         }}>
-          {calendarData.map((day, idx) => {
-            return (
+          <div style={{
+            display: 'grid',
+            gridTemplateColumns: 'repeat(7, 1fr)',
+            gap: '1px',
+            background: border
+          }}>
+            {getWeekData().map((day, idx) => (
               <div
                 key={idx}
                 onClick={() => {
-                  if (day.isCurrentMonth) {
-                    setSelectedDay(day);
-                  }
+                  setCurrentDate(day.date);
+                  setView('day');
                 }}
                 style={{
-                  height: '120px',
-                  padding: '8px',
-                  borderRight: (idx + 1) % 7 === 0 ? 'none' : `1px solid ${border}`,
-                  borderBottom: idx < calendarData.length - 7 ? `1px solid ${border}` : 'none',
-                  background: day.isToday ? (darkMode ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)') : 'transparent',
-                  opacity: day.isCurrentMonth ? 1 : 0.4,
-                  transition: 'background 0.15s ease',
-                  cursor: day.isCurrentMonth ? 'pointer' : 'default',
-                  position: 'relative',
-                  overflow: 'hidden'
+                  background: day.isToday ? (darkMode ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)') : bg,
+                  padding: '16px',
+                  minHeight: '400px',
+                  cursor: 'pointer',
+                  transition: 'all 0.15s ease'
                 }}
                 onMouseEnter={(e) => {
-                  if (day.isCurrentMonth) {
-                    e.currentTarget.style.background = day.isToday 
-                      ? (darkMode ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)')
-                      : bgHover;
-                  }
+                  e.currentTarget.style.background = day.isToday 
+                    ? (darkMode ? 'rgba(99, 102, 241, 0.15)' : 'rgba(99, 102, 241, 0.08)')
+                    : bgHover;
                 }}
                 onMouseLeave={(e) => {
                   e.currentTarget.style.background = day.isToday 
                     ? (darkMode ? 'rgba(99, 102, 241, 0.1)' : 'rgba(99, 102, 241, 0.05)')
-                    : 'transparent';
+                    : bg;
                 }}
               >
-                {/* Date number */}
-                <div style={{
-                  fontSize: '0.875rem',
-                  fontWeight: day.isToday ? '600' : '500',
-                  marginBottom: '6px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '50%',
-                  background: day.isToday ? 'var(--accent)' : 'transparent',
-                  color: day.isToday ? '#fff' : (day.isCurrentMonth ? text : text3)
-                }}>
-                  {day.date.getDate()}
+                <div style={{ marginBottom: '12px', textAlign: 'center' }}>
+                  <div style={{
+                    fontSize: '0.75rem',
+                    fontWeight: '600',
+                    color: text2,
+                    textTransform: 'uppercase',
+                    letterSpacing: '0.05em',
+                    marginBottom: '4px'
+                  }}>
+                    {dayNames[day.date.getDay()]}
+                  </div>
+                  <div style={{
+                    fontSize: '1.5rem',
+                    fontWeight: '700',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    width: '48px',
+                    height: '48px',
+                    borderRadius: '50%',
+                    background: day.isToday ? 'var(--accent)' : 'transparent',
+                    color: day.isToday ? '#fff' : text
+                  }}>
+                    {day.date.getDate()}
+                  </div>
                 </div>
-
-                {/* Assignment indicators */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '3px', marginTop: '4px' }}>
-                  {day.assignments.slice(0, 2).map((assignment, aIdx) => (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {day.assignments.map((assignment, aIdx) => (
                     <div
                       key={aIdx}
-                      onClick={() => onAssignmentClick && onAssignmentClick(assignment)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onAssignmentClick && onAssignmentClick(assignment);
+                      }}
                       style={{
-                        fontSize: '0.7rem',
-                        padding: '3px 6px',
+                        fontSize: '0.8rem',
+                        padding: '8px',
                         background: assignment.progress === 100 
                           ? (darkMode ? '#065F46' : '#D1FAE5')
                           : (darkMode ? '#991B1B' : '#FEE2E2'),
                         color: assignment.progress === 100 
                           ? (darkMode ? '#6EE7B7' : '#047857')
                           : (darkMode ? '#FCA5A5' : '#DC2626'),
-                        borderRadius: '4px',
+                        borderRadius: '6px',
                         fontWeight: '500',
-                        overflow: 'hidden',
-                        textOverflow: 'ellipsis',
-                        whiteSpace: 'nowrap',
-                        cursor: 'pointer',
                         borderLeft: `3px solid ${assignment.progress === 100 
                           ? (darkMode ? '#10B981' : '#059669')
-                          : (darkMode ? '#EF4444' : '#DC2626')}`
+                          : (darkMode ? '#EF4444' : '#DC2626')}`,
+                        cursor: 'pointer'
                       }}
                       title={assignment.title}
                     >
                       {assignment.title}
                     </div>
                   ))}
-                  {day.assignments.length > 2 && (
-                    <div style={{
-                      fontSize: '0.7rem',
-                      color: text3,
-                      fontWeight: '500',
-                      padding: '2px 6px'
-                    }}>
-                      +{day.assignments.length - 2} more
-                    </div>
-                  )}
                 </div>
               </div>
-            );
-          })}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
+
+      {/* Day View */}
+      {view === 'day' && (() => {
+        const dayData = getDayData();
+        return (
+          <div style={{
+            background: bg,
+            border: `1px solid ${border}`,
+            borderRadius: '8px',
+            padding: '24px'
+          }}>
+            <div style={{
+              textAlign: 'center',
+              marginBottom: '32px',
+              paddingBottom: '24px',
+              borderBottom: `1px solid ${border}`
+            }}>
+              <div style={{
+                fontSize: '3rem',
+                fontWeight: '700',
+                display: 'inline-flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: '80px',
+                height: '80px',
+                borderRadius: '50%',
+                background: dayData.isToday ? 'var(--accent)' : (darkMode ? '#1F2937' : '#F9FAFB'),
+                color: dayData.isToday ? '#fff' : text,
+                marginBottom: '12px'
+              }}>
+                {dayData.date.getDate()}
+              </div>
+              <div style={{
+                fontSize: '1.25rem',
+                fontWeight: '600',
+                color: text,
+                marginBottom: '4px'
+              }}>
+                {dayData.date.toLocaleDateString('en-US', { weekday: 'long' })}
+              </div>
+              <div style={{
+                fontSize: '0.875rem',
+                color: text2
+              }}>
+                {dayData.date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              </div>
+            </div>
+
+            {dayData.assignments.length === 0 ? (
+              <div style={{ 
+                textAlign: 'center', 
+                padding: '40px 20px',
+                color: text2
+              }}>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </div>
+                <p style={{ fontSize: '1rem', fontWeight: '500', marginBottom: '4px' }}>
+                  No assignments due
+                </p>
+                <p style={{ fontSize: '0.875rem' }}>
+                  Enjoy your free day!
+                </p>
+              </div>
+            ) : (
+              <div>
+                <div style={{
+                  fontSize: '1rem',
+                  fontWeight: '600',
+                  color: text,
+                  marginBottom: '16px'
+                }}>
+                  {dayData.assignments.length} Assignment{dayData.assignments.length !== 1 ? 's' : ''} Due
+                </div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {dayData.assignments.map((assignment, idx) => (
+                    <div
+                      key={idx}
+                      style={{
+                        padding: '16px',
+                        background: darkMode ? '#1F2937' : '#F9FAFB',
+                        border: `1px solid ${border}`,
+                        borderLeft: `4px solid ${assignment.progress === 100 
+                          ? (darkMode ? '#10B981' : '#059669')
+                          : (darkMode ? '#EF4444' : '#DC2626')}`,
+                        borderRadius: '8px',
+                        transition: 'all 0.15s ease',
+                        cursor: 'pointer'
+                      }}
+                      onClick={() => onAssignmentClick && onAssignmentClick(assignment)}
+                      onMouseEnter={(e) => {
+                        e.currentTarget.style.transform = 'translateX(4px)';
+                        e.currentTarget.style.boxShadow = darkMode 
+                          ? '0 4px 12px rgba(0,0,0,0.3)' 
+                          : '0 4px 12px rgba(0,0,0,0.1)';
+                      }}
+                      onMouseLeave={(e) => {
+                        e.currentTarget.style.transform = 'translateX(0)';
+                        e.currentTarget.style.boxShadow = 'none';
+                      }}
+                    >
+                      <div style={{ 
+                        display: 'flex', 
+                        justifyContent: 'space-between',
+                        alignItems: 'flex-start',
+                        marginBottom: '8px'
+                      }}>
+                        <div style={{ flex: 1 }}>
+                          <h3 style={{ 
+                            fontSize: '1rem', 
+                            fontWeight: '600', 
+                            color: text,
+                            margin: '0 0 4px 0'
+                          }}>
+                            {assignment.title}
+                          </h3>
+                          {assignment.subject && (
+                            <p style={{ 
+                              fontSize: '0.875rem', 
+                              color: text2,
+                              margin: 0
+                            }}>
+                              {assignment.subject}
+                            </p>
+                          )}
+                        </div>
+                        <div style={{
+                          padding: '4px 12px',
+                          background: assignment.progress === 100 
+                            ? (darkMode ? '#065F46' : '#D1FAE5')
+                            : (darkMode ? '#991B1B' : '#FEE2E2'),
+                          color: assignment.progress === 100 
+                            ? (darkMode ? '#6EE7B7' : '#047857')
+                            : (darkMode ? '#FCA5A5' : '#DC2626'),
+                          borderRadius: '6px',
+                          fontSize: '0.75rem',
+                          fontWeight: '600',
+                          whiteSpace: 'nowrap'
+                        }}>
+                          {assignment.progress === 100 ? '✓ Complete' : assignment.progress != null ? `${assignment.progress}%` : '0%'}
+                        </div>
+                      </div>
+
+                      {assignment.notes && (
+                        <p style={{ 
+                          fontSize: '0.875rem', 
+                          color: text2,
+                          margin: '8px 0 0 0',
+                          lineHeight: '1.5'
+                        }}>
+                          {assignment.notes}
+                        </p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
 
       {/* Legend */}
       <div style={{
@@ -456,7 +934,11 @@ function CalendarTab({ assignments, classes, darkMode, onAssignmentClick }) {
                 padding: '40px 20px',
                 color: text2
               }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📅</div>
+                <div style={{ fontSize: '48px', marginBottom: '12px' }}>
+                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </div>
                 <p style={{ fontSize: '1rem', fontWeight: '500', marginBottom: '4px' }}>
                   No assignments due
                 </p>
