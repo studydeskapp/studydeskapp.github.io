@@ -135,8 +135,6 @@ export default function StudyDesk() {
   // STATE — UI / Navigation
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   const [tab, setTab] = useState("dashboard");
-  const [searchQuery, setSearchQuery] = useState("");
-  const [showSearch, setShowSearch] = useState(false);
   const [pwaPrompt, setPwaPrompt] = useState(null);
   // ┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈┈
   // STATE — Study Timer + Leaderboard
@@ -1948,9 +1946,6 @@ async function run(){
               <div className="mob-hdr-date">{dateStr}</div>
             </div>
             <div className="mob-hdr-r">
-              <button className="mob-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg>
-              </button>
               <button className="mob-icon-btn" onClick={()=>setDarkMode(d=>!d)}>
                 {darkMode
                   ?<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
@@ -2076,11 +2071,6 @@ async function run(){
                 </svg>
               )}
             </button>
-            <button className="hdr-icon-btn" onClick={()=>{setShowSearch(s=>!s);setSearchQuery("");}} title="Search assignments">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/>
-              </svg>
-            </button>
           </div>
         </div>}
 
@@ -2094,29 +2084,6 @@ async function run(){
         </div>
 
         <div className="mob-content">
-
-        {/* SEARCH BAR */}
-        {showSearch&&(
-          <div className="search-bar">
-            <span style={{fontSize:"1rem",opacity:.5}}>🔍</span>
-            <input className="search-inp" autoFocus placeholder="Search assignments..." value={searchQuery}
-              onChange={e=>setSearchQuery(e.target.value)}/>
-            <button onClick={()=>{setShowSearch(false);setSearchQuery("");}} style={{background:"none",border:"none",cursor:"pointer",color:"var(--text4)",fontSize:"1rem"}}>✕</button>
-          </div>
-        )}
-
-        {/* SEARCH RESULTS */}
-        {showSearch&&searchQuery.trim()&&(()=>{
-          const q=searchQuery.toLowerCase();
-          const results=assignments.filter(a=>a.title.toLowerCase().includes(q)||a.subject.toLowerCase().includes(q)||a.notes?.toLowerCase().includes(q));
-          return(
-            <div style={{marginBottom:20}}>
-              <div className="sec-lbl">{results.length} result{results.length!==1?"s":""} for "{searchQuery}"</div>
-              {results.length===0?<div style={{color:"var(--text4)",fontSize:".85rem",padding:"12px 0"}}>No assignments found.</div>:
-                <div className="alist">{results.map(a=><ACard key={a.id} a={a}/>)}</div>}
-            </div>
-          );
-        })()}
 
         {/* ═══ TAB CONTENT ═══════════════════════════════════════════ */}
         {tab==="dashboard"&&(

@@ -13,6 +13,7 @@ function TasksView({
 }) {
   const [filter, setFilter] = useState('active'); // active, completed, all
   const [sortBy, setSortBy] = useState('date'); // date, priority, subject
+  const [searchQuery, setSearchQuery] = useState('');
 
   const filters = [
     { id: 'active', label: 'Active', icon: '📝' },
@@ -23,10 +24,21 @@ function TasksView({
   const getFilteredAssignments = () => {
     let filtered = assignments;
     
+    // Filter by status
     if (filter === 'active') {
       filtered = assignments.filter(a => a.progress < 100);
     } else if (filter === 'completed') {
       filtered = assignments.filter(a => a.progress === 100);
+    }
+
+    // Filter by search query
+    if (searchQuery.trim()) {
+      const query = searchQuery.toLowerCase();
+      filtered = filtered.filter(a => 
+        a.title?.toLowerCase().includes(query) ||
+        a.subject?.toLowerCase().includes(query) ||
+        a.notes?.toLowerCase().includes(query)
+      );
     }
 
     // Sort
@@ -74,6 +86,28 @@ function TasksView({
         <h1 className="tasks-title">Tasks</h1>
         <div className="tasks-count">
           {filteredAssignments.length} {filter === 'active' ? 'active' : filter}
+        </div>
+      </div>
+
+      {/* Search Bar */}
+      <div className="search-container">
+        <div className="search-input-wrapper">
+          <span className="search-icon">🔍</span>
+          <input
+            type="text"
+            placeholder="Search tasks by title, subject, or notes..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="search-input"
+          />
+          {searchQuery && (
+            <button 
+              className="search-clear"
+              onClick={() => setSearchQuery('')}
+            >
+              ✕
+            </button>
+          )}
         </div>
       </div>
 
@@ -164,19 +198,30 @@ function TasksView({
       {filteredAssignments.length === 0 && (
         <div className="empty-state">
           <div className="empty-state-icon">
-            {filter === 'completed' ? '🎉' : '📝'}
+            {searchQuery ? '🔍' : filter === 'completed' ? '🎉' : '📝'}
           </div>
           <h3 className="empty-state-title">
-            {filter === 'completed' ? 'No completed tasks yet' : 'No tasks found'}
+            {searchQuery 
+              ? 'No matching tasks found' 
+              : filter === 'completed' 
+                ? 'No completed tasks yet' 
+                : 'No tasks found'}
           </h3>
           <p className="empty-state-text">
-            {filter === 'completed' 
-              ? 'Complete some tasks to see them here' 
-              : 'Add your first task to get started'}
+            {searchQuery 
+              ? 'Try a different search term or clear the search' 
+              : filter === 'completed' 
+                ? 'Complete some tasks to see them here' 
+                : 'Add your first task to get started'}
           </p>
-          {filter !== 'completed' && (
+          {!searchQuery && filter !== 'completed' && (
             <button className="btn-primary" onClick={onAddTask}>
               Add Task
+            </button>
+          )}
+          {searchQuery && (
+            <button className="btn-secondary" onClick={() => setSearchQuery('')}>
+              Clear Search
             </button>
           )}
         </div>

@@ -8,10 +8,6 @@ function Header({
   setDarkMode, 
   handleLogoClick, 
   isMobile,
-  showSearch,
-  setShowSearch,
-  searchQuery,
-  setSearchQuery,
   game
 }) {
   const tabs = [
@@ -37,24 +33,11 @@ function Header({
           <div className="header-actions">
             {game?.streak > 0 && <div className="streak-pill">🔥 {game.streak}d</div>}
             <div className="pts-pill">⭐ {game?.points || 0}</div>
-            <button className="icon-btn" onClick={() => setShowSearch(!showSearch)}>🔍</button>
             <button className="icon-btn" onClick={() => setDarkMode(!darkMode)}>
               {darkMode ? '☀️' : '🌙'}
             </button>
           </div>
         </div>
-        
-        {showSearch && (
-          <div className="mobile-search">
-            <input
-              type="text"
-              placeholder="Search assignments..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="search-input"
-            />
-          </div>
-        )}
         
         <div className="mobile-nav">
           {tabs.map(t => (
@@ -95,16 +78,6 @@ function Header({
       <div className="header-right">
         {game?.streak > 0 && <div className="streak-pill">🔥 {game.streak}d</div>}
         <div className="pts-pill">⭐ {game?.points || 0}</div>
-        
-        <div className="search-box">
-          <input
-            type="text"
-            placeholder="Search assignments..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="search-input"
-          />
-        </div>
         
         <button className="icon-btn" onClick={() => setDarkMode(!darkMode)}>
           {darkMode ? '☀️' : '🌙'}
