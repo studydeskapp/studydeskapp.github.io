@@ -119,10 +119,11 @@ export async function fbDeleteAccount(idToken) {
 }
 
 export async function fbAdminDeleteUserData(uid, adminIdToken) {
+  const safeUID = validateUID(uid);
   // Delete user's Firestore docs (users + presence)
   await Promise.allSettled([
-    fetch(`${FB_FS}/users/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
-    fetch(`${FB_FS}/presence/${uid}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
+    fetch(`${FB_FS}/users/${safeUID}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
+    fetch(`${FB_FS}/presence/${safeUID}?key=${FB_KEY}`, {method:"DELETE", headers:{"Authorization":`Bearer ${adminIdToken}`}}),
   ]);
 }
 
@@ -200,11 +201,45 @@ export async function fbGoogleSignIn() {
 }
 
 // ┌──────────────────────────────────────────────────────────────────────────────┐
+// │  SECURITY HELPERS                                                            │
+// └──────────────────────────────────────────────────────────────────────────────┘
+
+/**
+ * Validates and sanitizes a Firestore document UID to prevent path traversal attacks
+ * @param {string} uid - The user ID to validate
+ * @returns {string} - The validated UID
+ * @throws {Error} - If UID is invalid or contains malicious patterns
+ */
+function validateUID(uid) {
+  if (!uid || typeof uid !== 'string') {
+    throw new Error('Invalid UID: must be a non-empty string');
+  }
+  
+  // Only allow alphanumeric characters, hyphens, and underscores
+  if (!/^[a-zA-Z0-9_-]+$/.test(uid)) {
+    throw new Error('Invalid UID format: only alphanumeric, hyphens, and underscores allowed');
+  }
+  
+  // Prevent path traversal attempts
+  if (uid.includes('..') || uid.includes('/') || uid.includes('\\')) {
+    throw new Error('Invalid UID: path traversal detected');
+  }
+  
+  // Prevent excessively long UIDs (Firebase UIDs are typically 28 chars)
+  if (uid.length > 128) {
+    throw new Error('Invalid UID: too long');
+  }
+  
+  return uid;
+}
+
+// ┌──────────────────────────────────────────────────────────────────────────────┐
 // │  DATA MANAGEMENT (Firestore)                                                │
 // └──────────────────────────────────────────────────────────────────────────────┘
 
 export async function fbLoadData(uid, idToken) {
-  const r = await fetch(`${FB_FS}/users/${uid}`, {
+  const safeUID = validateUID(uid);
+  const r = await fetch(`${FB_FS}/users/${safeUID}`, {
     headers:{"Authorization":`Bearer ${idToken}`}
   });
   if(r.status===404) return null;
@@ -247,7 +282,17 @@ export async function fbEnsureValidToken(user) {
  * fields are preserved. Returns a promise that rejects on failure for caller handling.
  */
 export async function fbSaveData(uid, idToken, data) {
-  const res = await fetch(`${FB_FS}/users/${uid}?updateMask.fieldPaths=data`, {
+  const safeUID = validateUID(uid);
+  
+  // Validate payload size (max 1MB)
+  const payload = JSON.stringify(data);
+  const MAX_PAYLOAD_SIZE = 1024 * 1024; // 1MB
+  
+  if (payload.length > MAX_PAYLOAD_SIZE) {
+    throw new Error(`Payload too large: ${(payload.length / 1024).toFixed(0)}KB (max: ${(MAX_PAYLOAD_SIZE / 1024).toFixed(0)}KB)`);
+  }
+  
+  const res = await fetch(`${FB_FS}/users/${safeUID}?updateMask.fieldPaths=data`, {
     method: "PATCH",
     headers: { "Content-Type": "application/json", "Authorization": `Bearer ${idToken}` },
     body: JSON.stringify({ fields: { data: { stringValue: JSON.stringify(data) } } }),
@@ -386,10 +431,11 @@ export async function fbGetAdminStats(idToken) {
 
 export async function fbGetUserData(uid, idToken) {
   try {
-    console.log("Fetching user data for:", uid);
+    const safeUID = validateUID(uid);
+    console.log("Fetching user data for:", safeUID);
     
     // Try direct document access (works for own data)
-    const directFetch = await fetch(`${FB_FS}/users/${uid}`, {
+    const directFetch = await fetch(`${FB_FS}/users/${safeUID}`, {
       headers: { "Authorization": `Bearer ${idToken}` }
     });
     
@@ -403,7 +449,7 @@ export async function fbGetUserData(uid, idToken) {
     // Fetch presence data
     let presenceData = null;
     try {
-      const presenceFetch = await fetch(`${FB_FS}/presence/${uid}`, {
+      const presenceFetch = await fetch(`${FB_FS}/presence/${safeUID}`, {
         headers: { "Authorization": `Bearer ${idToken}` }
       });
       if (presenceFetch.ok) {
@@ -414,14 +460,14 @@ export async function fbGetUserData(uid, idToken) {
     }
 
     if (!userData?.fields) {
-      console.warn("No user data found for uid:", uid);
+      console.warn("No user data found for uid:", safeUID);
       return null;
     }
 
     // Parse the JSON string stored in the data field
     const raw = userData.fields?.data?.stringValue;
     if (!raw) {
-      console.warn("No data stringValue found for uid:", uid);
+      console.warn("No data stringValue found for uid:", safeUID);
       const pf = presenceData?.fields || {};
       return {
         uid,
@@ -473,7 +519,7 @@ export async function fbGetUserData(uid, idToken) {
     };
 
     return {
-      uid,
+      uid: safeUID,
       email: pf.email?.stringValue || "",
       displayName: pf.displayName?.stringValue || "",
       lastSeen: pf.lastSeen?.timestampValue || "",
@@ -496,8 +542,9 @@ export async function fbGetUserData(uid, idToken) {
 
 export async function fbSaveNote(uid, idToken, note) {
   try {
+    const safeUID = validateUID(uid);
     // Get existing user data
-    const userData = await fbLoadData(uid, idToken) || { a: [], c: [], g: {}, n: [] };
+    const userData = await fbLoadData(safeUID, idToken) || { a: [], c: [], g: {}, n: [] };
     
     // Ensure notes array exists
     if (!userData.n) userData.n = [];
@@ -516,7 +563,7 @@ export async function fbSaveNote(uid, idToken, note) {
     }
     
     // Save updated data
-    await fbSaveData(uid, idToken, userData);
+    await fbSaveData(safeUID, idToken, userData);
     return true;
   } catch (error) {
     console.error("Error saving note:", error);
@@ -526,14 +573,15 @@ export async function fbSaveNote(uid, idToken, note) {
 
 export async function fbDeleteNote(uid, idToken, noteId) {
   try {
+    const safeUID = validateUID(uid);
     // Get existing user data
-    const userData = await fbLoadData(uid, idToken) || { a: [], c: [], g: {}, n: [] };
+    const userData = await fbLoadData(safeUID, idToken) || { a: [], c: [], g: {}, n: [] };
     
     // Remove note
     userData.n = userData.n.filter(n => n.id !== noteId);
     
     // Save updated data
-    await fbSaveData(uid, idToken, userData);
+    await fbSaveData(safeUID, idToken, userData);
     return true;
   } catch (error) {
     console.error("Error deleting note:", error);
@@ -543,7 +591,8 @@ export async function fbDeleteNote(uid, idToken, noteId) {
 
 export async function fbGetNotes(uid, idToken) {
   try {
-    const userData = await fbLoadData(uid, idToken);
+    const safeUID = validateUID(uid);
+    const userData = await fbLoadData(safeUID, idToken);
     return userData?.n || [];
   } catch (error) {
     console.error("Error fetching notes:", error);
