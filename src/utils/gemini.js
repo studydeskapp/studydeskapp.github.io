@@ -127,7 +127,7 @@ export async function deleteGeminiFile(file) {
   }
 }
 
-export async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[]){
+export async function callGeminiStream(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", onChunk, history=[], maxOutputTokens=4096){
   const contents = [
     ...history.map(m=>({role:m.role==="ai"?"model":"user", parts:[{text:m.text}]})),
     {role:"user", parts:[{text:prompt}]}
@@ -145,7 +145,7 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
       body:JSON.stringify({
         system_instruction:{parts:[{text:systemPrompt}]},
         contents,
-        generationConfig:{maxOutputTokens:4096,temperature:0.7}
+        generationConfig:{maxOutputTokens:maxOutputTokens,temperature:0.7}
       })
     });
     clearTimeout(timeout);
@@ -208,6 +208,6 @@ export async function callGeminiStream(prompt, systemPrompt="You are a helpful s
   }
 }
 
-export async function callGemini(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly."){
-  return callGeminiStream(prompt, systemPrompt, ()=>{});
+export async function callGemini(prompt, systemPrompt="You are a helpful study assistant for high school students. Be concise and friendly.", history=[], maxOutputTokens=4096){
+  return callGeminiStream(prompt, systemPrompt, ()=>{}, history, maxOutputTokens);
 }

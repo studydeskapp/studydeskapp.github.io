@@ -1,7 +1,40 @@
 export const STORAGE_KEY = "hw-tracker-v1";
-export const APP_VERSION = "1.5.0";
+export const APP_VERSION = "1.6.0";
 
 export const RELEASES = [
+  {
+    version: "1.6.0",
+    date: "20 March 2026",
+    title: "Google Drive AI Organization",
+    changes: [
+      "NEW: Google Drive Organization tab - AI-powered file organization using Gemini 2.5 Flash",
+      "Connect your Google Drive with one click using OAuth 2.0",
+      "AI analyzes your files and creates a smart organization plan based on your classes and assignments",
+      "Review interface shows proposed folder structure with expandable tree view",
+      "Each file action includes confidence score (color-coded: green 80%+, orange 50-79%, red <50%)",
+      "Edit any action before executing - change destination folders or file names",
+      "Filter actions by type (move, rename), status (accepted, rejected), or view all",
+      "Professional UI with SVG icons, smooth animations, and modern card design",
+      "Smart batch processing - organizes 20 files at a time for optimal AI performance",
+      "Incremental organization - only scans files in root folder, skips already-organized files",
+      "Run multiple times to organize 100+ files without re-organizing existing folders",
+      "Progress tracking with animated spinner, stage indicators, and percentage bar",
+      "Comprehensive error handling - gracefully handles permission errors on shared files",
+      "Results screen shows success/failure breakdown with detailed error messages",
+      "Feedback system - tell AI how to improve and regenerate the plan",
+      "Folder creation with nested structure support (e.g., '2025-26/Math/Homework')",
+      "File validation - ensures AI uses real file IDs from your Drive, not made-up ones",
+      "Estimated execution time shown before running the plan",
+      "Summary cards display: files analyzed, actions ready, new folders, and time estimate",
+      "Dark mode support throughout with proper contrast and readable text",
+      "Info banner for users with 20+ files explaining batch processing",
+      "Success message when all files are organized: 'All X files are already organized!'",
+      "Console logging for debugging: shows organized vs unorganized file counts",
+      "Maximum output tokens (8192) for Gemini to ensure complete JSON responses",
+      "Compact AI prompts to fit more files within token limits",
+      "Rate limiting (100ms between operations) to respect Google Drive API quotas",
+    ]
+  },
   {
     version: "1.5.0",
     date: "12 March 2026",
